@@ -51,6 +51,12 @@ if errorlevel 1 (
     goto :done
 )
 
+git diff --cached --quiet
+if not errorlevel 1 (
+    echo No staged changes to commit.
+    goto :success
+)
+
 echo Skipping hooks in Traycer automation to avoid timeout.
 git commit --no-verify -F "%TRAYCER_MSG_FILE%"
 set "EXIT_CODE=%ERRORLEVEL%"
