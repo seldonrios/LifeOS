@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'calendar',
   name: 'Calendar Module',
   version: '0.1.0',
+  category: 'productivity',
+  runtime_profiles: ['minimal', 'assistant', 'ambient', 'production'],
   provides: [
     {
       capability: 'module.calendar.scheduler',

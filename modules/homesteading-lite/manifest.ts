@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'homesteading-lite',
   name: 'Homesteading Lite Module',
   version: '0.1.0',
+  category: 'environment',
+  runtime_profiles: ['assistant', 'production'],
   provides: [
     {
       capability: 'module.homestead.planning',

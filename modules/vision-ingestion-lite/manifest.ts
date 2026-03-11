@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'vision-ingestion-lite',
   name: 'Vision Ingestion Lite Module',
   version: '0.1.0',
+  category: 'perception',
+  runtime_profiles: ['ambient', 'multimodal', 'production'],
   provides: [
     {
       capability: 'module.vision.ingestion',

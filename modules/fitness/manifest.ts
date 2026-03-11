@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'fitness',
   name: 'Fitness Module',
   version: '0.1.0',
+  category: 'wellness',
+  runtime_profiles: ['assistant', 'ambient', 'production'],
   provides: [
     {
       capability: 'module.fitness.coaching',

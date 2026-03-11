@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'economics-lite',
   name: 'Economics Lite Module',
   version: '0.1.0',
+  category: 'finance',
+  runtime_profiles: ['minimal', 'assistant', 'production'],
   provides: [
     {
       capability: 'module.economics.budgeting',

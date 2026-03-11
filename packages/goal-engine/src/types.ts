@@ -302,7 +302,7 @@ export const GoalEngineEventTopics = {
     goalValidated: 'goal.validated',
     planReady: 'plan.ready',
     taskScheduled: 'task.scheduled',
-    replanRequested: 'plan.replan.requested',
-    replanCompleted: 'plan.replan.completed',
+    replanRequested: 'replan.requested',
+    replanCompleted: 'replan.completed',
   },
 } as const;

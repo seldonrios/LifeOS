@@ -8,7 +8,7 @@ export function createPolicyClient(): PolicyClient {
       throw new Error('PolicyClient.evaluatePolicy is not implemented.');
     },
     checkPermission() {
-      throw new Error('PolicyClient.checkPermission is not implemented.');
+      return false;
     },
     async evaluate(request) {
       return this.evaluatePolicy(request);

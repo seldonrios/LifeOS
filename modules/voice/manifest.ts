@@ -4,6 +4,8 @@ export const manifest: ModuleManifest = {
   id: 'voice',
   name: 'Voice Module',
   version: '0.1.0',
+  category: 'interface',
+  runtime_profiles: ['assistant', 'ambient', 'multimodal', 'production'],
   provides: [
     {
       capability: 'module.voice.orchestration',

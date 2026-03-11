@@ -13,42 +13,78 @@ channels:
     x-status: stub
     messages:
       goalEvent:
-        $ref: './schemas/goal.json'
+        $ref: '#/components/messages/GoalEvent'
   plan.*:
     address: plan.*
     x-status: stub
     messages:
       planEvent:
-        $ref: './schemas/plan.json'
+        $ref: '#/components/messages/PlanEvent'
   task.*:
     address: task.*
     x-status: stub
     messages:
       taskEvent:
-        $ref: './schemas/task.json'
+        $ref: '#/components/messages/TaskEvent'
   person.*:
     address: person.*
     x-status: stub
     messages:
       personEvent:
-        $ref: './schemas/person.json'
+        $ref: '#/components/messages/PersonEvent'
   health.*:
     address: health.*
     x-status: stub
     messages:
       healthEvent:
-        $ref: './schemas/health.json'
+        $ref: '#/components/messages/HealthEvent'
   production.*:
     address: production.*
     x-status: stub
     messages:
       productionEvent:
-        $ref: './schemas/production.json'
+        $ref: '#/components/messages/ProductionEvent'
   agent.*:
     address: agent.*
     x-status: stub
     messages:
       agentEvent:
-        payload:
-          type: object
-          description: Stub payload for agent.* events.
+        $ref: '#/components/messages/AgentEvent'
+components:
+  messages:
+    GoalEvent:
+      name: goalEvent
+      title: Goal domain event
+      payload:
+        $ref: './schemas/goal.json'
+    PlanEvent:
+      name: planEvent
+      title: Plan domain event
+      payload:
+        $ref: './schemas/plan.json'
+    TaskEvent:
+      name: taskEvent
+      title: Task domain event
+      payload:
+        $ref: './schemas/task.json'
+    PersonEvent:
+      name: personEvent
+      title: Person domain event
+      payload:
+        $ref: './schemas/person.json'
+    HealthEvent:
+      name: healthEvent
+      title: Health domain event
+      payload:
+        $ref: './schemas/health.json'
+    ProductionEvent:
+      name: productionEvent
+      title: Production domain event
+      payload:
+        $ref: './schemas/production.json'
+    AgentEvent:
+      name: agentEvent
+      title: Agent domain event
+      payload:
+        type: object
+        description: Stub payload for agent.* events.

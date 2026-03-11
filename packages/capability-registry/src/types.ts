@@ -1,5 +1,13 @@
 export type RuntimeProfile = 'minimal' | 'assistant' | 'ambient' | 'multimodal' | 'production';
 
+export type ModuleCategory =
+  | 'wellness'
+  | 'productivity'
+  | 'finance'
+  | 'environment'
+  | 'perception'
+  | 'interface';
+
 export interface CapabilitySpec {
   capability: string;
   version: string;
@@ -39,6 +47,7 @@ export interface ModuleManifest {
   id: string;
   name: string;
   version: string;
+  category: ModuleCategory;
   provides: CapabilitySpec[];
   requires: DependencySpec[];
   optional: DependencySpec[];

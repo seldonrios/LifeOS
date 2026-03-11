@@ -6,7 +6,7 @@ import { ServiceCatalog } from '@lifeos/service-catalog';
 import { startService } from '@lifeos/service-runtime';
 
 async function bootstrap(): Promise<void> {
-  const modulesDir = process.env.LIFEOS_MODULES_DIR ?? resolve(process.cwd(), 'packages/modules');
+  const modulesDir = process.env.LIFEOS_MODULES_DIR ?? resolve(process.cwd(), 'modules');
   const profile = process.env.LIFEOS_PROFILE ?? 'assistant';
 
   try {
@@ -21,6 +21,7 @@ async function bootstrap(): Promise<void> {
         error: message,
       }),
     );
+    process.exit(1);
   }
 
   await startService({ serviceName: 'module-loader-service', port: 3008 });
