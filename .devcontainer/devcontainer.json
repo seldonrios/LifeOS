@@ -1,0 +1,25 @@
+{
+  "name": "LifeOS Dev Container",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:20",
+  "features": {
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    }
+  },
+  "postCreateCommand": "npm install -g pnpm@9.15.4 && pip install uv && uv tool install ruff && pnpm install",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "bradlc.vscode-tailwindcss"
+      ]
+    }
+  },
+  "forwardPorts": [4222, 7474, 5432, 3000],
+  "remoteEnv": {
+    "LIFEOS_PROFILE": "assistant"
+  }
+}

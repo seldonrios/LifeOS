@@ -79,21 +79,27 @@ It is a foundation for:
 ## Core Principles
 
 ### 1. User sovereignty
+
 The user should remain in control of their data, goals, permissions, and automation boundaries.
 
 ### 2. Local-first intelligence
+
 Reasoning, coordination, and storage should run locally whenever practical.
 
 ### 3. Modular capabilities
+
 LifeOS should grow through modules, providers, and capability contracts rather than a single giant app.
 
 ### 4. Privacy-preserving collaboration
+
 The system should support safe collaboration and community contribution without defaulting to centralized surveillance.
 
 ### 5. Practical, not magical
+
 LifeOS should focus on buildable systems, explicit contracts, bounded autonomy, and honest tradeoffs.
 
 ### 6. Open ecosystem
+
 This is open-source software. People should be able to build their own modules, providers, adapters, and features to fulfill capabilities inside a stable platform contract.
 
 ---
@@ -121,18 +127,23 @@ Phase 1 is about making the platform **real, understandable, and extensible**.
 ## Phase 1 Focus
 
 ### Reasoning
+
 Interpret requests, plan work, and coordinate actions locally.
 
 ### Life Graph
+
 Model goals, projects, tasks, people, resources, opportunities, and events.
 
 ### Automation
+
 React to events and orchestrate local systems safely.
 
 ### Modules
+
 Extend the node into domains such as home, health, learning, communications, and small-scale production.
 
 ### Open capability system
+
 Allow the community to build providers and features that fulfill platform capabilities without hardcoding one implementation.
 
 ---

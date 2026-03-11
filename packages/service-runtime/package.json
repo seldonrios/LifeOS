@@ -1,0 +1,22 @@
+{
+  "name": "@lifeos/service-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lifeos/config": "workspace:*",
+    "@lifeos/secrets": "workspace:*",
+    "@lifeos/security": "workspace:*",
+    "@lifeos/observability": "workspace:*",
+    "@lifeos/health": "workspace:*",
+    "@lifeos/policy-engine": "workspace:*"
+  }
+}

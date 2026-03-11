@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeos.dev/schemas/task.json",
+  "title": "Task Domain Event",
+  "description": "Schema stub for task.* events such as task.created and task.failed.",
+  "type": "object",
+  "required": ["id", "type", "source", "timestamp", "version", "data"],
+  "properties": {
+    "id": { "type": "string" },
+    "type": { "type": "string", "pattern": "^task\\..+" },
+    "source": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "version": { "type": "string" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,21 @@
+{
+  "name": "@lifeos/agent-mesh",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/life-graph": "workspace:*",
+    "@lifeos/goal-engine": "workspace:*",
+    "@lifeos/policy-engine": "workspace:*",
+    "@lifeos/reasoning": "workspace:*"
+  }
+}

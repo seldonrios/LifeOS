@@ -1,0 +1,20 @@
+# Copy this file to config/local.yaml for machine-specific overrides.
+# config/local.yaml is git-ignored.
+# Array replacement rule:
+# - Any array defined here fully replaces the corresponding array from defaults/profile.
+
+profile: assistant
+
+smtp:
+  host: localhost
+  port: 1025
+
+services:
+  moduleLoader:
+    host: localhost
+    port: 4204
+
+modules:
+  # Example: this list replaces any inherited array for the same key.
+  enabled:
+    - reasoning-engine

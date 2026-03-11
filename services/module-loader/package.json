@@ -1,0 +1,14 @@
+{
+  "name": "@lifeos/module-loader-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/module-loader": "workspace:*",
+    "@lifeos/service-catalog": "workspace:*",
+    "@lifeos/service-runtime": "workspace:*"
+  }
+}

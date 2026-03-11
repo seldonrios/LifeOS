@@ -1,0 +1,62 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/config"
+    },
+    {
+      "path": "./packages/secrets"
+    },
+    {
+      "path": "./packages/observability"
+    },
+    {
+      "path": "./packages/health"
+    },
+    {
+      "path": "./packages/security"
+    },
+    {
+      "path": "./packages/event-bus"
+    },
+    {
+      "path": "./packages/life-graph"
+    },
+    {
+      "path": "./packages/reasoning"
+    },
+    {
+      "path": "./packages/policy-engine"
+    },
+    {
+      "path": "./packages/approval-workflow"
+    },
+    {
+      "path": "./packages/goal-engine"
+    },
+    {
+      "path": "./packages/agent-mesh"
+    },
+    {
+      "path": "./packages/service-catalog"
+    },
+    {
+      "path": "./packages/capability-registry"
+    },
+    {
+      "path": "./packages/dependency-engine"
+    },
+    {
+      "path": "./packages/feature-gates"
+    },
+    {
+      "path": "./packages/module-loader"
+    },
+    {
+      "path": "./packages/schema-registry"
+    },
+    {
+      "path": "./packages/service-runtime"
+    }
+  ]
+}

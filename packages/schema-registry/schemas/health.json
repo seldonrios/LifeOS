@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeos.dev/schemas/health.json",
+  "title": "Health Domain Event",
+  "description": "Schema stub for health.* events such as health.metric.recorded.",
+  "type": "object",
+  "required": ["id", "type", "source", "timestamp", "version", "data"],
+  "properties": {
+    "id": { "type": "string" },
+    "type": { "type": "string", "pattern": "^health\\..+" },
+    "source": { "type": "string" },
+    "timestamp": { "type": "string", "format": "date-time" },
+    "version": { "type": "string" },
+    "data": {
+      "type": "object",
+      "properties": {
+        "metric": { "type": "string" },
+        "value": { "type": ["number", "string"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,6 @@
+line-length = 100
+target-version = "py311"
+src = ["packages"]
+
+[lint]
+select = ["E", "F", "I"]

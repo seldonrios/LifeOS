@@ -1,0 +1,40 @@
+profile: assistant
+logLevel: info
+
+smtp:
+  host: localhost
+  port: 1025
+
+features:
+  voice: true
+  vision: false
+  localLlm: false
+  cloudLlm: true
+  automation: true
+  scheduling: true
+  deviceControl: false
+  backgroundAgents: true
+
+services:
+  secretsService:
+    host: secrets-service
+    port: 4101
+  serviceCatalog:
+    host: service-catalog
+    port: 4102
+  featureFlagService:
+    host: feature-flag-service
+    port: 4103
+  moduleLoader:
+    host: module-loader
+    port: 4104
+
+modules:
+  enabled:
+    - reasoning-engine
+    - goal-engine
+    - calendar
+    - health
+
+hardware:
+  available: []

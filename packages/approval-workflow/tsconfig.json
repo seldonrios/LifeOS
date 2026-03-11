@@ -1,0 +1,22 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../event-bus"
+    },
+    {
+      "path": "../policy-engine"
+    },
+    {
+      "path": "../security"
+    },
+    {
+      "path": "../config"
+    }
+  ]
+}

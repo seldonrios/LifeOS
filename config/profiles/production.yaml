@@ -1,0 +1,29 @@
+# Production profile: full stack with all modules and services enabled.
+profile: production
+
+services:
+  secretsService:
+    host: secrets-service
+    port: 4101
+  serviceCatalog:
+    host: service-catalog
+    port: 4102
+  featureFlagService:
+    host: feature-flag-service
+    port: 4103
+  moduleLoader:
+    host: module-loader
+    port: 4104
+
+modules:
+  enabled:
+    - reasoning-engine
+    - goal-engine
+    - calendar
+    - fitness
+    - voice
+    - vision-ingestion-lite
+    - room-awareness
+    - homesteading-lite
+    - automation-framework
+    - personal-ai-node

@@ -1,0 +1,25 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../event-bus"
+    },
+    {
+      "path": "../life-graph"
+    },
+    {
+      "path": "../policy-engine"
+    },
+    {
+      "path": "../approval-workflow"
+    },
+    {
+      "path": "../config"
+    }
+  ]
+}

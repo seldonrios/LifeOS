@@ -1,0 +1,8 @@
+node_modules/
+dist/
+modules/*/dist/
+.env
+.secrets/
+config/local.yaml
+*.creds
+.pnpm-store/

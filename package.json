@@ -1,0 +1,50 @@
+{
+  "name": "lifeos-monorepo",
+  "private": true,
+  "packageManager": "pnpm@9.15.4",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "prepare": "husky install .husky",
+    "validate": "pnpm run lint && pnpm run test && pnpm run format:check && pnpm run typecheck && pnpm run build:modules",
+    "test": "pnpm -r --if-present run test",
+    "lint": "eslint . && tsx scripts/ruff-task.ts check",
+    "format": "prettier --write . && tsx scripts/ruff-task.ts format",
+    "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",
+    "typecheck": "tsc --build tsconfig.packages.json",
+    "build:modules": "tsx scripts/build-modules.ts",
+    "scaffold": "tsx scripts/scaffold.ts"
+  },
+  "lint-staged": {
+    "packages/**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "modules/**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "packages/**/*.py": [
+      "ruff format",
+      "ruff check --fix"
+    ],
+    "**/*.{json,yaml,yml,md}": [
+      "prettier --write"
+    ]
+  },
+  "devDependencies": {
+    "@commitlint/cli": "^19.0.0",
+    "@commitlint/config-conventional": "^19.0.0",
+    "@types/node": "^22",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^9.0.0",
+    "husky": "^9.0.0",
+    "lint-staged": "^15.0.0",
+    "prettier": "^3.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}

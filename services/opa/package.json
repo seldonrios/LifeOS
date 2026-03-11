@@ -1,0 +1,11 @@
+{
+  "name": "@lifeos/opa-service",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@lifeos/service-runtime": "workspace:*"
+  }
+}

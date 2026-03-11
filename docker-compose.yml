@@ -1,0 +1,167 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    env_file: .env
+    ports:
+      - '5432:5432'
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U lifeos']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [lifeos-network]
+
+  life-graph-db:
+    image: neo4j:5-community
+    env_file: .env
+    ports:
+      - '7474:7474'
+      - '7687:7687'
+    networks: [lifeos-network]
+
+  nats:
+    image: nats:2-alpine
+    env_file: .env
+    command: ['-js']
+    ports:
+      - '4222:4222'
+      - '8222:8222'
+    networks: [lifeos-network]
+
+  opa:
+    image: openpolicyagent/opa:latest-static
+    env_file: .env
+    command: ['run', '--server', '--addr=0.0.0.0:8181']
+    ports:
+      - '8181:8181'
+    networks: [lifeos-network]
+
+  init-db:
+    image: postgres:16-alpine
+    env_file: .env
+    command: ['/scripts/init-postgres.sh']
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./scripts:/scripts
+    restart: 'no'
+    networks: [lifeos-network]
+
+  reasoning-service:
+    build: ./services/reasoning
+    env_file: .env
+    ports:
+      - '3001:3001'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  goal-engine-service:
+    build: ./services/goal-engine
+    env_file: .env
+    ports:
+      - '3002:3002'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  agent-mesh-service:
+    build: ./services/agent-mesh
+    env_file: .env
+    ports:
+      - '3003:3003'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  simulation-service:
+    build: ./services/simulation
+    env_file: .env
+    ports:
+      - '3004:3004'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  dashboard:
+    build: ./services/dashboard
+    env_file: .env
+    ports:
+      - '3000:3000'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  auth-service:
+    build: ./services/auth
+    env_file: .env
+    ports:
+      - '3005:3005'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  secrets-service:
+    build: ./services/secrets
+    env_file: .env
+    ports:
+      - '3006:3006'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  service-catalog:
+    build: ./services/service-catalog
+    env_file: .env
+    ports:
+      - '3007:3007'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  feature-flag-service:
+    build: ./services/feature-flags
+    env_file: .env
+    ports:
+      - '3008:3008'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib
+    env_file: .env
+    ports:
+      - '4317:4317'
+      - '4318:4318'
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol-contrib/config.yaml
+    networks: [lifeos-network]
+
+  tempo:
+    image: grafana/tempo:latest
+    env_file: .env
+    ports:
+      - '3200:3200'
+    networks: [lifeos-network]
+
+  grafana:
+    image: grafana/grafana:latest
+    env_file: .env
+    ports:
+      - '3100:3100'
+    networks: [lifeos-network]
+
+networks:
+  lifeos-network:
+    driver: bridge

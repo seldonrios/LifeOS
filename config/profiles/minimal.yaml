@@ -1,0 +1,12 @@
+profile: minimal
+
+features:
+  voice: false
+  vision: false
+  localLlm: false
+  cloudLlm: false
+  deviceControl: false
+
+modules:
+  enabled:
+    - health

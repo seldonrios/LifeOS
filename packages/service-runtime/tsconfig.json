@@ -1,0 +1,28 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../config"
+    },
+    {
+      "path": "../secrets"
+    },
+    {
+      "path": "../security"
+    },
+    {
+      "path": "../observability"
+    },
+    {
+      "path": "../health"
+    },
+    {
+      "path": "../policy-engine"
+    }
+  ]
+}

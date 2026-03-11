@@ -1,0 +1,13 @@
+profile: multimodal
+
+features:
+  voice: true
+  vision: true
+
+modules:
+  enabled:
+    - reasoning-engine
+    - goal-engine
+    - calendar
+    - voice
+    - vision-ingestion-lite

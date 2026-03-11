@@ -1,0 +1,24 @@
+{
+  "name": "@lifeos/goal-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/life-graph": "workspace:*",
+    "@lifeos/policy-engine": "workspace:*",
+    "@lifeos/approval-workflow": "workspace:*",
+    "@lifeos/config": "workspace:*"
+  },
+  "scripts": {
+    "test": "tsx --test src/state-machine.test.ts"
+  }
+}

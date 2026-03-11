@@ -1,0 +1,22 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/modules",
+    "composite": false,
+    "baseUrl": ".",
+    "paths": {
+      "@lifeos/*": ["packages/*/src/index.ts"]
+    },
+    "target": "ES2022",
+    "lib": ["ES2022"],
+    "moduleResolution": "Bundler",
+    "module": "ESNext"
+  },
+  "include": [
+    "modules/*/agent.ts",
+    "modules/*/events.ts",
+    "modules/*/schema.ts",
+    "modules/*/module.config.ts",
+    "modules/*/manifest.ts"
+  ]
+}

@@ -1,0 +1,54 @@
+asyncapi: 3.0.0
+info:
+  title: LifeOS Event Bus
+  version: 0.1.0
+servers:
+  nats:
+    host: localhost:4222
+    protocol: nats
+    url: nats://localhost:4222
+channels:
+  goal.*:
+    address: goal.*
+    x-status: stub
+    messages:
+      goalEvent:
+        $ref: './schemas/goal.json'
+  plan.*:
+    address: plan.*
+    x-status: stub
+    messages:
+      planEvent:
+        $ref: './schemas/plan.json'
+  task.*:
+    address: task.*
+    x-status: stub
+    messages:
+      taskEvent:
+        $ref: './schemas/task.json'
+  person.*:
+    address: person.*
+    x-status: stub
+    messages:
+      personEvent:
+        $ref: './schemas/person.json'
+  health.*:
+    address: health.*
+    x-status: stub
+    messages:
+      healthEvent:
+        $ref: './schemas/health.json'
+  production.*:
+    address: production.*
+    x-status: stub
+    messages:
+      productionEvent:
+        $ref: './schemas/production.json'
+  agent.*:
+    address: agent.*
+    x-status: stub
+    messages:
+      agentEvent:
+        payload:
+          type: object
+          description: Stub payload for agent.* events.

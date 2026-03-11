@@ -1,0 +1,22 @@
+{
+  "name": "@lifeos/module-loader",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "tsx --test src/boot.test.ts"
+  },
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "dependencies": {
+    "@lifeos/config": "workspace:*",
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/service-catalog": "workspace:*"
+  }
+}
