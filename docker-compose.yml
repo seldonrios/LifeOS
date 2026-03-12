@@ -22,10 +22,16 @@ services:
   nats:
     image: nats:2-alpine
     env_file: .env
-    command: ['-js']
+    command: ['--config', '/etc/nats/nats-server.conf']
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
     ports:
       - '4222:4222'
       - '8222:8222'
+    volumes:
+      - ./config/nats-server.conf:/etc/nats/nats-server.conf:ro
+      - ./.nats/resolver:/data/resolver
     networks: [lifeos-network]
 
   opa:

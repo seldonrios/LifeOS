@@ -5,4 +5,8 @@ modules/*/dist/
 .secrets/
 config/local.yaml
 *.creds
+.nats/creds/
+.nats/nsc/
+.nats/resolver/
+.nats/accounts/
 .pnpm-store/

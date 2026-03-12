@@ -6,7 +6,7 @@
       "version": "3.11"
     }
   },
-  "postCreateCommand": "npm install -g pnpm@9.15.4 && pip install uv && uv tool install ruff && pnpm install",
+  "postCreateCommand": "npm install -g pnpm@9.15.4 && pip install uv && uv tool install ruff && curl -sf https://install.nats.io/nsc | sh && pnpm install",
   "customizations": {
     "vscode": {
       "extensions": [
