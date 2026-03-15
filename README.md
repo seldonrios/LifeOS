@@ -202,10 +202,11 @@ That flexibility is a design goal.
 
 ## Start Here
 
+- Get started with [local setup](docs/SETUP.md)
 - Read the [documentation index](docs/README.md)
 - Review the [Phase 1 landing page](docs/phase-1/README.md)
 - Review the [Phase 1 reference architecture](docs/phase-1/reference-architecture.md)
-- See the [contributor guide](CONTRIBUTING.md)
+- See the [contributor guide](docs/CONTRIBUTING.md)
 - Explore the [contributor map](docs/community/contributor-map.md)
 
 ---
@@ -297,10 +298,11 @@ Help make personal AI more open, local, modular, and human-centered.
 
 ## Quick Links
 
+- [Setup Guide](docs/SETUP.md)
 - [Docs Index](docs/README.md)
 - [Phase 1 Overview](docs/phase-1/README.md)
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
-- [Contributing Guide](CONTRIBUTING.md)
+- [Contributing Guide](docs/CONTRIBUTING.md)
 - [Contributor Map](docs/community/contributor-map.md)
 
 ---
