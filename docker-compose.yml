@@ -162,18 +162,6 @@ services:
         condition: service_completed_successfully
     networks: [lifeos-network]
 
-  module-loader-service:
-    build:
-      context: .
-      dockerfile: services/module-loader/Dockerfile
-    env_file: .env
-    ports:
-      - '3009:3008'
-    depends_on:
-      init-db:
-        condition: service_completed_successfully
-    networks: [lifeos-network]
-
   otel-collector:
     image: otel/opentelemetry-collector-contrib
     env_file: .env

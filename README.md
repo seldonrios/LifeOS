@@ -215,6 +215,8 @@ That flexibility is a design goal.
 
 This repository is currently **docs-first**.
 
+Infrastructure runtime note: wrappers under `services/nats`, `services/opa`, `services/postgres`, `services/life-graph-db`, `services/otel-collector`, `services/tempo`, and `services/grafana` are retired placeholders. Runtime source of truth for these components is the official images declared in `docker-compose.yml`.
+
 That means the primary deliverables right now are:
 
 - architecture documents
