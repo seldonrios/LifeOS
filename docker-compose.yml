@@ -55,7 +55,9 @@ services:
     networks: [lifeos-network]
 
   reasoning-service:
-    build: ./services/reasoning
+    build:
+      context: .
+      dockerfile: services/reasoning/Dockerfile
     env_file: .env
     ports:
       - '3001:3001'
@@ -65,7 +67,9 @@ services:
     networks: [lifeos-network]
 
   goal-engine-service:
-    build: ./services/goal-engine
+    build:
+      context: .
+      dockerfile: services/goal-engine/Dockerfile
     env_file: .env
     ports:
       - '3002:3002'
@@ -75,7 +79,9 @@ services:
     networks: [lifeos-network]
 
   agent-mesh-service:
-    build: ./services/agent-mesh
+    build:
+      context: .
+      dockerfile: services/agent-mesh/Dockerfile
     env_file: .env
     ports:
       - '3003:3003'
@@ -85,7 +91,9 @@ services:
     networks: [lifeos-network]
 
   simulation-service:
-    build: ./services/simulation
+    build:
+      context: .
+      dockerfile: services/simulation/Dockerfile
     env_file: .env
     ports:
       - '3004:3004'
@@ -95,7 +103,9 @@ services:
     networks: [lifeos-network]
 
   dashboard:
-    build: ./services/dashboard
+    build:
+      context: .
+      dockerfile: services/dashboard/Dockerfile
     env_file: .env
     ports:
       - '3000:3000'
@@ -105,7 +115,9 @@ services:
     networks: [lifeos-network]
 
   auth-service:
-    build: ./services/auth
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
     env_file: .env
     ports:
       - '3005:3005'
@@ -115,7 +127,9 @@ services:
     networks: [lifeos-network]
 
   secrets-service:
-    build: ./services/secrets
+    build:
+      context: .
+      dockerfile: services/secrets/Dockerfile
     env_file: .env
     ports:
       - '3006:3006'
@@ -125,7 +139,9 @@ services:
     networks: [lifeos-network]
 
   service-catalog:
-    build: ./services/service-catalog
+    build:
+      context: .
+      dockerfile: services/service-catalog/Dockerfile
     env_file: .env
     ports:
       - '3007:3007'
@@ -135,10 +151,24 @@ services:
     networks: [lifeos-network]
 
   feature-flag-service:
-    build: ./services/feature-flags
+    build:
+      context: .
+      dockerfile: services/feature-flags/Dockerfile
     env_file: .env
     ports:
       - '3008:3008'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    networks: [lifeos-network]
+
+  module-loader-service:
+    build:
+      context: .
+      dockerfile: services/module-loader/Dockerfile
+    env_file: .env
+    ports:
+      - '3009:3008'
     depends_on:
       init-db:
         condition: service_completed_successfully

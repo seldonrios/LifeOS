@@ -8,4 +8,4 @@ FROM node:20-alpine AS runtime
 WORKDIR /app
 RUN corepack enable
 COPY --from=deps /app /app
-CMD ["pnpm", "--filter", "@lifeos/secrets-service", "run", "start"]
+CMD ["pnpm", "--filter", "@lifeos/module-loader-service", "run", "start"]

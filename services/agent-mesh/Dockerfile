@@ -1,4 +1,11 @@
-FROM node:20-alpine
+FROM node:20-alpine AS deps
 WORKDIR /app
+RUN corepack enable
 COPY . .
-CMD ["sh", "-c", "echo 'Phase-1 scaffold: agent-mesh service runtime is not wired yet.'; tail -f /dev/null"]
+RUN pnpm install --frozen-lockfile
+
+FROM node:20-alpine AS runtime
+WORKDIR /app
+RUN corepack enable
+COPY --from=deps /app /app
+CMD ["pnpm", "--filter", "@lifeos/agent-mesh-service", "run", "start"]
