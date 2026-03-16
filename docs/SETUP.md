@@ -39,10 +39,8 @@ docker compose up
 7. Confirm `init-db` completes before app services continue.
 8. Confirm startup diagnostics are emitted by a running service.
 
-In this repository, the diagnostics payload is logged when `@lifeos/module-loader` runs (`message: "Startup Diagnostics Report"`). The default `docker-compose.yml` does not define a standalone `module-loader` service, so check logs from the application services that run in this stack.
-
 ```bash
-docker compose logs reasoning-service goal-engine-service agent-mesh-service simulation-service dashboard auth-service secrets-service service-catalog feature-flag-service | grep "Startup Diagnostics Report"
+docker compose logs module-loader | grep "Startup Diagnostics Report"
 ```
 
 9. Continue only when the Ready to Contribute signal is met.

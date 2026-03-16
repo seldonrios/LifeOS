@@ -58,12 +58,22 @@ export async function emitStartupReport(
     data: report,
   };
 
-  await eventBus.publish('system.startup.report', event);
-
   console.log(
     JSON.stringify({
       message: 'Startup Diagnostics Report',
       report,
     }),
   );
+
+  try {
+    await eventBus.publish('system.startup.report', event);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown publish error';
+    console.warn(
+      JSON.stringify({
+        message: 'event bus unavailable, skipping publish',
+        error: message,
+      }),
+    );
+  }
 }

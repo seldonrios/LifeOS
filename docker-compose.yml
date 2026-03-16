@@ -54,6 +54,23 @@ services:
     restart: 'no'
     networks: [lifeos-network]
 
+  module-loader:
+    build:
+      context: .
+      dockerfile: services/module-loader/Dockerfile
+    env_file: .env
+    environment:
+      LIFEOS_MODULES_DIR: /app/modules
+      LIFEOS_PROFILE: assistant
+    ports:
+      - '3009:3009'
+    depends_on:
+      init-db:
+        condition: service_completed_successfully
+    volumes:
+      - ./modules:/app/modules:ro
+    networks: [lifeos-network]
+
   reasoning-service:
     build:
       context: .
