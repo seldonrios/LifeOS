@@ -10,4 +10,3 @@ export var CapabilityStatus;
     CapabilityStatus["degraded"] = "degraded";
     CapabilityStatus["unavailable"] = "unavailable";
 })(CapabilityStatus || (CapabilityStatus = {}));
-//# sourceMappingURL=types.js.map

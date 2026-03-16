@@ -1,4 +1,4 @@
-import { access, readdir, writeFile, unlink } from 'node:fs/promises';
+import { access, readdir, rm, writeFile, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
@@ -25,8 +25,20 @@ async function buildModule(moduleName: string): Promise<number> {
     return 0;
   }
 
+  await rm(outDir, { recursive: true, force: true });
+
   const tmpConfig = JSON.stringify(
-    { extends: './tsconfig.modules.json', compilerOptions: { outDir }, include },
+    {
+      extends: './tsconfig.modules.json',
+      compilerOptions: {
+        outDir,
+        rootDir: moduleDir,
+        paths: {
+          '@lifeos/*': ['packages/*/dist/index.d.ts'],
+        },
+      },
+      include,
+    },
     null,
     2,
   );
@@ -40,6 +52,7 @@ async function buildModule(moduleName: string): Promise<number> {
     });
 
     if (result.error) throw result.error;
+
     return typeof result.status === 'number' ? result.status : 1;
   } finally {
     await unlink(tmpPath).catch(() => undefined);

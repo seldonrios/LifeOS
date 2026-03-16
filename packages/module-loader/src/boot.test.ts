@@ -28,9 +28,10 @@ class MockEventBus implements EventBus {
 test('runModuleLoaderBoot emits startup diagnostics report event and stdout log', async () => {
   const tempRoot = await mkdtemp(join(tmpdir(), 'lifeos-modules-'));
   const moduleDir = join(tempRoot, 'voice-module');
-  await mkdir(moduleDir);
+  const distDir = join(moduleDir, 'dist');
+  await mkdir(distDir, { recursive: true });
   await writeFile(
-    join(moduleDir, 'manifest.ts'),
+    join(distDir, 'manifest.js'),
     [
       'export default {',
       "  id: 'voice-module',",

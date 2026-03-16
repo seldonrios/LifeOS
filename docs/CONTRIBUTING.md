@@ -27,7 +27,7 @@ This is the canonical contributor guide for LifeOS.
 2. Enter a kebab-case package name and a clear description.
 3. If you selected `(1) TypeScript package`, implement `src/index.ts` and `src/types.ts`.
 4. If you selected `(2) Python package`, implement `src/<name>/__init__.py` and `src/<name>/types.py`, then update dependencies in `pyproject.toml` as needed.
-5. Run `pnpm run validate` and ensure it passes before opening a PR.
+5. Run `pnpm run validate` and ensure it passes before opening a PR. This finishes with `pnpm run build:modules`, so module compilation failures block validation.
 
 ## How to Add a New Light Module
 
@@ -35,7 +35,8 @@ This is the canonical contributor guide for LifeOS.
 2. Fill `manifest.ts` with provides/requires/optional/hardware/degraded mode details.
 3. Fill `events.ts` with at least one subscription or emission stub.
 4. Fill `agent.ts` with the module agent role definition.
-5. Run `pnpm run validate`.
+5. Run `pnpm run build:modules` before testing the loader path. The runtime loader reads `modules/<name>/dist/manifest.js` and never imports source `manifest.ts` files directly.
+6. Run `pnpm run validate`. This enforces the same precompile gate automatically because it ends with `pnpm run build:modules`.
 
 ## How to Add a New Docker Service
 

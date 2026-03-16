@@ -57,11 +57,13 @@ export async function scanModules(modulesDir: string): Promise<ModuleManifest[]>
       continue;
     }
 
-    const manifestPath = resolve(modulesDir, entry.name, 'manifest.ts');
+    const manifestPath = resolve(modulesDir, entry.name, 'dist', 'manifest.js');
     try {
       await access(manifestPath);
     } catch {
-      console.warn(`Skipping module '${entry.name}': manifest.ts not found.`);
+      console.warn(
+        `Skipping module '${entry.name}': compiled dist/manifest.js not found. Run build:modules first.`,
+      );
       continue;
     }
 

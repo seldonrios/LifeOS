@@ -27,7 +27,7 @@ git clone <repo-url> && cd lifeos
 pnpm run validate
 ```
 
-This command must exit 0. It runs lint -> test -> format:check -> typecheck -> build:modules.
+This command must exit 0. It runs lint -> test -> format:check -> typecheck -> build:modules. The final `build:modules` step is the precompile gate for light modules because the runtime loader reads `modules/<name>/dist/manifest.js` rather than source `manifest.ts` files.
 
 5. Copy `.env.example` to `.env` and populate required secrets.
 6. Start the platform stack.
@@ -72,6 +72,8 @@ scripts/init-secrets.sh
 ```bash
 pnpm run validate
 ```
+
+This includes `pnpm run build:modules`, which must succeed before the module loader can discover light modules from `modules/<name>/dist/manifest.js`.
 
 7. Start services.
 
