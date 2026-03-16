@@ -68,12 +68,24 @@ test('runModuleLoaderBoot emits startup diagnostics report event and stdout log'
       profile: 'assistant',
       catalog,
       eventBus: bus,
+      degradedSecrets: [
+        {
+          degraded: true,
+          reason: "Optional secret 'voice_api_key' is unavailable.",
+        },
+      ],
     });
 
     assert.equal(report.modules.length, 1);
     assert.equal(report.modules[0]?.state, 'enabled');
+    assert.equal(report.degradedSecrets?.length, 1);
+    assert.match(report.recommendations.join(' '), /Optional secret 'voice_api_key' is unavailable\./);
     assert.equal(bus.published.length, 1);
     assert.equal(bus.published[0]?.topic, 'system.startup.report');
+    assert.equal(
+      (bus.published[0]?.event.data as { degradedSecrets?: unknown[] }).degradedSecrets?.length,
+      1,
+    );
     assert.equal(logs.length, 1);
     assert.match(logs[0] ?? '', /Startup Diagnostics Report/);
   } finally {

@@ -3,6 +3,7 @@ import type {
   DependencySpec,
   HardwareRequirementSpec,
 } from '@lifeos/capability-registry';
+import type { DegradedMarker } from '@lifeos/secrets';
 
 export interface ModuleManifest {
   id: string;
@@ -29,6 +30,7 @@ export interface ModuleDiagnostic {
 export interface StartupReport {
   profile: string;
   modules: ModuleDiagnostic[];
+  degradedSecrets?: DegradedMarker[];
   recommendations: string[];
   emittedAt: string;
 }

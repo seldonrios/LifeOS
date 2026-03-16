@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
+import { dirname, resolve } from 'node:path';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { SecretsError } from '@lifeos/secrets';
 
 import { startService } from './index';
+
+const thisFile = fileURLToPath(import.meta.url);
+const rootDir = resolve(dirname(thisFile), '../../../');
+const localConfigPath = resolve(rootDir, 'config/local.yaml');
 
 const testObservabilityFactory = () => ({
   startSpan() {
@@ -53,6 +60,28 @@ async function httpGet(port: number, path: string): Promise<{ status: number; bo
     status: response.status,
     body: await response.json(),
   };
+}
+
+async function withLocalConfig(content: string, fn: () => Promise<void>): Promise<void> {
+  let original: string | null = null;
+  try {
+    await access(localConfigPath);
+    original = await readFile(localConfigPath, 'utf8');
+  } catch {
+    original = null;
+  }
+
+  await writeFile(localConfigPath, content, 'utf8');
+
+  try {
+    await fn();
+  } finally {
+    if (original === null) {
+      await rm(localConfigPath, { force: true });
+    } else {
+      await writeFile(localConfigPath, original, 'utf8');
+    }
+  }
 }
 
 test('startService boots successfully with no hooks', async () => {
@@ -178,7 +207,97 @@ test('required_if_feature_enabled secret miss degrades when feature is disabled'
     isFeatureEnabled: async () => false,
   });
 
+  assert.equal(runtime.degradedSecrets.length, 1);
+
   await runtime.stop();
+});
+
+test('optional secret miss marks readiness degraded', async () => {
+  const port = await getFreePort();
+
+  const runtime = await startService({
+    serviceName: 'service-runtime-optional-secret-degraded',
+    port,
+    observabilityFactory: testObservabilityFactory,
+    secretStore: {
+      async get() {
+        return null;
+      },
+      async set() {
+        return;
+      },
+    },
+    secretRefs: [
+      {
+        name: 'smtp_password',
+        policy: 'optional',
+      },
+    ],
+  });
+
+  assert.equal(runtime.degradedSecrets.length, 1);
+
+  const health = await runtime.getHealth();
+  assert.equal(health.status, 'degraded');
+  assert.equal(health.checks.secrets?.status, 'degraded');
+
+  const readiness = (await httpGet(port, '/health/ready')) as {
+    status: number;
+    body: {
+      status: string;
+      checks: Record<string, { status: string }>;
+    };
+  };
+  assert.equal(readiness.status, 503);
+  assert.equal(readiness.body.status, 'degraded');
+  assert.equal(readiness.body.checks.secrets?.status, 'degraded');
+
+  await runtime.stop();
+});
+
+test('startService reuses config secret outcomes instead of re-reading matching refs', async () => {
+  await withLocalConfig(
+    [
+      'profile: assistant',
+      'smtp:',
+      '  host: "!secret smtp_host"',
+      '',
+    ].join('\n'),
+    async () => {
+      const port = await getFreePort();
+      let getCount = 0;
+
+      const runtime = await startService({
+        serviceName: 'service-runtime-config-secret-reuse',
+        port,
+        observabilityFactory: testObservabilityFactory,
+        secretStore: {
+          async get(name) {
+            if (name === 'smtp_host') {
+              getCount += 1;
+            }
+            return null;
+          },
+          async set() {
+            return;
+          },
+        },
+        secretRefs: [
+          {
+            name: 'smtp_host',
+            policy: 'optional',
+            configPath: 'smtp.host',
+          },
+        ],
+      });
+
+      assert.equal(getCount, 1);
+      assert.equal(runtime.degradedSecrets.length, 1);
+      assert.match(runtime.degradedSecrets[0]?.reason ?? '', /smtp_host/);
+
+      await runtime.stop();
+    },
+  );
 });
 
 test('observability initialization failure fails startup by default', async () => {

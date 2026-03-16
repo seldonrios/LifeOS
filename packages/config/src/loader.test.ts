@@ -27,6 +27,15 @@ class StaticSecretStore implements SecretStore {
   }
 }
 
+const missingSecretStore: SecretStore = {
+  async get(): Promise<string | null> {
+    return null;
+  },
+  async set() {
+    return;
+  },
+};
+
 async function withLocalConfig(content: string, fn: () => Promise<void>): Promise<void> {
   let original: string | null = null;
   try {
@@ -85,7 +94,7 @@ test('loadConfig resolves defaults -> profile -> local -> env -> secret store', 
     ].join('\n'),
     async () => {
       await withEnv({ LIFEOS__features__vision: 'true' }, async () => {
-        const config = await loadConfig({
+        const { config, degraded } = await loadConfig({
           profile: 'multimodal',
           secretStore: new StaticSecretStore(),
         });
@@ -93,6 +102,7 @@ test('loadConfig resolves defaults -> profile -> local -> env -> secret store', 
         assert.equal(config.profile, 'assistant');
         assert.equal(config.features.vision, true);
         assert.equal(config.smtp.host, 'smtp.from.secret-store');
+        assert.deepEqual(degraded, []);
       });
     },
   );
@@ -102,4 +112,73 @@ test('loadConfig fails fast for invalid env override values', async () => {
   await withEnv({ LIFEOS__features__voice: 'not-a-bool' }, async () => {
     await assert.rejects(() => loadConfig({ profile: 'assistant' }), ConfigError);
   });
+});
+
+test('loadConfig tolerates degraded secret-backed required fields at exact degraded paths', async () => {
+  await withLocalConfig(
+    [
+      'profile: assistant',
+      'smtp:',
+      '  host: "!secret smtp_host"',
+      '',
+    ].join('\n'),
+    async () => {
+      const { config, degraded, degradedPaths, secretOutcomes } = await loadConfig({
+        secretStore: missingSecretStore,
+        secretRefs: [
+          {
+            name: 'smtp_host',
+            policy: 'optional',
+            configPath: 'smtp.host',
+          },
+        ],
+      });
+
+      assert.equal(config.smtp.host, undefined);
+      assert.equal(degraded.length, 1);
+      assert.deepEqual(degradedPaths, ['smtp.host']);
+      assert.equal(secretOutcomes.length, 1);
+      assert.equal(secretOutcomes[0]?.path, 'smtp.host');
+      assert.equal(secretOutcomes[0]?.status, 'degraded');
+    },
+  );
+});
+
+test('loadConfig still fails for non-degraded post-resolution schema errors', async () => {
+  await withLocalConfig(
+    [
+      'profile: assistant',
+      'smtp:',
+      '  host: "!secret smtp_host"',
+      '',
+    ].join('\n'),
+    async () => {
+      const invalidSecretStore: SecretStore = {
+        async get(name: string): Promise<string | null> {
+          if (name === 'smtp_host') {
+            return '';
+          }
+          return null;
+        },
+        async set() {
+          return;
+        },
+      };
+
+      await assert.rejects(
+        () =>
+          loadConfig({
+            secretStore: invalidSecretStore,
+            secretRefs: [
+              {
+                name: 'smtp_host',
+                policy: 'optional',
+                configPath: 'smtp.host',
+              },
+            ],
+          }),
+        ConfigError,
+      );
+    },
+  );
 });

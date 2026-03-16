@@ -3,13 +3,18 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import type { SecretStore } from '@lifeos/secrets';
+import { ZodIssue } from 'zod';
 import { parse } from 'yaml';
 
 import { applyEnvOverrides } from './env-override';
 import { resolveProfile } from './profile';
 import { ConfigSchema } from './schema';
 import { resolveSecretRefs } from './secret-refs';
-import { ConfigError, type LoadConfigOptions, type ResolvedConfig } from './types';
+import {
+  ConfigError,
+  type LoadConfigOptions,
+  type LoadConfigResult,
+} from './types';
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -59,9 +64,27 @@ function deepMerge(base: unknown, override: unknown): unknown {
   return override === undefined ? base : override;
 }
 
+function formatIssuePath(path: Array<string | number>): string {
+  return path.reduce<string>((output, segment) => {
+    if (typeof segment === 'number') {
+      return `${output}[${segment}]`;
+    }
+
+    return output ? `${output}.${segment}` : segment;
+  }, '');
+}
+
+function isDegradedPathIssue(issue: ZodIssue, degradedPaths: Set<string>): boolean {
+  if (!degradedPaths.has(formatIssuePath(issue.path))) {
+    return false;
+  }
+
+  return issue.code === 'invalid_type';
+}
+
 export async function loadConfig(
   options: LoadConfigOptions & { secretStore?: SecretStore } = {},
-): Promise<ResolvedConfig> {
+): Promise<LoadConfigResult> {
   const thisFile = fileURLToPath(import.meta.url);
   const rootDir = resolve(dirname(thisFile), '../../../');
   const configDir = resolve(rootDir, 'config');
@@ -87,14 +110,48 @@ export async function loadConfig(
     throw new ConfigError(`Invalid configuration: ${parsedBeforeSecrets.error.message}`);
   }
 
-  const withResolvedSecrets = options.secretStore
-    ? await resolveSecretRefs(parsedBeforeSecrets.data, options.secretStore)
-    : parsedBeforeSecrets.data;
+  const defaultIsFeatureEnabled = (gate: string): boolean => {
+    const features = parsedBeforeSecrets.data.features as Record<string, unknown>;
+    return features[gate] === true;
+  };
 
-  const parsedFinal = ConfigSchema.safeParse(withResolvedSecrets);
+  const secretResolution = options.secretStore
+    ? await resolveSecretRefs(
+        parsedBeforeSecrets.data,
+        options.secretStore,
+        options.secretRefs,
+        options.isFeatureEnabled ?? defaultIsFeatureEnabled,
+      )
+    : {
+        config: parsedBeforeSecrets.data,
+        degraded: [],
+        degradedPaths: [],
+        secretOutcomes: [],
+      };
+
+  const parsedFinal = ConfigSchema.safeParse(secretResolution.config);
   if (!parsedFinal.success) {
-    throw new ConfigError(`Invalid resolved configuration: ${parsedFinal.error.message}`);
+    const degradedPaths = new Set(secretResolution.degradedPaths);
+    const remainingIssues = parsedFinal.error.issues.filter(
+      (issue) => !isDegradedPathIssue(issue, degradedPaths),
+    );
+
+    if (remainingIssues.length > 0) {
+      throw new ConfigError(`Invalid resolved configuration: ${parsedFinal.error.message}`);
+    }
+
+    return {
+      config: secretResolution.config as LoadConfigResult['config'],
+      degraded: secretResolution.degraded,
+      degradedPaths: secretResolution.degradedPaths,
+      secretOutcomes: secretResolution.secretOutcomes,
+    };
   }
 
-  return parsedFinal.data;
+  return {
+    config: parsedFinal.data,
+    degraded: secretResolution.degraded,
+    degradedPaths: secretResolution.degradedPaths,
+    secretOutcomes: secretResolution.secretOutcomes,
+  };
 }

@@ -39,12 +39,20 @@ async function bootstrap(): Promise<void> {
   const modulesDir = process.env.LIFEOS_MODULES_DIR ?? resolve(process.cwd(), 'modules');
   const profile = process.env.LIFEOS_PROFILE ?? 'assistant';
   const eventBus = resolveEventBus();
+  const runtime = await startService({ serviceName: 'module-loader-service', port: 3009 });
 
   try {
     const catalog = new ServiceCatalog();
-    await runModuleLoaderBoot({ modulesDir, profile, catalog, eventBus });
+    await runModuleLoaderBoot({
+      modulesDir,
+      profile,
+      catalog,
+      eventBus,
+      degradedSecrets: runtime.degradedSecrets,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown bootstrap error';
+    await runtime.stop();
     console.error(
       JSON.stringify({
         message: 'module-loader startup diagnostics failed',
@@ -53,8 +61,6 @@ async function bootstrap(): Promise<void> {
     );
     process.exit(1);
   }
-
-  await startService({ serviceName: 'module-loader-service', port: 3009 });
 }
 
 void bootstrap();

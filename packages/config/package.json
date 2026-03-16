@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test src/loader.test.ts"
+    "test": "tsx --test src/loader.test.ts src/secret-refs.test.ts"
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",

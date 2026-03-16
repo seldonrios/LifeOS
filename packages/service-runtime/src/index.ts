@@ -2,7 +2,7 @@ export * from './types';
 
 import { createServer } from 'node:http';
 
-import { loadConfig } from '@lifeos/config';
+import { loadConfig, type ResolvedConfig } from '@lifeos/config';
 import {
   HealthRegistry,
   livenessHandler,
@@ -23,6 +23,19 @@ import type {
   ServiceRuntimeOptions,
   ServiceRuntimePhase,
 } from './types';
+
+function dedupeDegradedMarkers(markers: DegradedMarker[]): DegradedMarker[] {
+  const seen = new Set<string>();
+
+  return markers.filter((marker) => {
+    if (seen.has(marker.reason)) {
+      return false;
+    }
+
+    seen.add(marker.reason);
+    return true;
+  });
+}
 
 function createNoopObservabilityClient(): ObservabilityClient {
   return {
@@ -135,7 +148,7 @@ function createMinimalServer(): {
 
 async function resolveFeatureEnabled(
   opts: ServiceRuntimeOptions,
-  resolvedConfig: Awaited<ReturnType<typeof loadConfig>>,
+  resolvedConfig: ResolvedConfig,
   featureGate: string | undefined,
 ): Promise<boolean | undefined> {
   if (!featureGate) {
@@ -143,7 +156,7 @@ async function resolveFeatureEnabled(
   }
 
   if (opts.isFeatureEnabled) {
-    return opts.isFeatureEnabled(featureGate, resolvedConfig);
+    return opts.isFeatureEnabled(featureGate);
   }
 
   const features = resolvedConfig.features as Record<string, unknown>;
@@ -157,11 +170,31 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
   };
 
   await markPhase('config');
-  const resolvedConfig = await loadConfig({ secretStore: opts.secretStore });
+  const {
+    config: resolvedConfig,
+    degraded: degradedConfigSecrets,
+    secretOutcomes,
+  } = await loadConfig({
+    secretStore: opts.secretStore,
+    secretRefs: opts.secretRefs,
+    isFeatureEnabled: opts.isFeatureEnabled,
+  });
 
   await markPhase('secrets');
+  const configResolvedRefNames = new Set(secretOutcomes.map((outcome) => outcome.name));
+  const configResolvedRefs = new Set(
+    secretOutcomes.map((outcome) => `${outcome.name}:${outcome.path}`),
+  );
   const degradedSecrets: DegradedMarker[] = [];
   for (const secretRef of opts.secretRefs ?? []) {
+    const alreadyProcessed = secretRef.configPath
+      ? configResolvedRefs.has(`${secretRef.name}:${secretRef.configPath}`)
+      : configResolvedRefNames.has(secretRef.name);
+
+    if (alreadyProcessed) {
+      continue;
+    }
+
     const value = (await opts.secretStore?.get(secretRef.name)) ?? null;
     const featureEnabled =
       secretRef.policy === 'required_if_feature_enabled'
@@ -172,6 +205,7 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
       degradedSecrets.push(outcome);
     }
   }
+  const allDegradedSecrets = dedupeDegradedMarkers([...degradedConfigSecrets, ...degradedSecrets]);
 
   const observabilityConfig: ObservabilityConfig = opts.observabilityConfig ?? {
     serviceName: opts.serviceName,
@@ -196,7 +230,7 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
     observabilityClient = createNoopObservabilityClient();
   }
 
-  for (const marker of degradedSecrets) {
+  for (const marker of allDegradedSecrets) {
     observabilityClient.log('warn', marker.reason, {
       serviceName: opts.serviceName,
       phase: 'secrets',
@@ -215,6 +249,19 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
   for (const healthCheck of opts.healthChecks ?? []) {
     healthRegistry.register(healthCheck);
   }
+  healthRegistry.register({
+    name: 'secrets',
+    check: async () => {
+      if (allDegradedSecrets.length === 0) {
+        return { status: 'healthy' as const };
+      }
+
+      return {
+        status: 'degraded' as const,
+        reason: allDegradedSecrets.map((marker) => marker.reason).join('; '),
+      };
+    },
+  });
   healthRegistry.register({
     name: 'liveness',
     check: async () => ({
@@ -263,5 +310,6 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
       return healthRegistry.runAll();
     },
     healthRegistry,
+    degradedSecrets: allDegradedSecrets,
   };
 }

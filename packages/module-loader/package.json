@@ -17,6 +17,7 @@
   "dependencies": {
     "@lifeos/config": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
+    "@lifeos/secrets": "workspace:*",
     "@lifeos/service-catalog": "workspace:*"
   }
 }

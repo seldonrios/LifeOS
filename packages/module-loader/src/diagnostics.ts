@@ -1,10 +1,14 @@
 import { randomUUID } from 'node:crypto';
 
 import type { BaseEvent, EventBus as EventBusClient } from '@lifeos/event-bus';
+import type { DegradedMarker } from '@lifeos/secrets';
 
 import type { ModuleDiagnostic, StartupReport } from './types';
 
-function getRecommendations(diagnostics: ModuleDiagnostic[]): string[] {
+function getRecommendations(
+  diagnostics: ModuleDiagnostic[],
+  degradedSecrets: DegradedMarker[],
+): string[] {
   const recommendations = new Set<string>();
 
   for (const diagnostic of diagnostics) {
@@ -30,17 +34,23 @@ function getRecommendations(diagnostics: ModuleDiagnostic[]): string[] {
     }
   }
 
+  for (const marker of degradedSecrets) {
+    recommendations.add(`${marker.reason} Service is running degraded.`);
+  }
+
   return [...recommendations];
 }
 
 export function buildStartupReport(
   profile: string,
   diagnostics: ModuleDiagnostic[],
+  degradedSecrets: DegradedMarker[] = [],
 ): StartupReport {
   return {
     profile,
     modules: diagnostics,
-    recommendations: getRecommendations(diagnostics),
+    degradedSecrets,
+    recommendations: getRecommendations(diagnostics, degradedSecrets),
     emittedAt: new Date().toISOString(),
   };
 }

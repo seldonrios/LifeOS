@@ -1,4 +1,5 @@
 import type { EventBus } from '@lifeos/event-bus';
+import type { DegradedMarker } from '@lifeos/secrets';
 import type { ServiceCatalog } from '@lifeos/service-catalog';
 
 import { buildStartupReport, emitStartupReport } from './diagnostics';
@@ -15,12 +16,13 @@ export interface ModuleLoaderBootOptions {
   profile: string;
   catalog: ServiceCatalog;
   eventBus: EventBus;
+  degradedSecrets?: DegradedMarker[];
 }
 
 export async function runModuleLoaderBoot(options: ModuleLoaderBootOptions) {
   const manifests = await scanModules(options.modulesDir);
   const diagnostics = resolveModules(manifests, options.catalog, options.profile);
-  const report = buildStartupReport(options.profile, diagnostics);
+  const report = buildStartupReport(options.profile, diagnostics, options.degradedSecrets ?? []);
   await emitStartupReport(report, options.eventBus);
   return report;
 }

@@ -1,7 +1,7 @@
 import type { ResolvedConfig } from '@lifeos/config';
 import type { HealthCheck, HealthRegistry, HealthStatus } from '@lifeos/health';
 import type { ObservabilityClient, ObservabilityConfig } from '@lifeos/observability';
-import type { SecretRef, SecretStore } from '@lifeos/secrets';
+import type { DegradedMarker, SecretRef, SecretStore } from '@lifeos/secrets';
 
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
@@ -42,7 +42,7 @@ export interface ServiceRuntimeOptions {
   observabilityConfig?: ObservabilityConfig;
   observabilityFactory?: (config: ObservabilityConfig) => ObservabilityClient;
   allowObservabilityInitFallback?: boolean;
-  isFeatureEnabled?: (featureGate: string, config: ResolvedConfig) => boolean | Promise<boolean>;
+  isFeatureEnabled?: (featureGate: string) => boolean | Promise<boolean>;
   onRegisterRoutes?: (server: MinimalServer) => Promise<void>;
   onAuthPolicy?: (config: ResolvedConfig) => Promise<void>;
   onPhase?: (phase: ServiceRuntimePhase) => void | Promise<void>;
@@ -54,4 +54,5 @@ export interface ServiceRuntime {
   stop(): Promise<void>;
   getHealth(): Promise<HealthStatus>;
   readonly healthRegistry: HealthRegistry;
+  readonly degradedSecrets: DegradedMarker[];
 }
