@@ -122,35 +122,100 @@ BEGIN
 END
 \$\$;
 
+-- Privilege model:
+-- 1. GRANT ... ON ALL TABLES applies only to objects that already exist at bootstrap time.
+-- 2. ALTER DEFAULT PRIVILEGES applies the same access rules to tables and sequences created later by migrations.
+-- 3. FOR ROLE ${POSTGRES_USER} must match the role that runs CREATE TABLE, which is the superuser-backed migration runner here.
+-- 4. Re-running these ALTER DEFAULT PRIVILEGES statements is safe because the resulting default ACL state is idempotent.
+
 GRANT USAGE ON SCHEMA goal_engine TO lifeos_goal_engine_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA goal_engine TO lifeos_goal_engine_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA goal_engine
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_goal_engine_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA goal_engine
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_goal_engine_rw;
 
 GRANT USAGE ON SCHEMA approval_workflow TO lifeos_approval_workflow_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA approval_workflow TO lifeos_approval_workflow_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA approval_workflow
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_approval_workflow_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA approval_workflow
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_approval_workflow_rw;
 
 GRANT USAGE ON SCHEMA event_store TO lifeos_event_store_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA event_store TO lifeos_event_store_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA event_store
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_event_store_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA event_store
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_event_store_rw;
 
 GRANT USAGE ON SCHEMA auth TO lifeos_auth_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA auth TO lifeos_auth_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA auth
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_auth_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA auth
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_auth_rw;
 
 GRANT USAGE ON SCHEMA secrets TO lifeos_secrets_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA secrets TO lifeos_secrets_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA secrets
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_secrets_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA secrets
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_secrets_rw;
 
 GRANT USAGE ON SCHEMA service_catalog TO lifeos_catalog_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA service_catalog TO lifeos_catalog_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA service_catalog
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_catalog_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA service_catalog
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_catalog_rw;
 
 GRANT USAGE ON SCHEMA feature_flags TO lifeos_feature_flags_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA feature_flags TO lifeos_feature_flags_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA feature_flags
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_feature_flags_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA feature_flags
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_feature_flags_rw;
 
 GRANT USAGE ON SCHEMA scheduler TO lifeos_scheduler_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA scheduler TO lifeos_scheduler_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA scheduler
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_scheduler_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA scheduler
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_scheduler_rw;
 
 GRANT USAGE ON SCHEMA observability TO lifeos_observability_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA observability TO lifeos_observability_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA observability
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_observability_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA observability
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_observability_rw;
 
 GRANT USAGE ON SCHEMA life_graph_rel TO lifeos_life_graph_rel_rw;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA life_graph_rel TO lifeos_life_graph_rel_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA life_graph_rel
+  GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lifeos_life_graph_rel_rw;
+ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA life_graph_rel
+  GRANT USAGE, SELECT ON SEQUENCES TO lifeos_life_graph_rel_rw;
 SQL
+
+echo "Default Privileges Summary"
+"${PSQL[@]}" -d "${POSTGRES_DB}" <<SQL
+SELECT n.nspname AS schema,
+       grantee.rolname AS grantee,
+  string_agg(
+    exploded.privilege_type || CASE WHEN exploded.is_grantable THEN ' (grantable)' ELSE '' END,
+    ', ' ORDER BY exploded.privilege_type
+  ) AS acl
+FROM pg_default_acl d
+JOIN pg_namespace n ON n.oid = d.defaclnamespace
+JOIN pg_roles definer ON definer.oid = d.defaclrole
+JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS exploded ON TRUE
+JOIN pg_roles grantee ON grantee.oid = exploded.grantee
+WHERE definer.rolname = '${POSTGRES_USER}'
+GROUP BY n.nspname, grantee.rolname
+ORDER BY n.nspname, grantee.rolname;
+SQL
+echo "End Default Privileges Summary"
 
 echo "Postgres bootstrap complete: database, schemas, roles, and grants are configured."

@@ -3,12 +3,12 @@ import type { DegradedMarker } from '@lifeos/secrets';
 import type { ServiceCatalog } from '@lifeos/service-catalog';
 
 import { buildStartupReport, emitStartupReport } from './diagnostics';
-import { resolveModules } from './resolver';
-import { scanModules } from './scanner';
+import { resolveModulesWithErrors } from './resolver';
+import { scanModulesWithErrors } from './scanner';
 
 export { buildStartupReport, emitStartupReport } from './diagnostics';
-export { resolveModules } from './resolver';
-export { scanModules } from './scanner';
+export { resolveModules, resolveModulesWithErrors } from './resolver';
+export { scanModules, scanModulesWithErrors } from './scanner';
 export type { ModuleDiagnostic, ModuleManifest, ModuleState, StartupReport } from './types';
 
 export interface ModuleLoaderBootOptions {
@@ -20,8 +20,8 @@ export interface ModuleLoaderBootOptions {
 }
 
 export async function runModuleLoaderBoot(options: ModuleLoaderBootOptions) {
-  const manifests = await scanModules(options.modulesDir);
-  const diagnostics = resolveModules(manifests, options.catalog, options.profile);
+  const scanResults = await scanModulesWithErrors(options.modulesDir);
+  const diagnostics = resolveModulesWithErrors(scanResults, options.catalog, options.profile);
   const report = buildStartupReport(options.profile, diagnostics, options.degradedSecrets ?? []);
   await emitStartupReport(report, options.eventBus);
   return report;

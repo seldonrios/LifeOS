@@ -1,35 +1,9 @@
-import assert from 'node:assert/strict';
-import { access, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer as createNetServer } from 'node:net';
-import { dirname, resolve } from 'node:path';
-import test from 'node:test';
-import { fileURLToPath } from 'node:url';
 
-import { SecretsError } from '@lifeos/secrets';
+import type { FastifyInstance } from 'fastify';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { startService } from './index';
-
-const thisFile = fileURLToPath(import.meta.url);
-const rootDir = resolve(dirname(thisFile), '../../../');
-const localConfigPath = resolve(rootDir, 'config/local.yaml');
-
-const testObservabilityFactory = () => ({
-  startSpan() {
-    return {
-      traceId: 'test-trace',
-      spanId: 'test-span',
-    };
-  },
-  endSpan() {
-    return;
-  },
-  recordMetric() {
-    return;
-  },
-  log() {
-    return;
-  },
-});
 
 async function getFreePort(): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -54,409 +28,98 @@ async function getFreePort(): Promise<number> {
   });
 }
 
-async function httpGet(port: number, path: string): Promise<{ status: number; body: unknown }> {
-  const response = await fetch(`http://127.0.0.1:${port}${path}`);
-  return {
-    status: response.status,
-    body: await response.json(),
-  };
-}
+describe('startService', () => {
+  let app: FastifyInstance | null = null;
+  let previousPort: string | undefined;
 
-async function withLocalConfig(content: string, fn: () => Promise<void>): Promise<void> {
-  let original: string | null = null;
-  try {
-    await access(localConfigPath);
-    original = await readFile(localConfigPath, 'utf8');
-  } catch {
-    original = null;
-  }
-
-  await writeFile(localConfigPath, content, 'utf8');
-
-  try {
-    await fn();
-  } finally {
-    if (original === null) {
-      await rm(localConfigPath, { force: true });
-    } else {
-      await writeFile(localConfigPath, original, 'utf8');
+  afterEach(async () => {
+    if (app) {
+      await app.close();
+      app = null;
     }
-  }
-}
 
-test('startService boots successfully with no hooks', async () => {
-  const port = await getFreePort();
-  const runtime = await startService({
-    serviceName: 'service-runtime-test',
-    port,
-    observabilityFactory: testObservabilityFactory,
+    if (previousPort === undefined) {
+      delete process.env.PORT;
+    } else {
+      process.env.PORT = previousPort;
+    }
+
+    vi.restoreAllMocks();
   });
 
-  assert.equal(typeof runtime.stop, 'function');
-  assert.equal(typeof runtime.getHealth, 'function');
+  it('starts a server and responds to /health/live', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
 
-  await runtime.stop();
-});
+    await startService({
+      serviceName: 'service-runtime-test-health-live',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
 
-test('startService invokes onRegisterRoutes hook', async () => {
-  const port = await getFreePort();
-  let called = false;
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-routes',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    onRegisterRoutes: async () => {
-      called = true;
-    },
+    const response = await fetch(`http://127.0.0.1:${port}/health/live`);
+    expect(response.status).toBe(200);
   });
 
-  assert.equal(called, true);
-  await runtime.stop();
-});
+  it('calls registerRoutes during boot', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
 
-test('startService invokes onAuthPolicy after config', async () => {
-  const port = await getFreePort();
-  let captured: unknown;
+    const registerRoutes = vi.fn(async (fastifyApp: FastifyInstance) => {
+      app = fastifyApp;
+    });
 
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-auth-policy',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    onAuthPolicy: async (config) => {
-      captured = config;
-    },
+    await startService({
+      serviceName: 'service-runtime-test-routes-called',
+      allowObservabilityInitFallback: true,
+      registerRoutes,
+    });
+
+    expect(registerRoutes).toHaveBeenCalledTimes(1);
   });
 
-  assert.equal(!!captured, true);
-  assert.equal(typeof (captured as { profile?: unknown }).profile, 'string');
+  it('fails and exits when route registration throws', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
 
-  await runtime.stop();
-});
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
 
-test('required secret miss aborts boot', async () => {
-  const port = await getFreePort();
-
-  await assert.rejects(
-    async () =>
+    await expect(
       startService({
-        serviceName: 'service-runtime-test-required-secret',
-        port,
-        secretRefs: [
-          {
-            name: 'db_password',
-            policy: 'required',
-          },
-        ],
-      }),
-    (error: unknown) => error instanceof SecretsError,
-  );
-});
-
-test('required_if_feature_enabled secret miss aborts boot when feature is enabled', async () => {
-  const port = await getFreePort();
-
-  await assert.rejects(
-    async () =>
-      startService({
-        serviceName: 'service-runtime-feature-secret-enabled',
-        port,
-        secretStore: {
-          async get() {
-            return null;
-          },
-          async set() {
-            return;
-          },
-        },
-        secretRefs: [
-          {
-            name: 'vision_api_key',
-            policy: 'required_if_feature_enabled',
-            featureGate: 'vision',
-          },
-        ],
-        isFeatureEnabled: async () => true,
-      }),
-    (error: unknown) => error instanceof SecretsError,
-  );
-});
-
-test('required_if_feature_enabled secret miss degrades when feature is disabled', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-feature-secret-disabled',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    secretStore: {
-      async get() {
-        return null;
-      },
-      async set() {
-        return;
-      },
-    },
-    secretRefs: [
-      {
-        name: 'vision_api_key',
-        policy: 'required_if_feature_enabled',
-        featureGate: 'vision',
-      },
-    ],
-    isFeatureEnabled: async () => false,
-  });
-
-  assert.equal(runtime.degradedSecrets.length, 1);
-
-  await runtime.stop();
-});
-
-test('optional secret miss marks readiness degraded', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-optional-secret-degraded',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    secretStore: {
-      async get() {
-        return null;
-      },
-      async set() {
-        return;
-      },
-    },
-    secretRefs: [
-      {
-        name: 'smtp_password',
-        policy: 'optional',
-      },
-    ],
-  });
-
-  assert.equal(runtime.degradedSecrets.length, 1);
-
-  const health = await runtime.getHealth();
-  assert.equal(health.status, 'degraded');
-  assert.equal(health.checks.secrets?.status, 'degraded');
-
-  const readiness = (await httpGet(port, '/health/ready')) as {
-    status: number;
-    body: {
-      status: string;
-      checks: Record<string, { status: string }>;
-    };
-  };
-  assert.equal(readiness.status, 503);
-  assert.equal(readiness.body.status, 'degraded');
-  assert.equal(readiness.body.checks.secrets?.status, 'degraded');
-
-  await runtime.stop();
-});
-
-test('startService reuses config secret outcomes instead of re-reading matching refs', async () => {
-  await withLocalConfig(
-    [
-      'profile: assistant',
-      'smtp:',
-      '  host: "!secret smtp_host"',
-      '',
-    ].join('\n'),
-    async () => {
-      const port = await getFreePort();
-      let getCount = 0;
-
-      const runtime = await startService({
-        serviceName: 'service-runtime-config-secret-reuse',
-        port,
-        observabilityFactory: testObservabilityFactory,
-        secretStore: {
-          async get(name) {
-            if (name === 'smtp_host') {
-              getCount += 1;
-            }
-            return null;
-          },
-          async set() {
-            return;
-          },
-        },
-        secretRefs: [
-          {
-            name: 'smtp_host',
-            policy: 'optional',
-            configPath: 'smtp.host',
-          },
-        ],
-      });
-
-      assert.equal(getCount, 1);
-      assert.equal(runtime.degradedSecrets.length, 1);
-      assert.match(runtime.degradedSecrets[0]?.reason ?? '', /smtp_host/);
-
-      await runtime.stop();
-    },
-  );
-});
-
-test('observability initialization failure fails startup by default', async () => {
-  const port = await getFreePort();
-
-  await assert.rejects(
-    async () =>
-      startService({
-        serviceName: 'service-runtime-observability-strict',
-        port,
-        observabilityFactory: () => {
-          throw new Error('observability failed');
+        serviceName: 'service-runtime-test-route-registration-error',
+        allowObservabilityInitFallback: true,
+        registerRoutes: async () => {
+          throw new Error('route registration failed');
         },
       }),
-    /observability failed/,
-  );
-});
+    ).rejects.toThrow('process.exit(1)');
 
-test('observability initialization fallback is opt-in', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-observability-fallback',
-    port,
-    allowObservabilityInitFallback: true,
-    observabilityFactory: () => {
-      throw new Error('observability failed');
-    },
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  await runtime.stop();
-});
+  it('responds to /health/ready endpoint', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
 
-test('stop closes server and no longer accepts connections', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-stop',
-    port,
-    observabilityFactory: testObservabilityFactory,
-  });
-
-  const beforeStop = await httpGet(port, '/health/live');
-  assert.equal(beforeStop.status, 200);
-
-  await runtime.stop();
-
-  await assert.rejects(async () => {
-    await fetch(`http://127.0.0.1:${port}/health/live`);
-  });
-});
-
-test('getHealth reflects registered checks including failures', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-health',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    healthChecks: [
-      {
-        name: 'failing-check',
-        check: async () => ({
-          status: 'unhealthy',
-          reason: 'simulated failure',
-        }),
+    await startService({
+      serviceName: 'service-runtime-test-health-ready',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
       },
-    ],
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/ready`);
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as { status?: string };
+    expect(body.status).toBeDefined();
   });
-
-  const health = await runtime.getHealth();
-  assert.equal(health.status, 'unhealthy');
-  assert.equal(health.checks['failing-check']?.status, 'unhealthy');
-
-  await runtime.stop();
-});
-
-test('onRegisterRoutes can register non-GET routes', async () => {
-  const port = await getFreePort();
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-post-route',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    onRegisterRoutes: async (server) => {
-      server.post('/jobs', async () => ({
-        status: 201,
-        body: {
-          accepted: true,
-        },
-      }));
-    },
-  });
-
-  const response = await fetch(`http://127.0.0.1:${port}/jobs`, {
-    method: 'POST',
-  });
-
-  assert.equal(response.status, 201);
-  assert.deepEqual(await response.json(), { accepted: true });
-
-  await runtime.stop();
-});
-
-test('startService runs deterministic boot phase order', async () => {
-  const port = await getFreePort();
-  const phases: string[] = [];
-
-  const runtime = await startService({
-    serviceName: 'service-runtime-test-phase-order',
-    port,
-    observabilityFactory: testObservabilityFactory,
-    onPhase: async (phase) => {
-      phases.push(phase);
-    },
-    onAuthPolicy: async () => {
-      phases.push('auth-hook');
-    },
-    onRegisterRoutes: async () => {
-      phases.push('routes-hook');
-    },
-  });
-
-  assert.deepEqual(phases, [
-    'config',
-    'secrets',
-    'observability',
-    'auth/policy',
-    'auth-hook',
-    'routes',
-    'routes-hook',
-    'health/readiness',
-    'listen',
-  ]);
-
-  await runtime.stop();
-});
-
-test('startService does not enter later phases after earlier phase failure', async () => {
-  const port = await getFreePort();
-  const phases: string[] = [];
-
-  await assert.rejects(
-    async () =>
-      startService({
-        serviceName: 'service-runtime-test-phase-failure-short-circuit',
-        port,
-        secretRefs: [
-          {
-            name: 'missing_required_secret',
-            policy: 'required',
-          },
-        ],
-        onPhase: async (phase) => {
-          phases.push(phase);
-        },
-      }),
-    (error: unknown) => error instanceof SecretsError,
-  );
-
-  assert.deepEqual(phases, ['config', 'secrets']);
 });

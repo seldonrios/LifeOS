@@ -12,10 +12,11 @@
     "module": "ESNext"
   },
   "include": [
-    "modules/*/agent.ts",
-    "modules/*/events.ts",
-    "modules/*/schema.ts",
-    "modules/*/module.config.ts",
-    "modules/*/manifest.ts"
+    "modules/**/*.ts"
+  ],
+  "exclude": [
+    "modules/**/dist/**",
+    "modules/**/node_modules/**",
+    "modules/**/*.d.ts"
   ]
 }

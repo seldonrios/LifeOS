@@ -92,3 +92,67 @@ test('runModuleLoaderBoot emits startup diagnostics report event and stdout log'
     console.log = originalLog;
   }
 });
+
+test('scanModules returns error state when dist/manifest.js is missing', async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), 'lifeos-modules-missing-dist-'));
+  const moduleDir = join(tempRoot, 'broken-module');
+  await mkdir(moduleDir, { recursive: true });
+
+  const catalog = new ServiceCatalog();
+  const bus = new MockEventBus();
+
+  const report = await runModuleLoaderBoot({
+    modulesDir: tempRoot,
+    profile: 'assistant',
+    catalog,
+    eventBus: bus,
+  });
+
+  assert.equal(report.modules.length, 1);
+  assert.equal(report.modules[0]?.id, 'broken-module');
+  assert.equal(report.modules[0]?.state, 'error');
+  assert.equal(report.modules[0]?.reason, 'Module not precompiled — run pnpm run build:modules');
+  assert.ok(
+    report.recommendations.includes(
+      "Module 'broken-module': Module not precompiled — run pnpm run build:modules",
+    ),
+  );
+});
+
+test('runModuleLoaderBoot handles invalid dist/manifest.js without crashing', async () => {
+  const tempRoot = await mkdtemp(join(tmpdir(), 'lifeos-modules-invalid-manifest-'));
+  const moduleDir = join(tempRoot, 'malformed-module');
+  const distDir = join(moduleDir, 'dist');
+  await mkdir(distDir, { recursive: true });
+  // Write invalid JavaScript with syntax error
+  await writeFile(
+    join(distDir, 'manifest.js'),
+    [
+      'export default {',
+      "  id: 'malformed-module',",
+      "  // INVALID SYNTAX BELOW",
+      '  invalid_json: {this is not valid',
+      '};',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+
+  const catalog = new ServiceCatalog();
+  const bus = new MockEventBus();
+
+  // Should not throw; should return error diagnostic
+  const report = await runModuleLoaderBoot({
+    modulesDir: tempRoot,
+    profile: 'assistant',
+    catalog,
+    eventBus: bus,
+  });
+
+  assert.equal(report.modules.length, 1);
+  assert.equal(report.modules[0]?.id, 'malformed-module');
+  assert.equal(report.modules[0]?.state, 'error');
+  assert.match(report.modules[0]?.reason ?? '', /Failed to load manifest/);
+  assert.equal(bus.published.length, 1);
+  assert.equal(bus.published[0]?.topic, 'system.startup.report');
+});

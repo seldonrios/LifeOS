@@ -1,13 +1,12 @@
 export * from './types';
 
-import { createServer } from 'node:http';
+import fastify from 'fastify';
 
 import { loadConfig, type ResolvedConfig } from '@lifeos/config';
 import {
   HealthRegistry,
   livenessHandler,
   readinessHandler,
-  type HealthStatus,
 } from '@lifeos/health';
 import {
   createObservabilityClient,
@@ -15,27 +14,9 @@ import {
   type ObservabilityConfig,
 } from '@lifeos/observability';
 import { createPolicyClient } from '@lifeos/policy-engine';
-import { applySecretPolicy, type DegradedMarker } from '@lifeos/secrets';
+import type { SecretRef } from '@lifeos/secrets';
 
-import type {
-  RouteHandler,
-  ServiceRuntime,
-  ServiceRuntimeOptions,
-  ServiceRuntimePhase,
-} from './types';
-
-function dedupeDegradedMarkers(markers: DegradedMarker[]): DegradedMarker[] {
-  const seen = new Set<string>();
-
-  return markers.filter((marker) => {
-    if (seen.has(marker.reason)) {
-      return false;
-    }
-
-    seen.add(marker.reason);
-    return true;
-  });
-}
+import type { ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
 
 function createNoopObservabilityClient(): ObservabilityClient {
   return {
@@ -55,157 +36,54 @@ function createNoopObservabilityClient(): ObservabilityClient {
   };
 }
 
-function createMinimalServer(): {
-  server: import('node:http').Server;
-  adapter: import('./types').MinimalServer;
-} {
-  const routes = new Map<string, RouteHandler>();
-
-  const server = createServer(async (req, res) => {
-    if (!req.url || !req.method) {
-      res.statusCode = 404;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: 'Not found' }));
-      return;
-    }
-
-    const url = new URL(req.url, 'http://localhost');
-    const method = req.method.toUpperCase();
-    const routeKey = `${method} ${url.pathname}`;
-    const handler = routes.get(routeKey);
-
-    if (!handler) {
-      res.statusCode = 404;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: 'Not found' }));
-      return;
-    }
-
-    try {
-      const result = await handler();
-      res.statusCode = result.status;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify(result.body));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Internal server error';
-      res.statusCode = 500;
-      res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ error: message }));
-    }
-  });
-
-  return {
-    server,
-    adapter: {
-      route(method, path, handler) {
-        routes.set(`${method} ${path}`, handler);
-      },
-      get(path, handler) {
-        routes.set(`GET ${path}`, handler);
-      },
-      post(path, handler) {
-        routes.set(`POST ${path}`, handler);
-      },
-      put(path, handler) {
-        routes.set(`PUT ${path}`, handler);
-      },
-      patch(path, handler) {
-        routes.set(`PATCH ${path}`, handler);
-      },
-      delete(path, handler) {
-        routes.set(`DELETE ${path}`, handler);
-      },
-      listen(port) {
-        return new Promise<void>((resolve, reject) => {
-          const onError = (error: Error): void => {
-            server.off('listening', onListening);
-            reject(error);
-          };
-          const onListening = (): void => {
-            server.off('error', onError);
-            resolve();
-          };
-
-          server.once('error', onError);
-          server.once('listening', onListening);
-          server.listen(port);
-        });
-      },
-      close() {
-        return new Promise<void>((resolve, reject) => {
-          server.close((error) => {
-            if (error) {
-              reject(error);
-              return;
-            }
-            resolve();
-          });
-        });
-      },
-    },
-  };
+interface InternalServiceRuntimeOptions extends ServiceRuntimeOptions {
+  onAuthPolicy?: (config: ResolvedConfig) => Promise<void>;
+  onPhase?: (phase: ServiceRuntimePhase) => void | Promise<void>;
 }
 
-async function resolveFeatureEnabled(
-  opts: ServiceRuntimeOptions,
-  resolvedConfig: ResolvedConfig,
-  featureGate: string | undefined,
-): Promise<boolean | undefined> {
-  if (!featureGate) {
-    return false;
-  }
-
-  if (opts.isFeatureEnabled) {
-    return opts.isFeatureEnabled(featureGate);
-  }
-
-  const features = resolvedConfig.features as Record<string, unknown>;
-  return features[featureGate] === true;
+function isRequiredMissingSecret(secretRef: SecretRef, value: string | null): boolean {
+  return secretRef.policy === 'required' && value === null;
 }
 
-export async function startService(opts: ServiceRuntimeOptions): Promise<ServiceRuntime> {
-  const { adapter: serverAdapter } = createMinimalServer();
+function terminateBoot(error: unknown, message: string): never {
+  const detail = error instanceof Error ? error.message : String(error);
+  console.error(`${message}: ${detail}`);
+  process.exit(1);
+  throw error instanceof Error ? error : new Error(detail);
+}
+
+export async function startService(opts: InternalServiceRuntimeOptions): Promise<void> {
   const markPhase = async (phase: ServiceRuntimePhase): Promise<void> => {
     await opts.onPhase?.(phase);
   };
 
+  // Track degraded secrets for health checks
+  const allDegradedSecrets: Array<{ reason: string }> = [];
+
+  let resolvedConfig: ResolvedConfig;
   await markPhase('config');
-  const {
-    config: resolvedConfig,
-    degraded: degradedConfigSecrets,
-    secretOutcomes,
-  } = await loadConfig({
-    secretStore: opts.secretStore,
-    secretRefs: opts.secretRefs,
-    isFeatureEnabled: opts.isFeatureEnabled,
-  });
+  try {
+    const loaded = await loadConfig({
+      secretStore: opts.secretStore,
+      secretRefs: opts.secretRefs,
+      isFeatureEnabled: opts.isFeatureEnabled,
+    });
+    resolvedConfig = loaded.config;
+  } catch (error) {
+    terminateBoot(error, 'Failed to load configuration');
+  }
 
   await markPhase('secrets');
-  const configResolvedRefNames = new Set(secretOutcomes.map((outcome) => outcome.name));
-  const configResolvedRefs = new Set(
-    secretOutcomes.map((outcome) => `${outcome.name}:${outcome.path}`),
-  );
-  const degradedSecrets: DegradedMarker[] = [];
-  for (const secretRef of opts.secretRefs ?? []) {
-    const alreadyProcessed = secretRef.configPath
-      ? configResolvedRefs.has(`${secretRef.name}:${secretRef.configPath}`)
-      : configResolvedRefNames.has(secretRef.name);
-
-    if (alreadyProcessed) {
-      continue;
-    }
-
-    const value = (await opts.secretStore?.get(secretRef.name)) ?? null;
-    const featureEnabled =
-      secretRef.policy === 'required_if_feature_enabled'
-        ? await resolveFeatureEnabled(opts, resolvedConfig, secretRef.featureGate)
-        : undefined;
-    const outcome = applySecretPolicy(secretRef, value, featureEnabled);
-    if (typeof outcome !== 'string') {
-      degradedSecrets.push(outcome);
+  if (opts.isCorService) {
+    for (const secretRef of opts.secretRefs ?? []) {
+      const value = (await opts.secretStore?.get(secretRef.name)) ?? null;
+      if (isRequiredMissingSecret(secretRef, value)) {
+        console.warn(
+          `[service-runtime] required secret missing for core service: ${secretRef.name}`,
+        );
+      }
     }
   }
-  const allDegradedSecrets = dedupeDegradedMarkers([...degradedConfigSecrets, ...degradedSecrets]);
 
   const observabilityConfig: ObservabilityConfig = opts.observabilityConfig ?? {
     serviceName: opts.serviceName,
@@ -224,25 +102,37 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
   try {
     observabilityClient = createObservability(observabilityConfig);
   } catch (error) {
-    if (!opts.allowObservabilityInitFallback) {
-      throw error;
+    if (opts.allowObservabilityInitFallback === false) {
+      terminateBoot(error, 'Failed to initialize observability');
     }
+    const detail = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[service-runtime] observability initialization failed, falling back to noop: ${detail}`,
+    );
     observabilityClient = createNoopObservabilityClient();
   }
 
-  for (const marker of allDegradedSecrets) {
-    observabilityClient.log('warn', marker.reason, {
-      serviceName: opts.serviceName,
-      phase: 'secrets',
-    });
-  }
+  const app = fastify({ logger: true });
 
   await markPhase('auth/policy');
+  app.addHook('onRequest', async (request) => {
+    request.log.info({ serviceName: opts.serviceName }, 'service identity');
+  });
+
   createPolicyClient();
   await opts.onAuthPolicy?.(resolvedConfig);
 
+  await opts.registerPlugins?.(app);
+
   await markPhase('routes');
-  await opts.onRegisterRoutes?.(serverAdapter);
+  try {
+    const registerRoutesHandler = opts.registerRoutes ?? (async () => {
+      return;
+    });
+    await registerRoutesHandler(app);
+  } catch (error) {
+    terminateBoot(error, 'Failed to register routes');
+  }
 
   await markPhase('health/readiness');
   const healthRegistry = new HealthRegistry();
@@ -265,7 +155,7 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
   healthRegistry.register({
     name: 'liveness',
     check: async () => ({
-      status: 'healthy',
+      status: 'healthy' as const,
     }),
   });
   let readinessInProgress = false;
@@ -279,37 +169,37 @@ export async function startService(opts: ServiceRuntimeOptions): Promise<Service
       readinessInProgress = true;
       try {
         const aggregate = await healthRegistry.runAll();
-        return { status: aggregate.status };
+        return { status: aggregate.status as 'healthy' | 'degraded' | 'unhealthy' };
       } finally {
         readinessInProgress = false;
       }
     },
   });
 
-  serverAdapter.get('/health/live', livenessHandler(healthRegistry));
-  serverAdapter.get('/health/ready', readinessHandler(healthRegistry));
+  if (opts.enableLiveness !== false) {
+    app.get('/health/live', async (_request, reply) => {
+      const response = await livenessHandler(healthRegistry)();
+      reply.code(response.status).send(response.body);
+    });
+  }
+
+  if (opts.enableReadiness !== false) {
+    app.get('/health/ready', async (_request, reply) => {
+      const response = await readinessHandler(healthRegistry)();
+      reply.code(response.status).send(response.body);
+    });
+  }
 
   await markPhase('listen');
-  await serverAdapter.listen(opts.port);
+  const port = opts.port ?? Number(process.env.PORT ?? 3000);
+  try {
+    await app.listen({ port, host: '0.0.0.0' });
+  } catch (error) {
+    terminateBoot(error, 'Failed to start listening');
+  }
+
   observabilityClient.log('info', `${opts.serviceName} listening`, {
     serviceName: opts.serviceName,
-    port: opts.port,
+    port,
   });
-
-  return {
-    async start() {
-      return;
-    },
-    async stop() {
-      await serverAdapter.close();
-      observabilityClient.log('info', `${opts.serviceName} stopped`, {
-        serviceName: opts.serviceName,
-      });
-    },
-    async getHealth(): Promise<HealthStatus> {
-      return healthRegistry.runAll();
-    },
-    healthRegistry,
-    degradedSecrets: allDegradedSecrets,
-  };
 }

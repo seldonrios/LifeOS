@@ -1,29 +1,64 @@
 # @lifeos/service-runtime
 
-Shared service runtime contracts for standardized service bootstrap.
+Shared bootstrap runtime for LifeOS services built on Fastify.
 
-Boot is deterministic and always runs these phases in order:
+## Boot Order
 
-1. Config: resolves configuration through `loadConfig`, including secret-backed values when a secret store is provided.
-2. Secrets: applies each declared `secretRefs` policy with `applySecretPolicy` and fails fast on required misses.
-3. Observability: initializes observability for structured startup and shutdown logging.
-4. Auth and Policy: initializes policy client and invokes optional `onAuthPolicy` startup validation hook.
-5. Routes: invokes optional `onRegisterRoutes` hook for service-specific route registration.
-6. Health and Readiness: creates a `HealthRegistry`, registers custom checks plus built-in liveness and readiness behavior, and mounts health endpoints.
-7. Listen: binds the HTTP server to the configured port and marks the service as running.
+| Phase | Description |
+| --- | --- |
+| config | Loads runtime config through `loadConfig()` from `@lifeos/config`. |
+| secrets | Resolves declared secrets and warns for required secret misses when `isCorService` is enabled (Phase 1 behavior). |
+| observability | Initializes observability via `createObservabilityClient()`. On failure, falls back to noop (Phase 1 default) and logs a warning; use `allowObservabilityInitFallback: false` to enforce strict fail-fast. |
+| auth/policy | Registers auth and policy startup behavior, including request-time identity logging. |
+| routes | Invokes service route registration hook (optional; defaults to noop). |
+| health/readiness | Registers health checks and mounts `/health/live` and `/health/ready`. |
+| listen | Starts Fastify on `0.0.0.0` with `PORT` (default `3000`), or `port` option if provided. |
 
-## Hooks
+## ServiceRuntimeOptions
 
-- `onAuthPolicy(config)`: startup-time auth and policy checks after config resolution.
-- `onRegisterRoutes(server)`: route registration using the runtime's minimal server adapter (`route(method, path, handler)` plus `get`/`post`/`put`/`patch`/`delete` helpers).
-- `healthChecks`: additional checks registered before health endpoints are served.
+| Field | Type | Required | Description |
+| --- | --- | --- | --- |
+| serviceName | `string` | yes | Service identity used in logs and observability metadata. |
+| registerRoutes | `(app: FastifyInstance) => Promise<void>` | no | Registers service routes; defaults to noop for Phase 1 stub services. |
+| registerPlugins | `(app: FastifyInstance) => Promise<void>` | no | Registers optional Fastify plugins before routes. |
+| configSchema | `object` | no | Optional config schema for service-level config validation. |
+| port | `number` | no | Override service listen port; defaults to `PORT` env var or `3000`. |
+| isCorService | `boolean` | no | Core-service mode for Phase 1 secret warning behavior. |
+| enableAuth | `boolean` | no | Enables auth boot behavior for runtime-controlled auth wiring. |
+| enableMetrics | `boolean` | no | Enables metrics behavior for runtime-controlled observability wiring. |
+| enableReadiness | `boolean` | no | Enables `/health/ready` endpoint; defaults to enabled. |
+| enableLiveness | `boolean` | no | Enables `/health/live` endpoint; defaults to enabled. |
+| secretRefs | `SecretRef[]` | no | Secret references used during boot. |
+| secretStore | `SecretStore` | no | Secret provider used to resolve declared references. |
+| observabilityConfig | `ObservabilityConfig` | no | Explicit observability config override. |
+| observabilityFactory | `(config: ObservabilityConfig) => ObservabilityClient` | no | Custom observability client factory. |
+| allowObservabilityInitFallback | `boolean` | no | Controls observability init failure behavior. Phase 1 default: falls back to noop. Set to `false` for strict fail-fast. |
+| isFeatureEnabled | `(featureGate: string) => boolean \| Promise<boolean>` | no | Optional feature gate resolver. |
+| healthChecks | `HealthCheck[]` | no | Additional health checks added to the runtime registry. |
 
-## Failure Behavior
+## Minimal Usage
 
-- Fail-fast by default: config parsing/validation errors, required secret misses, policy startup failures, route setup failures, observability initialization failures, and listen failures abort startup.
-- Optional fallback: set `allowObservabilityInitFallback: true` to continue startup with a noop observability client if observability initialization fails.
-- Degraded: optional and feature-gated secrets can resolve as degraded markers and are logged through observability, but startup continues.
+```ts
+import { startService } from '@lifeos/service-runtime';
 
-## Spec References
+// Phase 1 stub (no routes)
+await startService({
+  serviceName: 'goal-engine',
+});
 
-- [Tech Plan Operational Service Build Contexts](../../docs/phase-1/reference-architecture.md)
+// With route registration
+await startService({
+  serviceName: 'goal-engine',
+  registerRoutes: async (app) => {
+    app.get('/goals', async () => ({ goals: [] }));
+  },
+});
+```
+
+## Phase 1 Notes
+
+- Missing required secrets for core services (`isCorService: true`) emit warnings during startup in Phase 1.
+- Fail-fast enforcement for those cases is planned for B5.
+- Runtime listen port is controlled by `PORT` env var (default `3000`), or overridden via `port` option.
+- **Observability fallback**: When `createObservabilityClient()` fails, the runtime automatically falls back to a noop observability client and logs a warning. This is the Phase 1 default to keep the bootstrap chain operational. Set `allowObservabilityInitFallback: false` to enforce strict fail-fast behavior.
+- **Route registration**: `registerRoutes` is optional and defaults to a noop for Phase 1 stub services. Services do not need to define routes to boot successfully.

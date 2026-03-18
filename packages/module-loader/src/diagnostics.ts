@@ -12,6 +12,10 @@ function getRecommendations(
   const recommendations = new Set<string>();
 
   for (const diagnostic of diagnostics) {
+    if (diagnostic.state === 'error' && diagnostic.reason) {
+      recommendations.add(`Module '${diagnostic.id}': ${diagnostic.reason}`);
+    }
+
     for (const capability of diagnostic.missingProviders) {
       recommendations.add(
         `Register a healthy provider for '${capability}' to enable module '${diagnostic.id}'.`,

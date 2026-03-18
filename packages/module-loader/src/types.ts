@@ -16,7 +16,18 @@ export interface ModuleManifest {
   degradedModes?: Record<string, string>;
 }
 
-export type ModuleState = 'enabled' | 'degraded' | 'disabled';
+export type ModuleState = 'enabled' | 'degraded' | 'disabled' | 'error';
+
+export type ScanResult =
+  | {
+      kind: 'ok';
+      manifest: ModuleManifest;
+    }
+  | {
+      kind: 'error';
+      moduleName: string;
+      message: string;
+    };
 
 export interface ModuleDiagnostic {
   id: string;

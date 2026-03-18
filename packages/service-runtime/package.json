@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@lifeos/config": "workspace:*",
@@ -20,6 +20,10 @@
     "@lifeos/security": "workspace:*",
     "@lifeos/observability": "workspace:*",
     "@lifeos/health": "workspace:*",
-    "@lifeos/policy-engine": "workspace:*"
+    "@lifeos/policy-engine": "workspace:*",
+    "fastify": "^5.6.1"
+  },
+  "devDependencies": {
+    "vitest": "^2.1.8"
   }
 }

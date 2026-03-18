@@ -52,6 +52,14 @@ This is the canonical contributor guide for LifeOS.
 - Commits are blocked only for unfixable errors (for example type violations or undefined references).
 - Commit message format is validated by Commitlint against Conventional Commits.
 
+## Test Contract
+
+- Every package that contains `.test.ts` files must have a `"test": "tsx --test 'src/**/*.test.ts'"` script in its `package.json`.
+- Tests are executed as part of `pnpm run validate` through the root `test` script, which runs `tsx --test 'packages/*/src/**/*.test.ts'` directly to discover tests deterministically across `packages/*`.
+- `pnpm run validate` fails if any test fails; there is no warn-only mode.
+- New TypeScript packages generated with `pnpm run scaffold` include the test script automatically; no manual step is required.
+- Run tests for a single package in isolation with `pnpm --filter @lifeos/<name> run test`.
+
 ## Commit Message Format
 
 ```text

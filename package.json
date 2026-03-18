@@ -7,8 +7,8 @@
   },
   "scripts": {
     "prepare": "husky install .husky",
-    "validate": "pnpm run lint && pnpm run test && pnpm run format:check && pnpm run typecheck && pnpm run build:modules",
-    "test": "pnpm -r --if-present run test",
+    "validate": "pnpm run build:modules && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+    "test": "tsx --test 'packages/*/src/**/*.test.ts'",
     "lint": "eslint . && tsx scripts/ruff-task.ts check",
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",

@@ -2,26 +2,50 @@ import { access, readdir, rm, writeFile, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
 
-const MODULE_SOURCE_FILES = ['agent.ts', 'events.ts', 'schema.ts', 'module.config.ts', 'manifest.ts'];
+async function discoverModuleTypeScriptFiles(modulePath: string): Promise<string[]> {
+  const typeScriptFiles: string[] = [];
+
+  async function walkDirectory(dirPath: string): Promise<void> {
+    const entries = await readdir(dirPath, { withFileTypes: true });
+
+    for (const entry of entries) {
+      const fullPath = join(dirPath, entry.name);
+      const relPath = relative(process.cwd(), fullPath);
+
+      // Skip dist directory and node_modules
+      if (entry.name === 'dist' || entry.name === 'node_modules' || entry.name.startsWith('.')) {
+        continue;
+      }
+
+      if (entry.isDirectory()) {
+        await walkDirectory(fullPath);
+      } else if (entry.isFile() && entry.name.endsWith('.ts') && !entry.name.endsWith('.d.ts')) {
+        typeScriptFiles.push(relPath);
+      }
+    }
+  }
+
+  await walkDirectory(modulePath);
+  return typeScriptFiles;
+}
 
 async function buildModule(moduleName: string): Promise<number> {
   const moduleDir = `modules/${moduleName}`;
   const outDir = `${moduleDir}/dist`;
 
-  const include: string[] = [];
-  for (const file of MODULE_SOURCE_FILES) {
-    try {
-      await access(join(moduleDir, file), constants.F_OK);
-      include.push(`${moduleDir}/${file}`);
-    } catch {
-      // file absent in this module, skip
-    }
+  // Discover all TypeScript files in the module (excluding dist and generated artifacts)
+  let include: string[] = [];
+  try {
+    include = await discoverModuleTypeScriptFiles(moduleDir);
+  } catch (error) {
+    console.error(`  Error discovering TypeScript files in ${moduleDir}:`, error);
+    return 1;
   }
 
   if (include.length === 0) {
-    console.log(`  No source files found in ${moduleDir}, skipping.`);
+    console.log(`  No TypeScript source files found in ${moduleDir}, skipping.`);
     return 0;
   }
 
