@@ -199,23 +199,103 @@ ALTER DEFAULT PRIVILEGES FOR ROLE ${POSTGRES_USER} IN SCHEMA life_graph_rel
   GRANT USAGE, SELECT ON SEQUENCES TO lifeos_life_graph_rel_rw;
 SQL
 
-echo "Default Privileges Summary"
+echo "Default Privileges Verification"
 "${PSQL[@]}" -d "${POSTGRES_DB}" <<SQL
-SELECT n.nspname AS schema,
-       grantee.rolname AS grantee,
-  string_agg(
-    exploded.privilege_type || CASE WHEN exploded.is_grantable THEN ' (grantable)' ELSE '' END,
-    ', ' ORDER BY exploded.privilege_type
-  ) AS acl
-FROM pg_default_acl d
-JOIN pg_namespace n ON n.oid = d.defaclnamespace
-JOIN pg_roles definer ON definer.oid = d.defaclrole
-JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS exploded ON TRUE
-JOIN pg_roles grantee ON grantee.oid = exploded.grantee
-WHERE definer.rolname = '${POSTGRES_USER}'
-GROUP BY n.nspname, grantee.rolname
-ORDER BY n.nspname, grantee.rolname;
+WITH expected_pairs(schema_name, service_role) AS (
+  VALUES
+    ('approval_workflow', 'lifeos_approval_workflow_rw'),
+    ('auth', 'lifeos_auth_rw'),
+    ('event_store', 'lifeos_event_store_rw'),
+    ('feature_flags', 'lifeos_feature_flags_rw'),
+    ('goal_engine', 'lifeos_goal_engine_rw'),
+    ('life_graph_rel', 'lifeos_life_graph_rel_rw'),
+    ('observability', 'lifeos_observability_rw'),
+    ('scheduler', 'lifeos_scheduler_rw'),
+    ('secrets', 'lifeos_secrets_rw'),
+    ('service_catalog', 'lifeos_catalog_rw')
+),
+actual_defaults AS (
+  SELECT n.nspname AS schema_name,
+         grantee.rolname AS service_role,
+         COUNT(DISTINCT exploded.privilege_type) FILTER (
+           WHERE d.defaclobjtype = 'r'
+             AND exploded.privilege_type IN ('DELETE', 'INSERT', 'SELECT', 'UPDATE')
+         ) AS table_privilege_count,
+         COUNT(DISTINCT exploded.privilege_type) FILTER (
+           WHERE d.defaclobjtype = 'S'
+             AND exploded.privilege_type IN ('SELECT', 'USAGE')
+         ) AS sequence_privilege_count
+  FROM pg_default_acl d
+  JOIN pg_namespace n ON n.oid = d.defaclnamespace
+  JOIN pg_roles definer ON definer.oid = d.defaclrole
+  JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS exploded ON TRUE
+  JOIN pg_roles grantee ON grantee.oid = exploded.grantee
+  WHERE definer.rolname = '${POSTGRES_USER}'
+  GROUP BY n.nspname, grantee.rolname
+)
+SELECT e.schema_name AS schema,
+       e.service_role,
+       CASE WHEN COALESCE(a.table_privilege_count, 0) = 4 THEN 'ok' ELSE 'missing' END AS table_defaults,
+       CASE WHEN COALESCE(a.sequence_privilege_count, 0) = 2 THEN 'ok' ELSE 'missing' END AS sequence_defaults,
+       CASE
+         WHEN COALESCE(a.table_privilege_count, 0) = 4
+          AND COALESCE(a.sequence_privilege_count, 0) = 2 THEN 'ok'
+         ELSE 'missing required default privileges'
+       END AS status
+FROM expected_pairs e
+LEFT JOIN actual_defaults a
+  ON a.schema_name = e.schema_name
+ AND a.service_role = e.service_role
+ORDER BY e.schema_name, e.service_role;
 SQL
-echo "End Default Privileges Summary"
+echo "End Default Privileges Verification"
+
+missing_default_privileges="$(${PSQL[@]} -d "${POSTGRES_DB}" -tA <<SQL
+WITH expected_pairs(schema_name, service_role) AS (
+  VALUES
+    ('approval_workflow', 'lifeos_approval_workflow_rw'),
+    ('auth', 'lifeos_auth_rw'),
+    ('event_store', 'lifeos_event_store_rw'),
+    ('feature_flags', 'lifeos_feature_flags_rw'),
+    ('goal_engine', 'lifeos_goal_engine_rw'),
+    ('life_graph_rel', 'lifeos_life_graph_rel_rw'),
+    ('observability', 'lifeos_observability_rw'),
+    ('scheduler', 'lifeos_scheduler_rw'),
+    ('secrets', 'lifeos_secrets_rw'),
+    ('service_catalog', 'lifeos_catalog_rw')
+),
+actual_defaults AS (
+  SELECT n.nspname AS schema_name,
+         grantee.rolname AS service_role,
+         COUNT(DISTINCT exploded.privilege_type) FILTER (
+           WHERE d.defaclobjtype = 'r'
+             AND exploded.privilege_type IN ('DELETE', 'INSERT', 'SELECT', 'UPDATE')
+         ) AS table_privilege_count,
+         COUNT(DISTINCT exploded.privilege_type) FILTER (
+           WHERE d.defaclobjtype = 'S'
+             AND exploded.privilege_type IN ('SELECT', 'USAGE')
+         ) AS sequence_privilege_count
+  FROM pg_default_acl d
+  JOIN pg_namespace n ON n.oid = d.defaclnamespace
+  JOIN pg_roles definer ON definer.oid = d.defaclrole
+  JOIN LATERAL pg_catalog.aclexplode(d.defaclacl) AS exploded ON TRUE
+  JOIN pg_roles grantee ON grantee.oid = exploded.grantee
+  WHERE definer.rolname = '${POSTGRES_USER}'
+  GROUP BY n.nspname, grantee.rolname
+)
+SELECT COUNT(*)
+FROM expected_pairs e
+LEFT JOIN actual_defaults a
+  ON a.schema_name = e.schema_name
+ AND a.service_role = e.service_role
+WHERE COALESCE(a.table_privilege_count, 0) <> 4
+   OR COALESCE(a.sequence_privilege_count, 0) <> 2;
+SQL
+)"
+
+if [[ "${missing_default_privileges}" != "0" ]]; then
+  echo "Default privilege verification failed: ${missing_default_privileges} schema/service-role pair(s) are missing required table or sequence defaults." >&2
+  exit 1
+fi
 
 echo "Postgres bootstrap complete: database, schemas, roles, and grants are configured."
