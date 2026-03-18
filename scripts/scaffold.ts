@@ -91,7 +91,7 @@ function getTypeScriptTemplates(name: string, description: string): Record<strin
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "tsx --test 'src/**/*.test.ts'"
+    "test": "tsx --test \\"src/**/*.test.ts\\""
   },
   "main": "./src/index.ts",
   "types": "./src/index.ts",
