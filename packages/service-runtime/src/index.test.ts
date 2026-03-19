@@ -3,7 +3,16 @@ import { createServer as createNetServer } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import type { SecretStore } from '@lifeos/secrets';
+
 import { startService } from './index';
+
+function makeNullSecretStore(): SecretStore {
+  return {
+    get: async () => null,
+    set: async () => undefined,
+  };
+}
 
 async function getFreePort(): Promise<number> {
   return new Promise<number>((resolve, reject) => {
@@ -121,5 +130,143 @@ describe('startService', () => {
     expect(response.status).toBe(200);
     const body = (await response.json()) as { status?: string };
     expect(body.status).toBeDefined();
+  });
+
+  it('emits phases in the correct order during boot', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    const phases: string[] = [];
+
+    await startService({
+      serviceName: 'service-runtime-test-phase-order',
+      allowObservabilityInitFallback: true,
+      onPhase: (phase) => {
+        phases.push(phase);
+      },
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    expect(phases).toEqual([
+      'config',
+      'secrets',
+      'observability',
+      'auth/policy',
+      'routes',
+      'health/readiness',
+      'listen',
+    ]);
+  });
+
+  it('isCorService alias still triggers fail-fast on missing required secret', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+
+    await expect(
+      startService({
+        serviceName: 'service-runtime-test-alias-fail-fast',
+        allowObservabilityInitFallback: true,
+        isCorService: true,
+        secretStore: makeNullSecretStore(),
+        secretRefs: [{ name: 'MY_SECRET', policy: 'required' }],
+      }),
+    ).rejects.toThrow('process.exit(1)');
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('isCoreService canonical flag enforces fail-fast on missing required secret', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+
+    await expect(
+      startService({
+        serviceName: 'service-runtime-test-core-fail-fast',
+        allowObservabilityInitFallback: true,
+        isCoreService: true,
+        secretStore: makeNullSecretStore(),
+        secretRefs: [{ name: 'MY_SECRET', policy: 'required' }],
+      }),
+    ).rejects.toThrow('process.exit(1)');
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+
+  it('optional missing secret marks service degraded, not fatal', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-optional-degraded',
+      allowObservabilityInitFallback: true,
+      secretStore: makeNullSecretStore(),
+      secretRefs: [{ name: 'SOME_OPT', policy: 'optional' }],
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/ready`);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { status?: string; checks?: Record<string, unknown> };
+    expect(body.status).toBe('degraded');
+  });
+
+  it('required_if_feature_enabled with feature disabled → degraded, not fail', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-gated-disabled',
+      allowObservabilityInitFallback: true,
+      isFeatureEnabled: () => false,
+      secretStore: makeNullSecretStore(),
+      secretRefs: [{ name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' }],
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/ready`);
+    expect(response.status).toBe(503);
+    const body = (await response.json()) as { status?: string };
+    expect(body.status).toBe('degraded');
+  });
+
+  it('required_if_feature_enabled with feature enabled → fail-fast', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    const exitSpy = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      throw new Error(`process.exit(${code})`);
+    }) as never);
+
+    await expect(
+      startService({
+        serviceName: 'service-runtime-test-gated-enabled-fail',
+        allowObservabilityInitFallback: true,
+        isFeatureEnabled: () => true,
+        secretStore: makeNullSecretStore(),
+        secretRefs: [{ name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' }],
+      }),
+    ).rejects.toThrow('process.exit(1)');
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
   });
 });

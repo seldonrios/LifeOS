@@ -19,6 +19,9 @@ export interface ServiceRuntimeOptions {
   registerPlugins?: (app: FastifyInstance) => Promise<void>;
   configSchema?: object;
   port?: number;
+  /** Controls core fail-fast behavior: missing required secrets will terminate boot immediately. */
+  isCoreService?: boolean;
+  /** @deprecated Use `isCoreService` instead. Will be removed in a future release. */
   isCorService?: boolean;
   enableAuth?: boolean;
   enableMetrics?: boolean;

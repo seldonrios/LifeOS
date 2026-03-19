@@ -4,7 +4,7 @@ import { createEventBusClient } from '@lifeos/event-bus';
 import type { BaseEvent, EventBus } from '@lifeos/event-bus';
 import { runModuleLoaderBoot } from '@lifeos/module-loader';
 import { ServiceCatalog } from '@lifeos/service-catalog';
-import { startService } from '@lifeos/service-runtime';
+import { createEnvSecretStore, startService } from '@lifeos/service-runtime';
 
 function createNoopEventBus(): EventBus {
   return {
@@ -52,6 +52,8 @@ async function bootstrap(): Promise<void> {
     await startService({
       serviceName: 'module-loader-service',
       port: 3009,
+      secretRefs: [{ name: 'LIFEOS_MODULES_SIGNING_KEY', policy: 'optional' }],
+      secretStore: createEnvSecretStore(),
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown bootstrap error';

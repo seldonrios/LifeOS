@@ -14,7 +14,8 @@ import {
   type ObservabilityConfig,
 } from '@lifeos/observability';
 import { createPolicyClient } from '@lifeos/policy-engine';
-import type { SecretRef } from '@lifeos/secrets';
+import { applySecretPolicy, SecretsError } from '@lifeos/secrets';
+import type { SecretRef, SecretStore } from '@lifeos/secrets';
 
 import type { ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
 
@@ -41,8 +42,11 @@ interface InternalServiceRuntimeOptions extends ServiceRuntimeOptions {
   onPhase?: (phase: ServiceRuntimePhase) => void | Promise<void>;
 }
 
-function isRequiredMissingSecret(secretRef: SecretRef, value: string | null): boolean {
-  return secretRef.policy === 'required' && value === null;
+export function createEnvSecretStore(): SecretStore {
+  return {
+    get: async (name: string) => process.env[name] ?? null,
+    set: async () => undefined,
+  };
 }
 
 function terminateBoot(error: unknown, message: string): never {
@@ -69,20 +73,45 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
       isFeatureEnabled: opts.isFeatureEnabled,
     });
     resolvedConfig = loaded.config;
+    for (const marker of loaded.degraded) {
+      allDegradedSecrets.push({ reason: marker.reason });
+    }
   } catch (error) {
     terminateBoot(error, 'Failed to load configuration');
   }
 
   await markPhase('secrets');
-  if (opts.isCorService) {
-    for (const secretRef of opts.secretRefs ?? []) {
-      const value = (await opts.secretStore?.get(secretRef.name)) ?? null;
-      if (isRequiredMissingSecret(secretRef, value)) {
-        console.warn(
-          `[service-runtime] required secret missing for core service: ${secretRef.name}`,
-        );
+  for (const ref of opts.secretRefs ?? []) {
+    const value = (await opts.secretStore?.get(ref.name)) ?? null;
+    let featureEnabled: boolean | undefined;
+    if (ref.policy === 'required_if_feature_enabled') {
+      if (opts.isFeatureEnabled) {
+        featureEnabled = await opts.isFeatureEnabled(ref.featureGate ?? '');
+      } else {
+        featureEnabled =
+          (resolvedConfig.features as Record<string, boolean> | undefined)?.[ref.featureGate ?? ''];
       }
     }
+    try {
+      const outcome = applySecretPolicy(ref, value, featureEnabled);
+      if (typeof outcome !== 'string') {
+        allDegradedSecrets.push({ reason: outcome.reason });
+      }
+    } catch (error) {
+      if (error instanceof SecretsError) {
+        terminateBoot(error, '[service-runtime] boot aborted');
+      }
+      throw error;
+    }
+  }
+  if (allDegradedSecrets.length > 0) {
+    console.warn(
+      JSON.stringify({
+        message: 'service starting with degraded secrets',
+        serviceName: opts.serviceName,
+        degradedSecrets: allDegradedSecrets.map((m) => m.reason),
+      }),
+    );
   }
 
   const observabilityConfig: ObservabilityConfig = opts.observabilityConfig ?? {

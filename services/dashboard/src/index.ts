@@ -1,3 +1,8 @@
-import { startService } from "@lifeos/service-runtime";
+import { createEnvSecretStore, startService } from "@lifeos/service-runtime";
 
-startService({ serviceName: "dashboard-service", port: 3000 });
+startService({
+  serviceName: "dashboard-service",
+  port: 3000,
+  secretRefs: [{ name: 'LIFEOS_SESSION_SECRET', policy: 'optional' }],
+  secretStore: createEnvSecretStore(),
+});

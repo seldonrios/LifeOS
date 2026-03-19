@@ -1,3 +1,9 @@
-import { startService } from "@lifeos/service-runtime";
+import { createEnvSecretStore, startService } from "@lifeos/service-runtime";
 
-startService({ serviceName: "goal-engine-service", port: 3002 });
+startService({
+  serviceName: "goal-engine-service",
+  port: 3002,
+  isCoreService: true,
+  secretRefs: [{ name: 'LIFEOS_DB_URL', policy: 'required' }],
+  secretStore: createEnvSecretStore(),
+});

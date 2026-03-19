@@ -58,7 +58,7 @@ async function buildModule(moduleName: string): Promise<number> {
         outDir,
         rootDir: moduleDir,
         paths: {
-          '@lifeos/*': ['packages/*/dist/index.d.ts'],
+          '@lifeos/*': ['packages/*/src/index.ts'],
         },
       },
       include,
