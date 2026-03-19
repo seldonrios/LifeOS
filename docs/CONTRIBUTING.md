@@ -27,7 +27,7 @@ This is the canonical contributor guide for LifeOS.
 2. Enter a kebab-case package name and a clear description.
 3. If you selected `(1) TypeScript package`, implement `src/index.ts` and `src/types.ts`.
 4. If you selected `(2) Python package`, implement `src/<name>/__init__.py` and `src/<name>/types.py`, then update dependencies in `pyproject.toml` as needed.
-5. Run `pnpm run validate` and ensure it passes before opening a PR. This finishes with `pnpm run build:modules`, so module compilation failures block validation.
+5. Run `pnpm run validate` and ensure it passes before opening a PR. The validation pipeline runs in this exact order: `build:modules -> typecheck -> lint -> format:check -> test`. Module compilation failures at the first step block all downstream checks.
 
 ## How to Add a New Light Module
 
@@ -36,7 +36,7 @@ This is the canonical contributor guide for LifeOS.
 3. Fill `events.ts` with at least one subscription or emission stub.
 4. Fill `agent.ts` with the module agent role definition.
 5. Run `pnpm run build:modules` before testing the loader path. The runtime loader reads `modules/<name>/dist/manifest.js` and never imports source `manifest.ts` files directly.
-6. Run `pnpm run validate`. This enforces the same precompile gate automatically because it ends with `pnpm run build:modules`.
+6. Run `pnpm run validate`. This enforces the same precompile gate automatically; the full pipeline order is `build:modules -> typecheck -> lint -> format:check -> test`.
 
 ## How to Add a New Docker Service
 
@@ -54,8 +54,8 @@ This is the canonical contributor guide for LifeOS.
 
 ## Test Contract
 
-- Every package that contains `.test.ts` files must have a `"test": "tsx --test 'src/**/*.test.ts'"` script in its `package.json`.
-- Tests are executed as part of `pnpm run validate` through the root `test` script, which runs `tsx --test 'packages/*/src/**/*.test.ts'` directly to discover tests deterministically across `packages/*`.
+- Every package that contains `.test.ts` files must define a `"test"` script in its `package.json`. The specific test command (e.g., `tsx --test`, `vitest run`) is package-owned.
+- Tests are executed as part of `pnpm run validate` through the root `test` script, which invokes `tsx scripts/test-runner.ts`. The runner first enforces that every package with `.test.ts` files declares a `"test"` script in its `package.json` — any violation causes an immediate non-zero exit before tests run. If enforcement passes, the runner executes `pnpm -r --filter ./packages/* run --if-present test` to invoke each package's test script in turn.
 - `pnpm run validate` fails if any test fails; there is no warn-only mode.
 - New TypeScript packages generated with `pnpm run scaffold` include the test script automatically; no manual step is required.
 - Run tests for a single package in isolation with `pnpm --filter @lifeos/<name> run test`.

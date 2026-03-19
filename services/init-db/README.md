@@ -99,9 +99,46 @@ This is the post-bootstrap proof that both migration-time default privileges and
 
 ## Bootstrap ordering contract
 
-- Runs with the official `postgres:16-alpine` image with no local Dockerfile.
-- Executes `scripts/init-postgres.sh` through the mounted `/scripts` volume.
-- Starts only after `postgres` is healthy.
-- Must complete successfully before Postgres-dependent app services start.
-- Uses a one-shot bootstrap pattern with Compose dependencies such as `service_completed_successfully`.
-- Is safe to re-run because the schema creation, role creation, grants, and default privilege configuration are all idempotent.
+The `init-db` service runs on `image: postgres:16` (Debian-based) because `scripts/init-postgres.sh` requires bash (`#!/usr/bin/env bash`, `set -euo pipefail`, and bash arrays). Do not use `postgres:16-alpine` for this service because Alpine ships BusyBox `sh` and does not provide bash by default.
+
+Startup ordering contract:
+
+1. `postgres` (image: `postgres:16-alpine`) must reach `service_healthy` (`pg_isready` passes).
+2. `init-db` (image: `postgres:16`) runs `scripts/init-postgres.sh` and must exit `0`.
+3. All DB-dependent app services start only after `init-db` reaches `service_completed_successfully`.
+
+This uses a one-shot bootstrap pattern and remains safe to re-run because schema creation, role creation, grants, and default privilege configuration are idempotent.
+
+## Diagnosing bootstrap failures
+
+When `init-db` fails, run these checks in order:
+
+1. Check the container exit code and logs:
+
+```bash
+docker compose logs init-db
+```
+
+2. Verify the image in use is `postgres:16` (not `postgres:16-alpine`):
+
+```bash
+docker compose config --format json | grep -A2 '"init-db"'
+```
+
+3. Confirm bash is available inside the container:
+
+```bash
+docker compose run --rm init-db bash --version
+```
+
+4. Confirm required env vars are set (the script uses `:?` guards that print the missing variable name on failure):
+
+```bash
+docker compose run --rm init-db env | grep POSTGRES
+```
+
+5. Confirm the postgres service is healthy before re-running init-db:
+
+```bash
+docker compose ps postgres
+```

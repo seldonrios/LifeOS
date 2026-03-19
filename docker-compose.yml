@@ -43,7 +43,7 @@ services:
     networks: [lifeos-network]
 
   init-db:
-    image: postgres:16-alpine
+    image: postgres:16
     env_file: .env
     command: ['/scripts/init-postgres.sh']
     depends_on:

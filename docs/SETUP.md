@@ -27,7 +27,7 @@ git clone <repo-url> && cd lifeos
 pnpm run validate
 ```
 
-This command must exit 0. It runs lint -> test -> format:check -> typecheck -> build:modules. The final `build:modules` step is the precompile gate for light modules because the runtime loader reads `modules/<name>/dist/manifest.js` rather than source `manifest.ts` files.
+This command must exit 0. It runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` step is the precompile gate for light modules because typecheck and lint depend on compiled dist output, and the runtime loader reads `modules/<name>/dist/manifest.js` rather than source `manifest.ts` files.
 
 5. Copy `.env.example` to `.env` and populate required secrets.
 6. Start the platform stack.
@@ -37,6 +37,9 @@ docker compose up
 ```
 
 7. Confirm `init-db` completes before app services continue.
+
+`init-db` requires bash and runs on `postgres:16` (Debian). If it exits immediately, run `docker compose logs init-db` to see the error. See `services/init-db/README.md` for the full diagnostic checklist.
+
 8. Confirm startup diagnostics are emitted by a running service.
 
 ```bash
@@ -73,7 +76,7 @@ scripts/init-secrets.sh
 pnpm run validate
 ```
 
-This includes `pnpm run build:modules`, which must succeed before the module loader can discover light modules from `modules/<name>/dist/manifest.js`.
+This runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` phase must succeed before typecheck and lint can resolve light-module dist artifacts, and before the module loader can discover light modules from `modules/<name>/dist/manifest.js`.
 
 7. Start services.
 
@@ -100,4 +103,5 @@ Use this checklist before opening a PR:
 | Missing secrets error on service start | `.env` is not populated | Copy `.env.example` to `.env` and run `scripts/init-secrets.sh` |
 | NATS auth failure | NKey credentials were not provisioned | Run `scripts/provision-nats-identities.sh` |
 | Port conflict on 5432/4222/3000/7474 | Another process is holding the port | Stop the conflicting process or remap ports in `docker-compose.yml` |
+| `init-db` exits immediately with `exec format error` or `/usr/bin/env: bash: not found` | `init-db` image was changed to an Alpine variant that lacks bash | Restore `image: postgres:16` (Debian) for the `init-db` service in `docker-compose.yml`; run `docker compose pull init-db && docker compose up init-db` |
 | `pnpm run validate` fails on typecheck | Dependencies are missing | Run `pnpm install` first |

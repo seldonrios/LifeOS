@@ -19,9 +19,9 @@ export interface ServiceRuntimeOptions {
   registerPlugins?: (app: FastifyInstance) => Promise<void>;
   configSchema?: object;
   port?: number;
-  /** Controls core fail-fast behavior: missing required secrets will terminate boot immediately. */
+  /** Legacy metadata hint for service classification. Secret enforcement is determined by SecretRef.policy (e.g., 'required' triggers fail-fast via applySecretPolicy), not by this flag. */
   isCoreService?: boolean;
-  /** @deprecated Use `isCoreService` instead. Will be removed in a future release. */
+  /** @deprecated Use `isCoreService` instead. Will be removed in a future release. Neither this flag nor `isCoreService` governs secret enforcement; use `SecretRef.policy` instead. */
   isCorService?: boolean;
   enableAuth?: boolean;
   enableMetrics?: boolean;

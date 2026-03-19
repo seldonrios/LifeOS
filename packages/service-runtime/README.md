@@ -7,7 +7,7 @@ Shared bootstrap runtime for LifeOS services built on Fastify.
 | Phase | Description |
 | --- | --- |
 | config | Loads runtime config through `loadConfig()` from `@lifeos/config`. |
-| secrets | Resolves declared secrets. When `isCoreService: true`, any missing required secret immediately terminates boot (`terminateBoot`). Non-core services track missing secrets as degraded state for the health check without failing boot. |
+| secrets | Resolves declared `secretRefs` against the `secretStore`. Enforcement is determined by each ref's `policy` field: `required` -> missing secret terminates boot immediately (`terminateBoot`); `optional` -> missing secret records a degraded marker; `required_if_feature_enabled` -> behaves as `required` when the controlling feature gate is active, otherwise records a degraded marker. All degraded markers are surfaced via the `secrets` health check at `/health/ready`. |
 | observability | Initializes observability via `createObservabilityClient()`. On failure, falls back to noop (Phase 1 default) and logs a warning; use `allowObservabilityInitFallback: false` to enforce strict fail-fast. |
 | auth/policy | Registers auth and policy startup behavior, including request-time identity logging. |
 | routes | Invokes service route registration hook (optional; defaults to noop). |
@@ -23,8 +23,8 @@ Shared bootstrap runtime for LifeOS services built on Fastify.
 | registerPlugins | `(app: FastifyInstance) => Promise<void>` | no | Registers optional Fastify plugins before routes. |
 | configSchema | `object` | no | Optional config schema for service-level config validation. |
 | port | `number` | no | Override service listen port; defaults to `PORT` env var or `3000`. |
-| isCoreService | `boolean` | no | Canonical core-service flag. When `true`, missing required secrets terminate boot immediately (fail-fast). |
-| isCorService | `boolean` | no | **Deprecated.** Backward-compatibility alias for `isCoreService`. Will be removed in a future release. |
+| isCoreService | `boolean` | no | Canonical core-service flag retained for compatibility. Secret enforcement is policy-driven per `SecretRef.policy`; this flag does not control fail-fast secret behavior in the boot chain. |
+| isCorService | `boolean` | no | **Deprecated.** Backward-compatibility alias for `isCoreService`. Carries the same non-operative status for secret enforcement. |
 | enableAuth | `boolean` | no | Enables auth boot behavior for runtime-controlled auth wiring. |
 | enableMetrics | `boolean` | no | Enables metrics behavior for runtime-controlled observability wiring. |
 | enableReadiness | `boolean` | no | Enables `/health/ready` endpoint; defaults to enabled. |
@@ -36,6 +36,16 @@ Shared bootstrap runtime for LifeOS services built on Fastify.
 | allowObservabilityInitFallback | `boolean` | no | Controls observability init failure behavior. Phase 1 default: falls back to noop. Set to `false` for strict fail-fast. |
 | isFeatureEnabled | `(featureGate: string) => boolean \| Promise<boolean>` | no | Optional feature gate resolver. |
 | healthChecks | `HealthCheck[]` | no | Additional health checks added to the runtime registry. |
+
+## Secret Policy Outcomes
+
+| `SecretRef.policy` | Secret present | Secret missing | Feature gate inactive |
+| --- | --- | --- | --- |
+| `required` | Boot continues | Boot terminates (fail-fast) | N/A |
+| `optional` | Boot continues | Degraded marker recorded | N/A |
+| `required_if_feature_enabled` | Boot continues | Boot terminates (fail-fast) | Degraded marker recorded |
+
+Degraded markers are aggregated and reported via the `secrets` health check registered at the `health/readiness` phase, visible at `/health/ready`.
 
 ## Minimal Usage
 
@@ -54,12 +64,28 @@ await startService({
     app.get('/goals', async () => ({ goals: [] }));
   },
 });
+
+// Example showing policy-driven secret refs
+await startService({
+  serviceName: 'my-service',
+  secretStore: createEnvSecretStore(),
+  isFeatureEnabled: (gate) => featureFlags.isEnabled(gate),
+  secretRefs: [
+    { name: 'DB_PASSWORD', policy: 'required' },
+    { name: 'ANALYTICS_KEY', policy: 'optional' },
+    { name: 'VISION_API_KEY', policy: 'required_if_feature_enabled', featureGate: 'vision' },
+  ],
+});
 ```
 
 ## Phase 1 Notes
 
-- Missing required secrets for core services (`isCoreService: true`) terminate boot immediately. Use `isCorService` for backward compatibility only — it is a deprecated alias that resolves to the same behavior.
-- Non-core services (default) track missing required secrets as degraded health state without failing boot.
+- Secret enforcement is policy-driven per `SecretRef`, not per service class. The `policy` field on each `SecretRef` determines the outcome independently of `isCoreService`.
+- `required` -> boot terminates immediately if the secret is absent.
+- `optional` -> boot continues; the missing secret is recorded as a degraded marker.
+- `required_if_feature_enabled` -> boot terminates if the feature gate is active; otherwise records a degraded marker.
+- All degraded markers are logged as a structured JSON warning at boot time and surfaced via the `secrets` health check at `/health/ready` (HTTP 503 with `status: "degraded"`).
+- `isCorService` is a **deprecated alias** for `isCoreService`. Use `isCoreService` for forward compatibility. Neither flag controls secret enforcement; use `SecretRef.policy` instead.
 - Runtime listen port is controlled by `PORT` env var (default `3000`), or overridden via `port` option.
 - **Observability fallback**: When `createObservabilityClient()` fails, the runtime automatically falls back to a noop observability client and logs a warning. This is the Phase 1 default to keep the bootstrap chain operational. Set `allowObservabilityInitFallback: false` to enforce strict fail-fast behavior.
 - **Route registration**: `registerRoutes` is optional and defaults to a noop for Phase 1 stub services. Services do not need to define routes to boot successfully.

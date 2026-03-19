@@ -161,7 +161,7 @@ describe('startService', () => {
     ]);
   });
 
-  it('isCorService alias still triggers fail-fast on missing required secret', async () => {
+  it('isCorService deprecated alias is accepted; fail-fast is driven by SecretRef policy: required', async () => {
     const port = await getFreePort();
     previousPort = process.env.PORT;
     process.env.PORT = String(port);
@@ -183,7 +183,7 @@ describe('startService', () => {
     expect(exitSpy).toHaveBeenCalledWith(1);
   });
 
-  it('isCoreService canonical flag enforces fail-fast on missing required secret', async () => {
+  it('SecretRef policy: required causes fail-fast boot abort (isCoreService flag present)', async () => {
     const port = await getFreePort();
     previousPort = process.env.PORT;
     process.env.PORT = String(port);
