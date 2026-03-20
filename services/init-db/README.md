@@ -121,8 +121,16 @@ docker compose logs init-db
 
 2. Verify the image in use is `postgres:16` (not `postgres:16-alpine`):
 
+**bash**
+
 ```bash
 docker compose config --format json | grep -A2 '"init-db"'
+```
+
+**PowerShell**
+
+```powershell
+docker compose config --format json | Select-String -Context 0,2 '"init-db"'
 ```
 
 3. Confirm bash is available inside the container:
@@ -133,8 +141,16 @@ docker compose run --rm init-db bash --version
 
 4. Confirm required env vars are set (the script uses `:?` guards that print the missing variable name on failure):
 
+**bash**
+
 ```bash
 docker compose run --rm init-db env | grep POSTGRES
+```
+
+**PowerShell**
+
+```powershell
+docker compose run --rm init-db env | Select-String "POSTGRES"
 ```
 
 5. Confirm the postgres service is healthy before re-running init-db:

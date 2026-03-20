@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-LifeOS has 18 packages, 6 modules, and 16 services that share types, tooling, and scripts. A single-repo approach is needed to enforce consistent quality gates and enable cross-package type checking.
+LifeOS has 18 packages, 6 modules, and 17 long-running services (plus the one-shot `init-db` bootstrap container) that share types, tooling, and scripts. A single-repo approach is needed to enforce consistent quality gates and enable cross-package type checking.
 
 ## Decision
 

@@ -1,5 +1,16 @@
 # Contributing to LifeOS
 
+This file covers high-level project philosophy, values, and contribution principles. It is not the operational workflow reference.
+
+> **Day-to-day workflow?**
+> Use [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md) as the canonical implementation guide for:
+> - `pnpm run validate`
+> - `pnpm run scaffold`
+> - commit format
+> - pre-commit hooks
+> - test contract
+> - Docker service setup
+
 ## Purpose
 
 Explain how contributors should approach the repository in its docs-first Phase 1 state and where to focus early effort.

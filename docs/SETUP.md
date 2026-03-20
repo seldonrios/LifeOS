@@ -42,8 +42,16 @@ docker compose up
 
 8. Confirm startup diagnostics are emitted by a running service.
 
+**bash**
+
 ```bash
 docker compose logs module-loader | grep "Startup Diagnostics Report"
+```
+
+**PowerShell**
+
+```powershell
+docker compose logs module-loader | Select-String "Startup Diagnostics Report"
 ```
 
 9. Continue only when the Ready to Contribute signal is met.
@@ -92,7 +100,7 @@ Use this checklist before opening a PR:
 
 - `pnpm run validate` exits 0
 - `docker compose up` runs `init-db` to completion (`service_completed_successfully`)
-- All 16 long-running services start without crash-looping
+- All 17 long-running services start without crash-looping (`init-db` one-shot bootstrap must also complete with `service_completed_successfully` before app services start — it is not counted as a long-running service)
 - Startup diagnostics report is emitted
 
 ## Troubleshooting
