@@ -71,6 +71,16 @@ Common flags:
 - `--verbose` print safe diagnostics to stderr
 - `status --json` output the full life graph JSON document
 
+Environment overrides:
+
+- `LIFEOS_GRAPH_PATH` sets the default graph path when `--graph-path` is not provided
+
+Optional Docker shortcut for local Ollama:
+
+```powershell
+docker compose up -d ollama
+```
+
 Sample run:
 
 ```text
@@ -296,6 +306,19 @@ That flexibility is a design goal.
 This repository is currently **docs-first**.
 
 Infrastructure runtime note: wrappers under `services/nats`, `services/opa`, `services/postgres`, `services/life-graph-db`, `services/otel-collector`, `services/tempo`, and `services/grafana` are retired placeholders. Runtime source of truth for these components is the official images declared in `docker-compose.yml`.
+
+Current MVP execution surface:
+
+- `@lifeos/cli`
+- `@lifeos/goal-engine`
+- `@lifeos/life-graph`
+
+All other packages and services remain in-repo as dormant architecture placeholders and are not part of active MVP build/test targets.
+
+Docker note:
+
+- `docker compose up` starts only the MVP `ollama` path by default.
+- Legacy services are still present under the `dormant` profile (`docker compose --profile dormant up`).
 
 That means the primary deliverables right now are:
 

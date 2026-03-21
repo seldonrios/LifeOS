@@ -3,16 +3,14 @@ import test from 'node:test';
 
 import { GoalPlanParseError } from '@lifeos/goal-engine';
 
-import { interpretGoal, type OllamaClient } from './goal-interpreter';
+import { interpretGoal, type OllamaClient, type OllamaGenerateRequest } from './goal-interpreter';
 
-test('interpretGoal sends model and parses valid JSON response', async () => {
-  let capturedModel = '';
-  let capturedPrompt = '';
+test('interpretGoal sends model with JSON format and temperature', async () => {
+  const capturedRequests: OllamaGenerateRequest[] = [];
 
   const client: OllamaClient = {
     async generate(request) {
-      capturedModel = request.model;
-      capturedPrompt = request.prompt;
+      capturedRequests.push(request);
       return {
         response: JSON.stringify({
           title: 'Board Meeting Prep',
@@ -33,29 +31,31 @@ test('interpretGoal sends model and parses valid JSON response', async () => {
     client,
   });
 
-  assert.equal(capturedModel, 'llama3.1:8b');
-  assert.match(capturedPrompt, /Current date \(YYYY-MM-DD\): 2026-03-21/);
+  assert.equal(capturedRequests[0]?.model, 'llama3.1:8b');
+  assert.equal(capturedRequests[0]?.options?.temperature, 0.3);
+  assert.equal(typeof capturedRequests[0]?.format, 'object');
   assert.equal(plan.title, 'Board Meeting Prep');
 });
 
-test('interpretGoal parses wrapped JSON output', async () => {
+test('interpretGoal retries with repair prompt after invalid output', async () => {
+  const capturedRequests: OllamaGenerateRequest[] = [];
   const client: OllamaClient = {
-    async generate() {
+    async generate(request) {
+      capturedRequests.push(request);
+      if (capturedRequests.length === 1) {
+        return { response: 'not valid json' };
+      }
+
       return {
-        response: `
-Here is your plan:
-\`\`\`json
-{
-  "title": "Board Meeting Prep",
-  "description": "Prepare deck and speaking notes.",
-  "priority": "high",
-  "deadline": null,
-  "subtasks": [],
-  "neededResources": [],
-  "relatedAreas": ["work"]
-}
-\`\`\`
-`,
+        response: JSON.stringify({
+          title: 'Board Meeting Prep',
+          description: 'Prepare deck and speaking notes.',
+          priority: 'high',
+          deadline: null,
+          subtasks: [],
+          neededResources: [],
+          relatedAreas: ['work'],
+        }),
       };
     },
   };
@@ -66,13 +66,14 @@ Here is your plan:
   });
 
   assert.equal(plan.priority, 'high');
-  assert.equal(plan.deadline, null);
+  assert.equal(capturedRequests.length, 2);
+  assert.match(capturedRequests[1]?.prompt ?? '', /previous output was invalid/i);
 });
 
-test('interpretGoal throws GoalPlanParseError when output is invalid', async () => {
+test('interpretGoal throws deterministic GoalPlanParseError after repair failure', async () => {
   const client: OllamaClient = {
     async generate() {
-      return { response: 'definitely not json' };
+      return { response: 'still not json' };
     },
   };
 
@@ -82,14 +83,23 @@ test('interpretGoal throws GoalPlanParseError when output is invalid', async () 
         model: 'llama3.1:8b',
         client,
       }),
-    (error: unknown) => error instanceof GoalPlanParseError,
+    (error: unknown) =>
+      error instanceof GoalPlanParseError &&
+      /after repair attempt/i.test(error.message) &&
+      error.rawOutput === 'still not json',
   );
 });
 
 test('interpretGoal emits safe stage callbacks in order', async () => {
   const stages: string[] = [];
+  let callCount = 0;
   const client: OllamaClient = {
     async generate() {
+      callCount += 1;
+      if (callCount === 1) {
+        return { response: 'bad-json' };
+      }
+
       return {
         response: JSON.stringify({
           title: 'Board Meeting Prep',
@@ -117,6 +127,10 @@ test('interpretGoal emits safe stage callbacks in order', async () => {
     'llm_request_started',
     'llm_response_received',
     'plan_parse_started',
-    'plan_parse_succeeded',
+    'repair_prompt_built',
+    'repair_request_started',
+    'repair_response_received',
+    'repair_parse_started',
+    'repair_parse_succeeded',
   ]);
 });

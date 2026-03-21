@@ -65,7 +65,7 @@ export interface RunCliDependencies {
     },
     graphPath?: string,
   ) => Promise<GoalPlanRecord<GoalInterpretationPlan>>;
-  loadGraph?: (graphPath?: string) => Promise<LifeGraphDocument<GoalInterpretationPlan>>;
+  loadGraph?: (graphPath?: string) => Promise<LifeGraphDocument>;
   getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
@@ -100,6 +100,11 @@ function mapStageToVerboseLine(stage: InterpretGoalStage): string {
     llm_response_received: 'model response received',
     plan_parse_started: 'validating response against MVP schema',
     plan_parse_succeeded: 'response validated and parsed',
+    repair_prompt_built: 'building repair prompt after schema mismatch',
+    repair_request_started: 'sending repair request to local model',
+    repair_response_received: 'repair response received',
+    repair_parse_started: 'validating repaired response against MVP schema',
+    repair_parse_succeeded: 'repaired response validated and parsed',
   };
 
   return stageLines[stage];
@@ -111,14 +116,6 @@ function normalizeErrorMessage(error: unknown): string {
   }
 
   return 'Unknown error.';
-}
-
-function isRetryableGoalParseError(error: unknown): boolean {
-  if (error instanceof GoalPlanParseError) {
-    return true;
-  }
-
-  return /not a valid mvp goal plan/i.test(normalizeErrorMessage(error));
 }
 
 function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
@@ -156,12 +153,12 @@ function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
 function formatStatusSummary(summary: LifeGraphSummary): string {
   const lines: string[] = [];
   lines.push(`Version: ${summary.version}`);
-  lines.push(`Total Goals: ${summary.totalGoals}`);
+  lines.push(`Total Plans: ${summary.totalPlans}`);
   lines.push(`Updated At: ${summary.updatedAt}`);
-  lines.push(`Latest Goal: ${summary.latestGoalCreatedAt ?? 'none'}`);
+  lines.push(`Latest Plan: ${summary.latestPlanCreatedAt ?? 'none'}`);
   lines.push(
     `Recent Titles: ${
-      summary.recentGoalTitles.length > 0 ? summary.recentGoalTitles.join(' | ') : 'none'
+      summary.recentPlanTitles.length > 0 ? summary.recentPlanTitles.join(' | ') : 'none'
     }`,
   );
   return lines.join('\n');
@@ -207,45 +204,24 @@ export async function runGoalCommand(
       : null;
 
   try {
-    const attemptNow = now();
-    const maxAttempts = 2;
-    let plan: GoalInterpretationPlan | null = null;
-
-    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-      verboseLog(`interpret_attempt=${attempt}/${maxAttempts}`);
-      const interpretOptions: {
-        model: string;
-        host?: string;
-        now: Date;
-        onStage?: (stage: InterpretGoalStage) => void;
-      } = {
-        model: options.model,
-        now: attemptNow,
+    const interpretOptions: {
+      model: string;
+      host?: string;
+      now: Date;
+      onStage?: (stage: InterpretGoalStage) => void;
+    } = {
+      model: options.model,
+      now: now(),
+    };
+    if (host) {
+      interpretOptions.host = host;
+    }
+    if (options.verbose) {
+      interpretOptions.onStage = (stage: InterpretGoalStage) => {
+        verboseLog(`stage=${mapStageToVerboseLine(stage)}`);
       };
-      if (host) {
-        interpretOptions.host = host;
-      }
-      if (options.verbose) {
-        interpretOptions.onStage = (stage: InterpretGoalStage) => {
-          verboseLog(`stage=${mapStageToVerboseLine(stage)}`);
-        };
-      }
-
-      try {
-        plan = await interpret(normalizedGoal, interpretOptions);
-        break;
-      } catch (error: unknown) {
-        if (attempt < maxAttempts && isRetryableGoalParseError(error)) {
-          verboseLog('retrying goal interpretation after parse/schema failure');
-          continue;
-        }
-        throw error;
-      }
     }
-
-    if (!plan) {
-      throw new Error('Goal interpretation failed.');
-    }
+    const plan = await interpret(normalizedGoal, interpretOptions);
 
     spinner?.succeed(chalk.green('Goal decomposed successfully.'));
 
@@ -258,7 +234,7 @@ export async function runGoalCommand(
     }
 
     if (options.save) {
-      const defaultGraphPath = getDefaultLifeGraphPath(baseCwd);
+      const defaultGraphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
       const isFirstRun = options.graphPath === defaultGraphPath && !fileExists(options.graphPath);
       if (isFirstRun) {
         const firstRunMessage = `Welcome to LifeOS! Initializing your personal graph at ${options.graphPath}`;
@@ -367,7 +343,7 @@ function buildProgram(
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
 
   const defaultModel = env.LIFEOS_GOAL_MODEL?.trim() || DEFAULT_MODEL;
-  const defaultGraphPath = getDefaultLifeGraphPath(baseCwd);
+  const defaultGraphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
 
   const program = new Command();
   program.name('lifeos').description('Sovereign Personal AI Node CLI').version(CLI_VERSION);

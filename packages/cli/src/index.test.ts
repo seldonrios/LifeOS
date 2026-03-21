@@ -24,16 +24,18 @@ function samplePlan(): GoalInterpretationPlan {
   };
 }
 
-function sampleGraph(): LifeGraphDocument<GoalInterpretationPlan> {
+function sampleGraph(): LifeGraphDocument {
   return {
     version: '0.1.0',
     updatedAt: '2026-03-21T14:00:00.000Z',
-    goals: [
+    plans: [
       {
         id: 'goal_123',
+        title: 'Board Meeting Prep',
+        description: 'Prepare deck, notes, and decision log.',
+        deadline: '2026-03-26',
+        tasks: [],
         createdAt: '2026-03-21T14:00:00.000Z',
-        input: 'Prepare board meeting',
-        plan: samplePlan(),
       },
     ],
   };
@@ -291,53 +293,61 @@ test('first run message appears only when default graph path is missing and save
   assert.match(stdout.join(''), /Welcome to LifeOS! Initializing your personal graph/);
 });
 
-test('retries once on parse/schema failure and succeeds', async () => {
-  let attempts = 0;
-  const stderr: string[] = [];
+test('uses LIFEOS_GRAPH_PATH when no --graph-path flag is provided', async () => {
+  let capturedPath = '';
 
-  const exitCode = await runCli(['goal', 'Prepare board meeting', '--verbose', '--no-save'], {
-    env: {},
+  const exitCode = await runCli(['goal', 'Prepare board meeting'], {
+    env: {
+      LIFEOS_GRAPH_PATH: '/custom/graph.json',
+    },
     cwd: () => '/repo',
     now: () => new Date('2026-03-21T10:00:00-04:00'),
-    interpretGoal: async () => {
-      attempts += 1;
-      if (attempts === 1) {
-        throw new GoalPlanParseError('validation failed', '{"bad":true}');
-      }
-      return samplePlan();
+    fileExists: () => true,
+    interpretGoal: async () => samplePlan(),
+    appendGoalPlan: async (_entry, graphPath) => {
+      capturedPath = graphPath ?? '';
+      return {
+        id: 'goal_123',
+        createdAt: '2026-03-21T14:00:00.000Z',
+        input: 'Prepare board meeting',
+        plan: samplePlan(),
+      };
     },
     createSpinner: () => createSpinnerRecorder().spinner,
-    stderr: (message) => {
-      stderr.push(message);
-    },
   });
 
   assert.equal(exitCode, 0);
-  assert.equal(attempts, 2);
-  assert.match(stderr.join(''), /retrying goal interpretation after parse\/schema failure/);
+  assert.equal(capturedPath, '/custom/graph.json');
 });
 
-test('fails after max retries on parse/schema failure', async () => {
-  let attempts = 0;
-  const stderr: string[] = [];
+test('--graph-path overrides LIFEOS_GRAPH_PATH', async () => {
+  let capturedPath = '';
 
-  const exitCode = await runCli(['goal', 'Prepare board meeting'], {
-    env: {},
-    cwd: () => '/repo',
-    now: () => new Date('2026-03-21T10:00:00-04:00'),
-    interpretGoal: async () => {
-      attempts += 1;
-      throw new GoalPlanParseError('validation failed', '{"bad":true}');
+  const exitCode = await runCli(
+    ['goal', 'Prepare board meeting', '--graph-path', '/flag/path.json'],
+    {
+      env: {
+        LIFEOS_GRAPH_PATH: '/custom/graph.json',
+      },
+      cwd: () => '/repo',
+      now: () => new Date('2026-03-21T10:00:00-04:00'),
+      fileExists: () => true,
+      interpretGoal: async () => samplePlan(),
+      appendGoalPlan: async (_entry, graphPath) => {
+        capturedPath = graphPath ?? '';
+        return {
+          id: 'goal_123',
+          createdAt: '2026-03-21T14:00:00.000Z',
+          input: 'Prepare board meeting',
+          plan: samplePlan(),
+        };
+      },
+      createSpinner: () => createSpinnerRecorder().spinner,
     },
-    createSpinner: () => createSpinnerRecorder().spinner,
-    stderr: (message) => {
-      stderr.push(message);
-    },
-  });
+  );
 
-  assert.equal(exitCode, 1);
-  assert.equal(attempts, 2);
-  assert.match(stderr.join(''), /did not match the expected goal-plan schema/i);
+  assert.equal(exitCode, 0);
+  assert.equal(capturedPath, '/flag/path.json');
 });
 
 test('status command prints concise summary in human mode', async () => {
@@ -346,9 +356,12 @@ test('status command prints concise summary in human mode', async () => {
   const exitCode = await runCli(['status'], {
     getGraphSummary: async () => ({
       version: '0.1.0',
+      totalPlans: 2,
       totalGoals: 2,
       updatedAt: '2026-03-21T14:00:00.000Z',
+      latestPlanCreatedAt: '2026-03-21T14:00:00.000Z',
       latestGoalCreatedAt: '2026-03-21T14:00:00.000Z',
+      recentPlanTitles: ['Board Meeting Prep', 'Quarterly Review'],
       recentGoalTitles: ['Board Meeting Prep', 'Quarterly Review'],
     }),
     stdout: (message) => {
@@ -359,7 +372,7 @@ test('status command prints concise summary in human mode', async () => {
   assert.equal(exitCode, 0);
   const output = stdout.join('');
   assert.match(output, /Life Graph Status/);
-  assert.match(output, /Total Goals: 2/);
+  assert.match(output, /Total Plans: 2/);
   assert.match(output, /Recent Titles: Board Meeting Prep \| Quarterly Review/);
 });
 
@@ -374,8 +387,8 @@ test('status --json emits full versioned graph document', async () => {
   });
 
   assert.equal(exitCode, 0);
-  const parsed = JSON.parse(stdout.join('')) as LifeGraphDocument<GoalInterpretationPlan>;
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphDocument;
   assert.equal(parsed.version, '0.1.0');
-  assert.equal(parsed.goals.length, 1);
-  assert.equal(parsed.goals[0]?.plan.title, 'Board Meeting Prep');
+  assert.equal(parsed.plans.length, 1);
+  assert.equal(parsed.plans[0]?.title, 'Board Meeting Prep');
 });

@@ -12,10 +12,9 @@
     }
   },
   "dependencies": {
-    "@lifeos/event-bus": "workspace:*",
     "zod": "^3.23.8"
   },
   "scripts": {
-    "test": "tsx --test src/store.test.ts"
+    "test": "tsx --test src/store.test.ts src/path.test.ts"
   }
 }

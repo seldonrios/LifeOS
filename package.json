@@ -8,13 +8,12 @@
   "scripts": {
     "prepare": "husky install .husky",
     "lifeos": "pnpm exec tsx packages/cli/src/index.ts",
-    "validate": "pnpm run build:modules && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
-    "test": "tsx scripts/test-runner.ts",
-    "lint": "eslint . && tsx scripts/ruff-task.ts check",
+    "validate": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
+    "test": "pnpm --filter @lifeos/life-graph test && pnpm --filter @lifeos/goal-engine test && pnpm --filter @lifeos/cli test",
+    "lint": "eslint \"packages/{cli,goal-engine,life-graph}/src/**/*.ts\" && tsx scripts/ruff-task.ts check",
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",
     "typecheck": "tsc --build tsconfig.packages.json",
-    "build:modules": "tsx scripts/build-modules.ts",
     "scaffold": "tsx scripts/scaffold.ts"
   },
   "lint-staged": {

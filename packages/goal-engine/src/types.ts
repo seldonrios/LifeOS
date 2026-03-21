@@ -1,5 +1,11 @@
-import type { ApprovalMode } from '@lifeos/approval-workflow';
 import { GoalTransitionError, validateGoalTransition } from './state-machine';
+
+export enum ApprovalMode {
+  none = 'none',
+  notify_only = 'notify_only',
+  approve_before_schedule = 'approve_before_schedule',
+  approve_before_execute = 'approve_before_execute',
+}
 
 export enum GoalStatus {
   proposed = 'proposed',

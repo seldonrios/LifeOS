@@ -1,5 +1,4 @@
 packages:
-  - 'packages/*'
-  - 'packages/modules/*'
-  - 'services/*'
-  - 'scripts/*'
+  - 'packages/cli'
+  - 'packages/goal-engine'
+  - 'packages/life-graph'

@@ -143,16 +143,46 @@ export interface LocalLifeGraph<TPlan = Record<string, unknown>> {
   goals: Array<GoalPlanRecord<TPlan>>;
 }
 
-export interface LifeGraphDocument<TPlan = Record<string, unknown>> {
+export interface LifeGraphTask {
+  id: string;
+  title: string;
+  status: 'todo' | 'in-progress' | 'done';
+  priority: number;
+  dueDate?: string;
+}
+
+export interface GoalPlan {
+  id: string;
+  title: string;
+  description: string;
+  deadline: string | null;
+  tasks: LifeGraphTask[];
+  createdAt: string;
+}
+
+export interface GoalPlanSource {
+  id?: unknown;
+  title?: unknown;
+  description?: unknown;
+  deadline?: unknown;
+  tasks?: unknown;
+  subtasks?: unknown;
+  createdAt?: unknown;
+}
+
+export interface LifeGraphDocument {
   version: '0.1.0';
   updatedAt: string;
-  goals: Array<GoalPlanRecord<TPlan>>;
+  plans: GoalPlan[];
 }
 
 export interface LifeGraphSummary {
   version: '0.1.0';
+  totalPlans: number;
   totalGoals: number;
   updatedAt: string;
+  latestPlanCreatedAt: string | null;
   latestGoalCreatedAt: string | null;
+  recentPlanTitles: string[];
   recentGoalTitles: string[];
 }

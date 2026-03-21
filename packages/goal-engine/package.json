@@ -12,11 +12,6 @@
     }
   },
   "dependencies": {
-    "@lifeos/event-bus": "workspace:*",
-    "@lifeos/life-graph": "workspace:*",
-    "@lifeos/policy-engine": "workspace:*",
-    "@lifeos/approval-workflow": "workspace:*",
-    "@lifeos/config": "workspace:*",
     "zod": "^3.23.8"
   },
   "scripts": {

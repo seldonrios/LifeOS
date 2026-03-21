@@ -4,6 +4,16 @@
 
 Provide the canonical index for the LifeOS docs set and give contributors a clear reading path through the Phase 1 vision and architecture.
 
+## Active MVP Surface
+
+Current executable MVP targets are:
+
+- `@lifeos/cli`
+- `@lifeos/goal-engine`
+- `@lifeos/life-graph`
+
+Other packages and services in the repo are currently dormant placeholders for later phases.
+
 ## Recommended Reading Order
 
 1. [Vision Overview](vision/overview.md)

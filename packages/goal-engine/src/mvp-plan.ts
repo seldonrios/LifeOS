@@ -44,6 +44,43 @@ export const GoalInterpretationPlanSchema = z
   })
   .strict();
 
+export const GoalInterpretationPlanJsonSchema = {
+  type: 'object',
+  properties: {
+    title: { type: 'string' },
+    description: { type: 'string' },
+    priority: { type: 'string', enum: ['high', 'medium', 'low'] },
+    deadline: {
+      anyOf: [{ type: 'string', pattern: DATE_PATTERN.source }, { type: 'null' }],
+    },
+    subtasks: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          description: { type: 'string' },
+          dependsOn: { type: 'array', items: { type: 'string' } },
+          estimatedHours: { type: 'number' },
+        },
+        required: ['description', 'dependsOn', 'estimatedHours'],
+        additionalProperties: false,
+      },
+    },
+    neededResources: { type: 'array', items: { type: 'string' } },
+    relatedAreas: { type: 'array', items: { type: 'string' } },
+  },
+  required: [
+    'title',
+    'description',
+    'priority',
+    'deadline',
+    'subtasks',
+    'neededResources',
+    'relatedAreas',
+  ],
+  additionalProperties: false,
+} as const;
+
 export type GoalPlanSubtask = z.infer<typeof GoalPlanSubtaskSchema>;
 export type GoalInterpretationPlan = z.infer<typeof GoalInterpretationPlanSchema>;
 

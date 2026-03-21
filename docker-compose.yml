@@ -1,5 +1,17 @@
+x-dormant-profile: &dormant_profile
+  profiles: ['dormant']
+
 services:
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama-data:/root/.ollama
+    networks: [lifeos-network]
+
   postgres:
+    <<: *dormant_profile
     image: postgres:16-alpine
     env_file: .env
     ports:
@@ -12,6 +24,7 @@ services:
     networks: [lifeos-network]
 
   life-graph-db:
+    <<: *dormant_profile
     image: neo4j:5-community
     env_file: .env
     ports:
@@ -20,6 +33,7 @@ services:
     networks: [lifeos-network]
 
   nats:
+    <<: *dormant_profile
     image: nats:2-alpine
     env_file: .env
     command: ['--config', '/etc/nats/nats-server.conf']
@@ -35,6 +49,7 @@ services:
     networks: [lifeos-network]
 
   opa:
+    <<: *dormant_profile
     image: openpolicyagent/opa:latest-static
     env_file: .env
     command: ['run', '--server', '--addr=0.0.0.0:8181']
@@ -43,6 +58,7 @@ services:
     networks: [lifeos-network]
 
   init-db:
+    <<: *dormant_profile
     image: postgres:16
     env_file: .env
     command: ['/scripts/init-postgres.sh']
@@ -55,6 +71,7 @@ services:
     networks: [lifeos-network]
 
   module-loader:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/module-loader/Dockerfile
@@ -72,6 +89,7 @@ services:
     networks: [lifeos-network]
 
   reasoning-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/reasoning/Dockerfile
@@ -84,6 +102,7 @@ services:
     networks: [lifeos-network]
 
   goal-engine-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/goal-engine/Dockerfile
@@ -96,6 +115,7 @@ services:
     networks: [lifeos-network]
 
   agent-mesh-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/agent-mesh/Dockerfile
@@ -108,6 +128,7 @@ services:
     networks: [lifeos-network]
 
   simulation-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/simulation/Dockerfile
@@ -120,6 +141,7 @@ services:
     networks: [lifeos-network]
 
   dashboard:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/dashboard/Dockerfile
@@ -132,6 +154,7 @@ services:
     networks: [lifeos-network]
 
   auth-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/auth/Dockerfile
@@ -144,6 +167,7 @@ services:
     networks: [lifeos-network]
 
   secrets-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/secrets/Dockerfile
@@ -156,6 +180,7 @@ services:
     networks: [lifeos-network]
 
   service-catalog:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/service-catalog/Dockerfile
@@ -168,6 +193,7 @@ services:
     networks: [lifeos-network]
 
   feature-flag-service:
+    <<: *dormant_profile
     build:
       context: .
       dockerfile: services/feature-flags/Dockerfile
@@ -180,6 +206,7 @@ services:
     networks: [lifeos-network]
 
   otel-collector:
+    <<: *dormant_profile
     image: otel/opentelemetry-collector-contrib
     env_file: .env
     ports:
@@ -190,6 +217,7 @@ services:
     networks: [lifeos-network]
 
   tempo:
+    <<: *dormant_profile
     image: grafana/tempo:latest
     env_file: .env
     ports:
@@ -197,6 +225,7 @@ services:
     networks: [lifeos-network]
 
   grafana:
+    <<: *dormant_profile
     image: grafana/grafana:latest
     env_file: .env
     ports:
@@ -206,3 +235,6 @@ services:
 networks:
   lifeos-network:
     driver: bridge
+
+volumes:
+  ollama-data:

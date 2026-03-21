@@ -18,8 +18,14 @@ function samplePlan(title: string): Record<string, unknown> {
     title,
     description: 'Plan description',
     priority: 'high',
-    deadline: null,
-    subtasks: [],
+    deadline: '2026-03-26',
+    subtasks: [
+      {
+        description: 'Draft board deck',
+        dependsOn: [],
+        estimatedHours: 2,
+      },
+    ],
     neededResources: [],
     relatedAreas: ['work'],
   };
@@ -32,11 +38,11 @@ test('loadGraph returns an empty versioned document when file is missing', async
 
   const graph = await loadGraph(graphPath);
   assert.equal(graph.version, '0.1.0');
-  assert.equal(graph.goals.length, 0);
+  assert.equal(graph.plans.length, 0);
   assert.match(graph.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
-test('loadGraph auto-normalizes legacy unversioned graph shape', async () => {
+test('loadGraph migrates legacy versioned graph with goals[]', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
   const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
   await mkdir(join(tempDir, '.lifeos'), { recursive: true });
@@ -45,6 +51,8 @@ test('loadGraph auto-normalizes legacy unversioned graph shape', async () => {
     graphPath,
     JSON.stringify(
       {
+        version: '0.1.0',
+        updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
         goals: [
           {
             id: 'goal_1',
@@ -62,8 +70,8 @@ test('loadGraph auto-normalizes legacy unversioned graph shape', async () => {
 
   const graph = await loadGraph(graphPath);
   assert.equal(graph.version, '0.1.0');
-  assert.equal(graph.goals.length, 1);
-  assert.equal(graph.goals[0]?.input, 'Legacy entry');
+  assert.equal(graph.plans.length, 1);
+  assert.equal(graph.plans[0]?.title, 'Legacy Plan');
 });
 
 test('loadGraph rejects invalid graph shape/version', async () => {
@@ -84,7 +92,7 @@ test('loadGraph rejects invalid graph shape/version', async () => {
   await assert.rejects(() => loadGraph(graphPath), /Invalid life graph format/);
 });
 
-test('appendGoalPlan preserves existing entries and increments goal count', async () => {
+test('appendGoalPlan preserves existing entries and increments plan count', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
   const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
 
@@ -105,9 +113,10 @@ test('appendGoalPlan preserves existing entries and increments goal count', asyn
   );
 
   const graph = await loadGraph(graphPath);
-  assert.equal(graph.goals.length, 2);
-  assert.equal(graph.goals[0]?.id, first.id);
-  assert.equal(graph.goals[1]?.id, second.id);
+  assert.equal(graph.plans.length, 2);
+  assert.equal(graph.plans[0]?.id, first.id);
+  assert.equal(graph.plans[1]?.id, second.id);
+  assert.equal(graph.plans[1]?.tasks.length, 1);
 });
 
 test('saveGraphAtomic creates directory and writes valid versioned graph', async () => {
@@ -118,17 +127,17 @@ test('saveGraphAtomic creates directory and writes valid versioned graph', async
     {
       version: '0.1.0',
       updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
-      goals: [],
+      plans: [],
     },
     graphPath,
   );
 
   const raw = JSON.parse(await readFile(graphPath, 'utf8')) as {
     version: string;
-    goals: unknown[];
+    plans: unknown[];
   };
   assert.equal(raw.version, '0.1.0');
-  assert.equal(raw.goals.length, 0);
+  assert.equal(raw.plans.length, 0);
 });
 
 test('compatibility wrappers still work with legacy signatures', async () => {
@@ -146,6 +155,8 @@ test('compatibility wrappers still work with legacy signatures', async () => {
   const legacyView = await loadLocalLifeGraph(graphPath);
   const summary = await getGraphSummary(graphPath);
   assert.equal(legacyView.goals.length, 1);
+  assert.equal(summary.totalPlans, 1);
   assert.equal(summary.totalGoals, 1);
+  assert.equal(summary.recentPlanTitles[0], 'Compat Plan');
   assert.equal(summary.recentGoalTitles[0], 'Compat Plan');
 });
