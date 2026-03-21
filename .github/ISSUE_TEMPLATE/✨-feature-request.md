@@ -2,7 +2,7 @@
 name: "✨ Feature Request"
 about: Suggest an idea or improvement for LifeOS
 title: "[FEATURE] "
-labels: enhancement
+labels: bug, enhancement
 assignees: seldonrios
 
 ---
