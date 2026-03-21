@@ -88,8 +88,8 @@ $ pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursda
 [ok] Goal decomposed successfully.
 Plan for: Help me prepare for the quarterly board meeting next Thursday
 ...
-Welcome to LifeOS! Initializing your personal graph at <repo>/.lifeos/life-graph.json
-[saved] <repo>/.lifeos/life-graph.json (id: goal_...)
+Welcome to LifeOS! Initializing your personal graph at <user-data>/lifeos/life-graph.json
+[saved] <user-data>/lifeos/life-graph.json (id: goal_...)
 ```
 
 For expanded demo/troubleshooting guidance, see [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md).

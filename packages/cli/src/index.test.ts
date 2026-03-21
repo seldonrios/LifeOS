@@ -1,26 +1,26 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { GoalPlanParseError, type GoalInterpretationPlan } from '@lifeos/goal-engine';
-import type { LifeGraphDocument } from '@lifeos/life-graph';
+import type { GoalPlan, LifeGraphDocument } from '@lifeos/life-graph';
 
 import { runCli } from './index';
 
-function samplePlan(): GoalInterpretationPlan {
+function samplePlan(): GoalPlan {
   return {
+    id: 'goal_123',
     title: 'Board Meeting Prep',
     description: 'Prepare deck, notes, and decision log.',
-    priority: 'high',
     deadline: '2026-03-26',
-    subtasks: [
+    createdAt: '2026-03-21T14:00:00.000Z',
+    tasks: [
       {
-        description: 'Draft board deck',
-        dependsOn: [],
-        estimatedHours: 2,
+        id: 'task_1',
+        title: 'Draft board deck',
+        status: 'todo',
+        priority: 4,
+        dueDate: '2026-03-24',
       },
     ],
-    neededResources: ['Q1 financial summary'],
-    relatedAreas: ['work'],
   };
 }
 
@@ -136,7 +136,7 @@ test('--json outputs only JSON to stdout and suppresses spinner', async () => {
   assert.equal(exitCode, 0);
   assert.equal(spinnerCreated, 0);
   const output = stdout.join('');
-  const parsed = JSON.parse(output) as GoalInterpretationPlan;
+  const parsed = JSON.parse(output) as GoalPlan;
   assert.equal(parsed.title, 'Board Meeting Prep');
   assert.equal(stderr.length, 0);
 });
@@ -254,7 +254,7 @@ test('maps parse failures to concise schema guidance', async () => {
     cwd: () => '/repo',
     now: () => new Date('2026-03-21T10:00:00-04:00'),
     interpretGoal: async () => {
-      throw new GoalPlanParseError('validation failed', '{"foo":"bar"}');
+      throw new Error('Goal interpretation failed after 3 attempts: validation failed');
     },
     createSpinner: () => createSpinnerRecorder().spinner,
     stderr: (message) => {

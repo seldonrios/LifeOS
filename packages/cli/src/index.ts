@@ -6,18 +6,18 @@ import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
 
-import { GoalPlanParseError, type GoalInterpretationPlan } from '@lifeos/goal-engine';
 import {
-  appendGoalPlan,
+  createLifeGraphClient,
   getDefaultLifeGraphPath,
   getGraphSummary,
   loadGraph,
+  type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphDocument,
   type LifeGraphSummary,
 } from '@lifeos/life-graph';
+import { interpretGoal, type InterpretGoalStage } from '@lifeos/goal-engine';
 import { formatGoalPlan } from './format';
-import { interpretGoal, type InterpretGoalStage } from './goal-interpreter';
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
@@ -50,21 +50,21 @@ export interface RunCliDependencies {
   interpretGoal?: (
     input: string,
     options: {
-      model: string;
+      model?: string;
       host?: string;
       now: Date;
       onStage?: (stage: InterpretGoalStage) => void;
     },
-  ) => Promise<GoalInterpretationPlan>;
+  ) => Promise<GoalPlan>;
   appendGoalPlan?: (
     entry: {
       input: string;
-      plan: GoalInterpretationPlan;
+      plan: GoalPlan;
       id?: string;
       createdAt?: string;
     },
     graphPath?: string,
-  ) => Promise<GoalPlanRecord<GoalInterpretationPlan>>;
+  ) => Promise<GoalPlanRecord<GoalPlan>>;
   loadGraph?: (graphPath?: string) => Promise<LifeGraphDocument>;
   getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
   stdout?: (message: string) => void;
@@ -139,7 +139,7 @@ function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
     };
   }
 
-  if (error instanceof GoalPlanParseError || /not a valid mvp goal plan/i.test(message)) {
+  if (/failed after 3 attempts|could not parse or repair json|invalid life graph/i.test(message)) {
     return {
       message: 'Model output did not match the expected goal-plan schema.',
       guidance:
@@ -174,7 +174,6 @@ export async function runGoalCommand(
   const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
-  const appendPlan = dependencies.appendGoalPlan ?? appendGoalPlan;
   const interpret = dependencies.interpretGoal ?? interpretGoal;
   const fileExists = dependencies.fileExists ?? existsSync;
   const createSpinner = dependencies.createSpinner ?? createDefaultSpinner;
@@ -205,7 +204,7 @@ export async function runGoalCommand(
 
   try {
     const interpretOptions: {
-      model: string;
+      model?: string;
       host?: string;
       now: Date;
       onStage?: (stage: InterpretGoalStage) => void;
@@ -246,13 +245,27 @@ export async function runGoalCommand(
       }
 
       verboseLog('stage=save_started');
-      const saved = await appendPlan(
-        {
-          input: normalizedGoal,
-          plan,
-        },
-        options.graphPath,
-      );
+      const saved = dependencies.appendGoalPlan
+        ? await dependencies.appendGoalPlan(
+            {
+              input: normalizedGoal,
+              plan,
+            },
+            options.graphPath,
+          )
+        : await (async (): Promise<GoalPlanRecord<GoalPlan>> => {
+            const graphClient = createLifeGraphClient({ graphPath: options.graphPath, env });
+            const id = await graphClient.createNode(
+              'plan',
+              plan as unknown as Record<string, unknown>,
+            );
+            return {
+              id,
+              createdAt: plan.createdAt,
+              input: normalizedGoal,
+              plan,
+            };
+          })();
       verboseLog('stage=save_completed');
       verboseLog(`saved_record_id=${saved.id}`);
 

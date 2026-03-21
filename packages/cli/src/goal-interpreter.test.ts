@@ -1,27 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { GoalPlanParseError } from '@lifeos/goal-engine';
+import type { GoalPlan } from '@lifeos/life-graph';
 
 import { interpretGoal, type OllamaClient, type OllamaGenerateRequest } from './goal-interpreter';
 
-test('interpretGoal sends model with JSON format and temperature', async () => {
+function samplePlan(): GoalPlan {
+  return {
+    id: 'goal_123',
+    title: 'Board Meeting Prep',
+    description: 'Prepare deck and speaking notes.',
+    deadline: '2026-03-26',
+    createdAt: '2026-03-21T12:00:00.000Z',
+    tasks: [
+      {
+        id: 'task_1',
+        title: 'Draft board deck',
+        status: 'todo',
+        priority: 4,
+        dueDate: '2026-03-24',
+      },
+    ],
+  };
+}
+
+test('interpretGoal sends chat request with json format and low temperature', async () => {
   const capturedRequests: OllamaGenerateRequest[] = [];
 
   const client: OllamaClient = {
-    async generate(request) {
+    async chat(request) {
       capturedRequests.push(request);
-      return {
-        response: JSON.stringify({
-          title: 'Board Meeting Prep',
-          description: 'Prepare deck and speaking notes.',
-          priority: 'high',
-          deadline: '2026-03-26',
-          subtasks: [],
-          neededResources: ['Latest KPI report'],
-          relatedAreas: ['work'],
-        }),
-      };
+      return { message: { content: JSON.stringify(samplePlan()) } };
     },
   };
 
@@ -32,30 +41,24 @@ test('interpretGoal sends model with JSON format and temperature', async () => {
   });
 
   assert.equal(capturedRequests[0]?.model, 'llama3.1:8b');
-  assert.equal(capturedRequests[0]?.options?.temperature, 0.3);
-  assert.equal(typeof capturedRequests[0]?.format, 'object');
+  assert.equal(capturedRequests[0]?.options?.temperature, 0.2);
+  assert.equal(capturedRequests[0]?.format, 'json');
   assert.equal(plan.title, 'Board Meeting Prep');
 });
 
 test('interpretGoal retries with repair prompt after invalid output', async () => {
   const capturedRequests: OllamaGenerateRequest[] = [];
   const client: OllamaClient = {
-    async generate(request) {
+    async chat(request) {
       capturedRequests.push(request);
-      if (capturedRequests.length === 1) {
-        return { response: 'not valid json' };
+      if (capturedRequests.length < 3) {
+        return { message: { content: 'not valid json' } };
       }
 
       return {
-        response: JSON.stringify({
-          title: 'Board Meeting Prep',
-          description: 'Prepare deck and speaking notes.',
-          priority: 'high',
-          deadline: null,
-          subtasks: [],
-          neededResources: [],
-          relatedAreas: ['work'],
-        }),
+        message: {
+          content: JSON.stringify(samplePlan()),
+        },
       };
     },
   };
@@ -65,15 +68,18 @@ test('interpretGoal retries with repair prompt after invalid output', async () =
     client,
   });
 
-  assert.equal(plan.priority, 'high');
-  assert.equal(capturedRequests.length, 2);
-  assert.match(capturedRequests[1]?.prompt ?? '', /previous output was invalid/i);
+  assert.equal(plan.deadline, '2026-03-26');
+  assert.equal(capturedRequests.length, 3);
+  assert.match(
+    capturedRequests[1]?.messages[1]?.content ?? '',
+    /previous output failed validation/i,
+  );
 });
 
-test('interpretGoal throws deterministic GoalPlanParseError after repair failure', async () => {
+test('interpretGoal fails deterministically after max retries', async () => {
   const client: OllamaClient = {
-    async generate() {
-      return { response: 'still not json' };
+    async chat() {
+      return { message: { content: 'still not json' } };
     },
   };
 
@@ -83,34 +89,21 @@ test('interpretGoal throws deterministic GoalPlanParseError after repair failure
         model: 'llama3.1:8b',
         client,
       }),
-    (error: unknown) =>
-      error instanceof GoalPlanParseError &&
-      /after repair attempt/i.test(error.message) &&
-      error.rawOutput === 'still not json',
+    /failed after 3 attempts/i,
   );
 });
 
-test('interpretGoal emits safe stage callbacks in order', async () => {
+test('interpretGoal emits safe stage callbacks including repair flow', async () => {
   const stages: string[] = [];
   let callCount = 0;
   const client: OllamaClient = {
-    async generate() {
+    async chat() {
       callCount += 1;
-      if (callCount === 1) {
-        return { response: 'bad-json' };
+      if (callCount < 3) {
+        return { message: { content: 'bad-json' } };
       }
 
-      return {
-        response: JSON.stringify({
-          title: 'Board Meeting Prep',
-          description: 'Prepare deck and speaking notes.',
-          priority: 'high',
-          deadline: null,
-          subtasks: [],
-          neededResources: [],
-          relatedAreas: ['work'],
-        }),
-      };
+      return { message: { content: JSON.stringify(samplePlan()) } };
     },
   };
 
@@ -127,6 +120,10 @@ test('interpretGoal emits safe stage callbacks in order', async () => {
     'llm_request_started',
     'llm_response_received',
     'plan_parse_started',
+    'repair_prompt_built',
+    'repair_request_started',
+    'repair_response_received',
+    'repair_parse_started',
     'repair_prompt_built',
     'repair_request_started',
     'repair_response_received',

@@ -1,4 +1,4 @@
-import type { GoalInterpretationPlan } from '@lifeos/goal-engine';
+import type { GoalPlan } from '@lifeos/life-graph';
 
 function pad(value: string, width: number): string {
   if (value.length >= width) {
@@ -21,32 +21,30 @@ function createTable(headers: string[], rows: string[][]): string {
   return lines.join('\n');
 }
 
-export function formatGoalPlan(plan: GoalInterpretationPlan): string {
+export function formatGoalPlan(plan: GoalPlan): string {
   const lines: string[] = [];
   lines.push(`Title: ${plan.title}`);
-  lines.push(`Priority: ${plan.priority}`);
   lines.push(`Deadline: ${plan.deadline ?? 'none'}`);
-  lines.push(`Related Areas: ${plan.relatedAreas.join(', ') || 'none'}`);
+  lines.push(`Tasks: ${plan.tasks.length}`);
   lines.push('');
   lines.push('Description:');
   lines.push(plan.description);
   lines.push('');
-  lines.push(`Needed Resources: ${plan.neededResources.join(', ') || 'none'}`);
-  lines.push('');
 
-  if (plan.subtasks.length === 0) {
-    lines.push('Subtasks: none');
+  if (plan.tasks.length === 0) {
+    lines.push('Tasks: none');
     return lines.join('\n');
   }
 
-  lines.push('Subtasks:');
+  lines.push('Tasks:');
   const table = createTable(
-    ['#', 'Description', 'Depends On', 'Est Hours'],
-    plan.subtasks.map((subtask, index) => [
+    ['#', 'Title', 'Status', 'Priority', 'Due Date'],
+    plan.tasks.map((task, index) => [
       String(index + 1),
-      subtask.description,
-      subtask.dependsOn.join(', ') || '-',
-      String(subtask.estimatedHours),
+      task.title,
+      task.status,
+      String(task.priority),
+      task.dueDate ?? '-',
     ]),
   );
   lines.push(table);
