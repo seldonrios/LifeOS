@@ -18,7 +18,15 @@ export interface InterpretGoalOptions {
   host?: string;
   now?: Date;
   client?: OllamaClient;
+  onStage?: (stage: InterpretGoalStage) => void;
 }
+
+export type InterpretGoalStage =
+  | 'prompt_built'
+  | 'llm_request_started'
+  | 'llm_response_received'
+  | 'plan_parse_started'
+  | 'plan_parse_succeeded';
 
 function createDefaultClient(host?: string): OllamaClient {
   return new Ollama(host ? { host } : undefined);
@@ -34,12 +42,18 @@ export async function interpretGoal(
   }
 
   const prompt = buildGoalInterpretationPrompt(trimmedInput, options.now ?? new Date());
+  options.onStage?.('prompt_built');
   const client = options.client ?? createDefaultClient(options.host);
 
+  options.onStage?.('llm_request_started');
   const response = await client.generate({
     model: options.model,
     prompt,
   });
+  options.onStage?.('llm_response_received');
 
-  return parseGoalInterpretationPlan(response.response);
+  options.onStage?.('plan_parse_started');
+  const plan = parseGoalInterpretationPlan(response.response);
+  options.onStage?.('plan_parse_succeeded');
+  return plan;
 }

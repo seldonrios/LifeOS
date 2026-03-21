@@ -25,6 +25,7 @@ Provide the canonical index for the LifeOS docs set and give contributors a clea
 ## Phase 1
 
 - [Phase 1 Landing Page](phase-1/README.md)
+- [Goal Interpreter CLI Demo (MVP #1)](phase-1/goal-interpreter-cli-demo.md)
 - [Reference Architecture](phase-1/reference-architecture.md)
 - [Scope](phase-1/scope.md)
 - [Goals](phase-1/goals.md)

@@ -203,6 +203,7 @@ That flexibility is a design goal.
 ## Start Here
 
 - Get started with [local setup](docs/SETUP.md)
+- Run the [Goal Interpreter CLI demo](docs/phase-1/goal-interpreter-cli-demo.md)
 - Read the [documentation index](docs/README.md)
 - Review the [Phase 1 landing page](docs/phase-1/README.md)
 - Review the [Phase 1 reference architecture](docs/phase-1/reference-architecture.md)

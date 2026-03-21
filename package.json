@@ -7,7 +7,7 @@
   },
   "scripts": {
     "prepare": "husky install .husky",
-    "lifeos": "pnpm --filter @lifeos/cli exec tsx src/index.ts",
+    "lifeos": "pnpm exec tsx packages/cli/src/index.ts",
     "validate": "pnpm run build:modules && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
     "test": "tsx scripts/test-runner.ts",
     "lint": "eslint . && tsx scripts/ruff-task.ts check",

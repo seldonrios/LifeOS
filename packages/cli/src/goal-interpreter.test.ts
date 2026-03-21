@@ -85,3 +85,38 @@ test('interpretGoal throws GoalPlanParseError when output is invalid', async () 
     (error: unknown) => error instanceof GoalPlanParseError,
   );
 });
+
+test('interpretGoal emits safe stage callbacks in order', async () => {
+  const stages: string[] = [];
+  const client: OllamaClient = {
+    async generate() {
+      return {
+        response: JSON.stringify({
+          title: 'Board Meeting Prep',
+          description: 'Prepare deck and speaking notes.',
+          priority: 'high',
+          deadline: null,
+          subtasks: [],
+          neededResources: [],
+          relatedAreas: ['work'],
+        }),
+      };
+    },
+  };
+
+  await interpretGoal('Prepare for board meeting', {
+    model: 'llama3.1:8b',
+    client,
+    onStage: (stage) => {
+      stages.push(stage);
+    },
+  });
+
+  assert.deepEqual(stages, [
+    'prompt_built',
+    'llm_request_started',
+    'llm_response_received',
+    'plan_parse_started',
+    'plan_parse_succeeded',
+  ]);
+});

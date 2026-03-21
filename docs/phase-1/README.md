@@ -37,6 +37,7 @@ For LifeOS, that now means documenting a realistic reference architecture for a 
 
 ## Read Next
 
+- [Goal Interpreter CLI Demo (MVP #1)](goal-interpreter-cli-demo.md)
 - [Reference Architecture](reference-architecture.md)
 - [Scope](scope.md)
 - [Goals](goals.md)
