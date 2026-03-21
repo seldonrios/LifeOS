@@ -16,9 +16,10 @@
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/policy-engine": "workspace:*",
     "@lifeos/approval-workflow": "workspace:*",
-    "@lifeos/config": "workspace:*"
+    "@lifeos/config": "workspace:*",
+    "zod": "^3.23.8"
   },
   "scripts": {
-    "test": "tsx --test src/state-machine.test.ts"
+    "test": "tsx --test src/state-machine.test.ts src/mvp-plan.test.ts"
   }
 }

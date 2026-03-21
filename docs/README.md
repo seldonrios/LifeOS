@@ -48,6 +48,10 @@ Provide the canonical index for the LifeOS docs set and give contributors a clea
 - [Security and Privacy](architecture/security-and-privacy.md)
 - [User Interfaces](architecture/user-interfaces.md)
 
+## Security
+
+- [Threat Model](security/threat-model.md)
+
 ## Concepts
 
 - [Agent Mesh](concepts/agent-mesh.md)

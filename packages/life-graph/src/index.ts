@@ -1,4 +1,5 @@
 export * from './types';
+export * from './store';
 
 import type { LifeGraphClient } from './types';
 

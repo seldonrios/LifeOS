@@ -131,3 +131,14 @@ export interface LifeGraphClient {
   ): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
 }
+
+export interface GoalPlanRecord<TPlan = Record<string, unknown>> {
+  id: string;
+  createdAt: string;
+  input: string;
+  plan: TPlan;
+}
+
+export interface LocalLifeGraph<TPlan = Record<string, unknown>> {
+  goals: Array<GoalPlanRecord<TPlan>>;
+}

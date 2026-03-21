@@ -1,0 +1,27 @@
+{
+  "name": "@lifeos/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "bin": {
+    "lifeos": "./dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc -b",
+    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts"
+  },
+  "dependencies": {
+    "@lifeos/goal-engine": "workspace:*",
+    "@lifeos/life-graph": "workspace:*",
+    "ollama": "^0.5.14"
+  }
+}

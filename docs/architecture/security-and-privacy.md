@@ -4,6 +4,10 @@
 
 Describe the concrete Phase 1 protections required for a local system that holds highly personal and operational data.
 
+## Related Security Work
+
+- [Threat Model](../security/threat-model.md)
+
 ## Core Controls
 
 - local processing by default
