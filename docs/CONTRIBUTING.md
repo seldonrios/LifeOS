@@ -4,16 +4,16 @@ This is the canonical contributor guide for LifeOS.
 
 ## Folder Conventions and Navigation
 
-| I want to... | Go to... |
-|---|---|
-| Understand the system | `docs/architecture/overview.md` |
-| Add a new AI domain capability | `modules/` + `pnpm run scaffold` (select Light AI module) |
-| Add a new core subsystem | `packages/` + `pnpm run scaffold` (select TS or Python package) |
-| Change how events work | `packages/event-bus/` |
-| Change the life graph data model | `packages/life-graph/` |
-| Add a new Docker service | `services/` + `docker-compose.yml` |
+| I want to...                             | Go to...                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------- |
+| Understand the system                    | `docs/architecture/overview.md`                                  |
+| Add a new AI domain capability           | `modules/` + `pnpm run scaffold` (select Light AI module)        |
+| Add a new core subsystem                 | `packages/` + `pnpm run scaffold` (select TS or Python package)  |
+| Change how events work                   | `packages/event-bus/`                                            |
+| Change the life graph data model         | `packages/life-graph/`                                           |
+| Add a new Docker service                 | `services/` + `docker-compose.yml`                               |
 | Understand startup health/degraded state | `packages/module-loader/src/diagnostics.ts` + module-loader logs |
-| Understand a design decision | `docs/adr/` |
+| Understand a design decision             | `docs/adr/`                                                      |
 
 ## Naming Standards
 
@@ -73,3 +73,17 @@ Examples:
 - `feat(reasoning): add intent classification stub`
 - `docs(life-graph): update entity type list`
 - `chore(root): configure husky pre-commit hook`
+
+## Release Integrity Check (Before Push)
+
+Run these commands before pushing:
+
+```powershell
+git show --name-only HEAD
+git status -sb
+```
+
+Required checks:
+
+- `git show --name-only HEAD` must include the expected runtime files for your change (for Life Graph runtime/client work, ensure both `packages/life-graph/src/manager.ts` and `packages/life-graph/src/index.ts` are listed).
+- `git status -sb` must be clean before push.
