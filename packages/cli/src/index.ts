@@ -8,10 +8,13 @@ import ora, { type Ora } from 'ora';
 
 import { GoalPlanParseError, type GoalInterpretationPlan } from '@lifeos/goal-engine';
 import {
-  appendGoalPlanRecord,
+  appendGoalPlan,
   getDefaultLifeGraphPath,
-  type AppendGoalPlanRecordInput,
+  getGraphSummary,
+  loadGraph,
   type GoalPlanRecord,
+  type LifeGraphDocument,
+  type LifeGraphSummary,
 } from '@lifeos/life-graph';
 import { formatGoalPlan } from './format';
 import { interpretGoal, type InterpretGoalStage } from './goal-interpreter';
@@ -23,6 +26,12 @@ interface GoalCommandOptions {
   outputJson: boolean;
   save: boolean;
   model: string;
+  graphPath: string;
+  verbose: boolean;
+}
+
+interface StatusCommandOptions {
+  outputJson: boolean;
   graphPath: string;
   verbose: boolean;
 }
@@ -47,10 +56,17 @@ export interface RunCliDependencies {
       onStage?: (stage: InterpretGoalStage) => void;
     },
   ) => Promise<GoalInterpretationPlan>;
-  appendGoalPlanRecord?: (
-    entry: AppendGoalPlanRecordInput<GoalInterpretationPlan>,
+  appendGoalPlan?: (
+    entry: {
+      input: string;
+      plan: GoalInterpretationPlan;
+      id?: string;
+      createdAt?: string;
+    },
     graphPath?: string,
   ) => Promise<GoalPlanRecord<GoalInterpretationPlan>>;
+  loadGraph?: (graphPath?: string) => Promise<LifeGraphDocument<GoalInterpretationPlan>>;
+  getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
   fileExists?: (path: string) => boolean;
@@ -97,6 +113,14 @@ function normalizeErrorMessage(error: unknown): string {
   return 'Unknown error.';
 }
 
+function isRetryableGoalParseError(error: unknown): boolean {
+  if (error instanceof GoalPlanParseError) {
+    return true;
+  }
+
+  return /not a valid mvp goal plan/i.test(normalizeErrorMessage(error));
+}
+
 function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
   const message = normalizeErrorMessage(error);
 
@@ -129,6 +153,20 @@ function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
   return { message };
 }
 
+function formatStatusSummary(summary: LifeGraphSummary): string {
+  const lines: string[] = [];
+  lines.push(`Version: ${summary.version}`);
+  lines.push(`Total Goals: ${summary.totalGoals}`);
+  lines.push(`Updated At: ${summary.updatedAt}`);
+  lines.push(`Latest Goal: ${summary.latestGoalCreatedAt ?? 'none'}`);
+  lines.push(
+    `Recent Titles: ${
+      summary.recentGoalTitles.length > 0 ? summary.recentGoalTitles.join(' | ') : 'none'
+    }`,
+  );
+  return lines.join('\n');
+}
+
 export async function runGoalCommand(
   goal: string,
   options: GoalCommandOptions,
@@ -139,7 +177,7 @@ export async function runGoalCommand(
   const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
-  const appendRecord = dependencies.appendGoalPlanRecord ?? appendGoalPlanRecord;
+  const appendPlan = dependencies.appendGoalPlan ?? appendGoalPlan;
   const interpret = dependencies.interpretGoal ?? interpretGoal;
   const fileExists = dependencies.fileExists ?? existsSync;
   const createSpinner = dependencies.createSpinner ?? createDefaultSpinner;
@@ -169,25 +207,45 @@ export async function runGoalCommand(
       : null;
 
   try {
-    const interpretOptions: {
-      model: string;
-      host?: string;
-      now: Date;
-      onStage?: (stage: InterpretGoalStage) => void;
-    } = {
-      model: options.model,
-      now: now(),
-    };
-    if (host) {
-      interpretOptions.host = host;
-    }
-    if (options.verbose) {
-      interpretOptions.onStage = (stage: InterpretGoalStage) => {
-        verboseLog(`stage=${mapStageToVerboseLine(stage)}`);
+    const attemptNow = now();
+    const maxAttempts = 2;
+    let plan: GoalInterpretationPlan | null = null;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      verboseLog(`interpret_attempt=${attempt}/${maxAttempts}`);
+      const interpretOptions: {
+        model: string;
+        host?: string;
+        now: Date;
+        onStage?: (stage: InterpretGoalStage) => void;
+      } = {
+        model: options.model,
+        now: attemptNow,
       };
+      if (host) {
+        interpretOptions.host = host;
+      }
+      if (options.verbose) {
+        interpretOptions.onStage = (stage: InterpretGoalStage) => {
+          verboseLog(`stage=${mapStageToVerboseLine(stage)}`);
+        };
+      }
+
+      try {
+        plan = await interpret(normalizedGoal, interpretOptions);
+        break;
+      } catch (error: unknown) {
+        if (attempt < maxAttempts && isRetryableGoalParseError(error)) {
+          verboseLog('retrying goal interpretation after parse/schema failure');
+          continue;
+        }
+        throw error;
+      }
     }
 
-    const plan = await interpret(normalizedGoal, interpretOptions);
+    if (!plan) {
+      throw new Error('Goal interpretation failed.');
+    }
 
     spinner?.succeed(chalk.green('Goal decomposed successfully.'));
 
@@ -203,7 +261,7 @@ export async function runGoalCommand(
       const defaultGraphPath = getDefaultLifeGraphPath(baseCwd);
       const isFirstRun = options.graphPath === defaultGraphPath && !fileExists(options.graphPath);
       if (isFirstRun) {
-        const firstRunMessage = `Welcome to LifeOS! Initializing your local Life Graph at ${options.graphPath}`;
+        const firstRunMessage = `Welcome to LifeOS! Initializing your personal graph at ${options.graphPath}`;
         if (options.outputJson) {
           writeStderr(`${chalk.yellow(firstRunMessage)}\n`);
         } else {
@@ -211,13 +269,15 @@ export async function runGoalCommand(
         }
       }
 
-      const saved = await appendRecord(
+      verboseLog('stage=save_started');
+      const saved = await appendPlan(
         {
           input: normalizedGoal,
           plan,
         },
         options.graphPath,
       );
+      verboseLog('stage=save_completed');
       verboseLog(`saved_record_id=${saved.id}`);
 
       if (options.outputJson === false) {
@@ -250,6 +310,50 @@ export async function runGoalCommand(
     return 1;
   } finally {
     spinner?.stop();
+  }
+}
+
+export async function runStatusCommand(
+  options: StatusCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const load = dependencies.loadGraph ?? loadGraph;
+  const summarize = dependencies.getGraphSummary ?? getGraphSummary;
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  verboseLog(`graph_path=${options.graphPath}`);
+
+  try {
+    if (options.outputJson) {
+      verboseLog('stage=graph_load_started');
+      const graph = await load(options.graphPath);
+      verboseLog('stage=graph_load_completed');
+      writeStdout(`${JSON.stringify(graph, null, 2)}\n`);
+      return 0;
+    }
+
+    verboseLog('stage=summary_load_started');
+    const summary = await summarize(options.graphPath);
+    verboseLog('stage=summary_load_completed');
+
+    writeStdout(`${chalk.bold('Life Graph Status')}\n`);
+    writeStdout(`${chalk.dim('-'.repeat(60))}\n`);
+    writeStdout(`${formatStatusSummary(summary)}\n`);
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    if (options.verbose && error instanceof Error) {
+      writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
+    }
+    return 1;
   }
 }
 
@@ -299,6 +403,24 @@ function buildProgram(
         dependencies,
       );
 
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('status')
+    .description('Show current life graph summary')
+    .option('--json', 'Output full life graph JSON')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runStatusCommand(
+        {
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
       setExitCode(commandExitCode);
     });
 

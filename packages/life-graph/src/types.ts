@@ -142,3 +142,17 @@ export interface GoalPlanRecord<TPlan = Record<string, unknown>> {
 export interface LocalLifeGraph<TPlan = Record<string, unknown>> {
   goals: Array<GoalPlanRecord<TPlan>>;
 }
+
+export interface LifeGraphDocument<TPlan = Record<string, unknown>> {
+  version: '0.1.0';
+  updatedAt: string;
+  goals: Array<GoalPlanRecord<TPlan>>;
+}
+
+export interface LifeGraphSummary {
+  version: '0.1.0';
+  totalGoals: number;
+  updatedAt: string;
+  latestGoalCreatedAt: string | null;
+  recentGoalTitles: string[];
+}

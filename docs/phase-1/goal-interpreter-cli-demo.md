@@ -12,7 +12,7 @@ This demo is currently **CLI-only**.
 - no `module-loader` wiring is required
 - no service log tailing is required
 
-The command runs a local model through Ollama, prints a structured plan, and writes the result to a local JSON life graph.
+The command runs a local model through Ollama, prints a structured plan, and writes the result to a local versioned JSON life graph.
 
 ## Prerequisites
 
@@ -54,6 +54,13 @@ pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 Get-Content .\.lifeos\life-graph.json
 ```
 
+6. Check graph status:
+
+```powershell
+pnpm lifeos status
+pnpm lifeos status --json
+```
+
 ## Useful Flags
 
 - JSON output:
@@ -61,6 +68,8 @@ Get-Content .\.lifeos\life-graph.json
 ```powershell
 pnpm lifeos goal "..." --json
 ```
+
+Note: `goal --json` prints the normalized plan only. Use `status --json` to print the full life graph document.
 
 - Skip persistence:
 
@@ -105,6 +114,7 @@ pnpm lifeos goal "Plan my next 2 weeks"
 ```powershell
 pnpm lifeos --help
 pnpm lifeos goal --help
+pnpm lifeos status --help
 ```
 
 - Test global command locally:

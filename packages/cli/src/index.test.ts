@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { GoalPlanParseError, type GoalInterpretationPlan } from '@lifeos/goal-engine';
+import type { LifeGraphDocument } from '@lifeos/life-graph';
 
 import { runCli } from './index';
 
@@ -20,6 +21,21 @@ function samplePlan(): GoalInterpretationPlan {
     ],
     neededResources: ['Q1 financial summary'],
     relatedAreas: ['work'],
+  };
+}
+
+function sampleGraph(): LifeGraphDocument<GoalInterpretationPlan> {
+  return {
+    version: '0.1.0',
+    updatedAt: '2026-03-21T14:00:00.000Z',
+    goals: [
+      {
+        id: 'goal_123',
+        createdAt: '2026-03-21T14:00:00.000Z',
+        input: 'Prepare board meeting',
+        plan: samplePlan(),
+      },
+    ],
   };
 }
 
@@ -60,7 +76,7 @@ test('goal command prints human output, starts spinner, and saves by default', a
     cwd: () => '/repo',
     fileExists: () => true,
     interpretGoal: async () => samplePlan(),
-    appendGoalPlanRecord: async () => {
+    appendGoalPlan: async () => {
       saveCalled = true;
       return {
         id: 'goal_123',
@@ -97,7 +113,7 @@ test('--json outputs only JSON to stdout and suppresses spinner', async () => {
     now: () => new Date('2026-03-21T10:00:00-04:00'),
     fileExists: () => true,
     interpretGoal: async () => samplePlan(),
-    appendGoalPlanRecord: async () => ({
+    appendGoalPlan: async () => ({
       id: 'goal_123',
       createdAt: '2026-03-21T14:00:00.000Z',
       input: 'Prepare board meeting',
@@ -133,7 +149,7 @@ test('--no-save skips persistence and first-run message', async () => {
     now: () => new Date('2026-03-21T10:00:00-04:00'),
     fileExists: () => false,
     interpretGoal: async () => samplePlan(),
-    appendGoalPlanRecord: async () => {
+    appendGoalPlan: async () => {
       saveCalled = true;
       return {
         id: 'goal_123',
@@ -150,7 +166,7 @@ test('--no-save skips persistence and first-run message', async () => {
 
   assert.equal(exitCode, 0);
   assert.equal(saveCalled, false);
-  assert.doesNotMatch(stdout.join(''), /Initializing your local Life Graph/);
+  assert.doesNotMatch(stdout.join(''), /Initializing your personal graph/);
 });
 
 test('--verbose emits safe diagnostics to stderr', async () => {
@@ -259,7 +275,7 @@ test('first run message appears only when default graph path is missing and save
     now: () => new Date('2026-03-21T10:00:00-04:00'),
     fileExists: () => false,
     interpretGoal: async () => samplePlan(),
-    appendGoalPlanRecord: async () => ({
+    appendGoalPlan: async () => ({
       id: 'goal_123',
       createdAt: '2026-03-21T14:00:00.000Z',
       input: 'Prepare board meeting',
@@ -272,5 +288,94 @@ test('first run message appears only when default graph path is missing and save
   });
 
   assert.equal(exitCode, 0);
-  assert.match(stdout.join(''), /Welcome to LifeOS! Initializing your local Life Graph/);
+  assert.match(stdout.join(''), /Welcome to LifeOS! Initializing your personal graph/);
+});
+
+test('retries once on parse/schema failure and succeeds', async () => {
+  let attempts = 0;
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['goal', 'Prepare board meeting', '--verbose', '--no-save'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    interpretGoal: async () => {
+      attempts += 1;
+      if (attempts === 1) {
+        throw new GoalPlanParseError('validation failed', '{"bad":true}');
+      }
+      return samplePlan();
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(attempts, 2);
+  assert.match(stderr.join(''), /retrying goal interpretation after parse\/schema failure/);
+});
+
+test('fails after max retries on parse/schema failure', async () => {
+  let attempts = 0;
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['goal', 'Prepare board meeting'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    interpretGoal: async () => {
+      attempts += 1;
+      throw new GoalPlanParseError('validation failed', '{"bad":true}');
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(attempts, 2);
+  assert.match(stderr.join(''), /did not match the expected goal-plan schema/i);
+});
+
+test('status command prints concise summary in human mode', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['status'], {
+    getGraphSummary: async () => ({
+      version: '0.1.0',
+      totalGoals: 2,
+      updatedAt: '2026-03-21T14:00:00.000Z',
+      latestGoalCreatedAt: '2026-03-21T14:00:00.000Z',
+      recentGoalTitles: ['Board Meeting Prep', 'Quarterly Review'],
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /Life Graph Status/);
+  assert.match(output, /Total Goals: 2/);
+  assert.match(output, /Recent Titles: Board Meeting Prep \| Quarterly Review/);
+});
+
+test('status --json emits full versioned graph document', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['status', '--json'], {
+    loadGraph: async () => sampleGraph(),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphDocument<GoalInterpretationPlan>;
+  assert.equal(parsed.version, '0.1.0');
+  assert.equal(parsed.goals.length, 1);
+  assert.equal(parsed.goals[0]?.plan.title, 'Board Meeting Prep');
 });

@@ -21,6 +21,85 @@ Our current goal is to define the problem, the architecture, and the first imple
 
 ---
 
+## Quick Start (CLI MVP)
+
+The fastest way to try the current Goal Interpreter MVP is the local CLI.
+
+1. Install dependencies:
+
+```powershell
+pnpm install
+```
+
+2. Start Ollama:
+
+```powershell
+ollama serve
+```
+
+3. Pull the default model (once):
+
+```powershell
+ollama pull llama3.1:8b
+```
+
+4. Verify CLI version:
+
+```powershell
+pnpm lifeos --version
+```
+
+5. Run a goal:
+
+```powershell
+pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
+```
+
+6. Check graph status:
+
+```powershell
+pnpm lifeos status
+pnpm lifeos status --json
+```
+
+Common flags:
+
+- `goal --json` output machine-readable plan JSON only
+- `--no-save` skip writing to the local graph
+- `--model <name>` override model (default `llama3.1:8b`, or `LIFEOS_GOAL_MODEL`)
+- `--graph-path <path>` override default graph location
+- `--verbose` print safe diagnostics to stderr
+- `status --json` output the full life graph JSON document
+
+Sample run:
+
+```text
+$ pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
+[ok] Goal decomposed successfully.
+Plan for: Help me prepare for the quarterly board meeting next Thursday
+...
+Welcome to LifeOS! Initializing your personal graph at <repo>/.lifeos/life-graph.json
+[saved] <repo>/.lifeos/life-graph.json (id: goal_...)
+```
+
+For expanded demo/troubleshooting guidance, see [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md).
+
+### Run As Global `lifeos` Command
+
+```powershell
+pnpm --filter @lifeos/cli run build
+pnpm --filter @lifeos/cli link --global
+lifeos goal "Plan my next 2 weeks"
+```
+
+Cleanup:
+
+```powershell
+pnpm --filter @lifeos/cli unlink --global
+```
+
+---
+
 ## Purpose
 
 LifeOS is a long-term vision for a **personal AI operating system**.

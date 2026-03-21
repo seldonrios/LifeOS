@@ -1,73 +1,151 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { appendGoalPlanRecord, loadLocalLifeGraph } from './store';
+import {
+  appendGoalPlan,
+  appendGoalPlanRecord,
+  getGraphSummary,
+  loadGraph,
+  loadLocalLifeGraph,
+  saveGraphAtomic,
+} from './store';
 
-test('loadLocalLifeGraph returns empty graph when file does not exist', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
-  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
-
-  const graph = await loadLocalLifeGraph(graphPath);
-  assert.deepEqual(graph, { goals: [] });
-});
-
-test('appendGoalPlanRecord creates file and appends records', async () => {
-  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
-  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
-
-  await appendGoalPlanRecord(
-    {
-      input: 'Help me prep for board meeting',
-      plan: {
-        title: 'Board Meeting Prep',
-      },
-    },
-    graphPath,
-  );
-
-  await appendGoalPlanRecord(
-    {
-      input: 'Follow-up action items',
-      plan: {
-        title: 'Board Meeting Follow-up',
-      },
-    },
-    graphPath,
-  );
-
-  const saved = JSON.parse(await readFile(graphPath, 'utf8')) as {
-    goals: Array<{ input: string; plan: { title: string } }>;
+function samplePlan(title: string): Record<string, unknown> {
+  return {
+    title,
+    description: 'Plan description',
+    priority: 'high',
+    deadline: null,
+    subtasks: [],
+    neededResources: [],
+    relatedAreas: ['work'],
   };
-  assert.equal(saved.goals.length, 2);
-  assert.equal(saved.goals[0]?.input, 'Help me prep for board meeting');
-  assert.equal(saved.goals[1]?.plan.title, 'Board Meeting Follow-up');
+}
+
+test('loadGraph returns an empty versioned document when file is missing', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.version, '0.1.0');
+  assert.equal(graph.goals.length, 0);
+  assert.match(graph.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
 });
 
-test('appendGoalPlanRecord preserves existing entries', async () => {
+test('loadGraph auto-normalizes legacy unversioned graph shape', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    graphPath,
+    JSON.stringify(
+      {
+        goals: [
+          {
+            id: 'goal_1',
+            createdAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
+            input: 'Legacy entry',
+            plan: samplePlan('Legacy Plan'),
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.version, '0.1.0');
+  assert.equal(graph.goals.length, 1);
+  assert.equal(graph.goals[0]?.input, 'Legacy entry');
+});
+
+test('loadGraph rejects invalid graph shape/version', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    graphPath,
+    JSON.stringify({
+      version: '0.0.1',
+      updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
+      goals: [],
+    }),
+    'utf8',
+  );
+
+  await assert.rejects(() => loadGraph(graphPath), /Invalid life graph format/);
+});
+
+test('appendGoalPlan preserves existing entries and increments goal count', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
   const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
 
-  const first = await appendGoalPlanRecord(
+  const first = await appendGoalPlan(
     {
       input: 'First goal',
-      plan: { title: 'First plan' },
+      plan: samplePlan('First Plan'),
     },
     graphPath,
   );
 
-  const second = await appendGoalPlanRecord(
+  const second = await appendGoalPlan(
     {
       input: 'Second goal',
-      plan: { title: 'Second plan' },
+      plan: samplePlan('Second Plan'),
     },
     graphPath,
   );
 
-  const graph = await loadLocalLifeGraph<{ title: string }>(graphPath);
+  const graph = await loadGraph(graphPath);
   assert.equal(graph.goals.length, 2);
   assert.equal(graph.goals[0]?.id, first.id);
   assert.equal(graph.goals[1]?.id, second.id);
+});
+
+test('saveGraphAtomic creates directory and writes valid versioned graph', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'nested', 'life-graph.json');
+
+  await saveGraphAtomic(
+    {
+      version: '0.1.0',
+      updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
+      goals: [],
+    },
+    graphPath,
+  );
+
+  const raw = JSON.parse(await readFile(graphPath, 'utf8')) as {
+    version: string;
+    goals: unknown[];
+  };
+  assert.equal(raw.version, '0.1.0');
+  assert.equal(raw.goals.length, 0);
+});
+
+test('compatibility wrappers still work with legacy signatures', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+
+  await appendGoalPlanRecord(
+    {
+      input: 'Compatibility entry',
+      plan: samplePlan('Compat Plan'),
+    },
+    graphPath,
+  );
+
+  const legacyView = await loadLocalLifeGraph(graphPath);
+  const summary = await getGraphSummary(graphPath);
+  assert.equal(legacyView.goals.length, 1);
+  assert.equal(summary.totalGoals, 1);
+  assert.equal(summary.recentGoalTitles[0], 'Compat Plan');
 });
