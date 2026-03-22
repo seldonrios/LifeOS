@@ -56,6 +56,12 @@ importers:
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+      '@lifeos/reminder-module':
+        specifier: workspace:*
+        version: link:../reminder-module
       boxen:
         specifier: ^8.0.1
         version: 8.0.1
@@ -95,6 +101,27 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/module-loader:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+
+  packages/reminder-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
 
 packages:
 

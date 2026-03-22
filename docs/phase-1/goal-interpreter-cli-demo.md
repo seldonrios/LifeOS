@@ -64,6 +64,7 @@ pnpm lifeos task list
 pnpm lifeos task complete <task-id-prefix>
 pnpm lifeos next
 pnpm lifeos tick
+pnpm lifeos modules
 pnpm lifeos events listen --topic "lifeos.>"
 ```
 
@@ -132,6 +133,13 @@ pnpm lifeos events listen --topic "lifeos.>"
 pnpm lifeos events listen --topic "lifeos.tick.overdue" --json
 ```
 
+- Modules:
+
+```powershell
+pnpm lifeos modules
+pnpm lifeos modules load reminder
+```
+
 ## Environment Overrides
 
 - `LIFEOS_GOAL_MODEL`: default model name used by the CLI
@@ -156,6 +164,7 @@ pnpm lifeos status --help
 pnpm lifeos review --help
 pnpm lifeos task --help
 pnpm lifeos tick --help
+pnpm lifeos modules --help
 pnpm lifeos events --help
 pnpm lifeos events listen --help
 ```

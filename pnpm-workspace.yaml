@@ -3,3 +3,5 @@ packages:
   - 'packages/event-bus'
   - 'packages/goal-engine'
   - 'packages/life-graph'
+  - 'packages/module-loader'
+  - 'packages/reminder-module'

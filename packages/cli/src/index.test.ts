@@ -636,3 +636,70 @@ test('events listen --json prints event lines and exits on signal', async () => 
   assert.equal(parsed.type, Topics.lifeos.tickOverdue);
   assert.equal(parsed.data.checkedTasks, 3);
 });
+
+test('modules command lists loaded modules', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['modules'], {
+    moduleLoader: {
+      async loadMany() {
+        return;
+      },
+      getModuleIds() {
+        return ['reminder'];
+      },
+      async close() {
+        return;
+      },
+    } as never,
+    defaultModules: [
+      {
+        id: 'reminder',
+        async init() {
+          return;
+        },
+      },
+    ],
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Loaded modules: reminder/);
+});
+
+test('modules load returns error for unknown module id', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['modules', 'load', 'missing'], {
+    moduleLoader: {
+      async loadMany() {
+        return;
+      },
+      getModuleIds() {
+        return ['reminder'];
+      },
+      async close() {
+        return;
+      },
+      async load() {
+        return;
+      },
+    } as never,
+    defaultModules: [
+      {
+        id: 'reminder',
+        async init() {
+          return;
+        },
+      },
+    ],
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Unknown module "missing"/);
+});

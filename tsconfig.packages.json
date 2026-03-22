@@ -12,6 +12,12 @@
     },
     {
       "path": "./packages/life-graph"
+    },
+    {
+      "path": "./packages/module-loader"
+    },
+    {
+      "path": "./packages/reminder-module"
     }
   ]
 }

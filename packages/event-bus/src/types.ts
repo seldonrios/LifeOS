@@ -72,5 +72,6 @@ export const Topics = {
   lifeos: {
     tickOverdue: 'lifeos.tick.overdue',
     taskCompleted: 'lifeos.task.completed',
+    reminderFollowupCreated: 'lifeos.reminder.followup.created',
   },
 } as const;

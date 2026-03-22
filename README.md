@@ -64,6 +64,7 @@ pnpm lifeos review --period weekly
 pnpm lifeos task list
 pnpm lifeos next
 pnpm lifeos tick
+pnpm lifeos modules
 pnpm lifeos events listen --topic "lifeos.>"
 ```
 
@@ -78,6 +79,7 @@ Common flags:
 - `review --json` output machine-readable review insights
 - `task list|complete|next` manage and execute tasks from the life graph
 - `tick` run a deadline check for overdue tasks
+- `modules` list loaded runtime modules
 - `events listen --topic <subject>` watch live event stream from NATS
 
 Environment overrides:
@@ -103,6 +105,21 @@ Welcome to LifeOS! Initializing your personal graph at <user-data>/lifeos/life-g
 ```
 
 For expanded demo/troubleshooting guidance, see [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md).
+
+### Modules (Phase 6)
+
+The CLI now boots the first runtime module by default when possible:
+
+- `reminder` subscribes to `lifeos.tick.overdue` and `lifeos.task.completed`
+- overdue tick events trigger an automatic follow-up plan in the life graph
+- reminder publishes `lifeos.reminder.followup.created` after creating that follow-up
+
+Quick checks:
+
+```powershell
+pnpm lifeos modules
+pnpm lifeos modules load reminder
+```
 
 ### Run As Global `lifeos` Command
 

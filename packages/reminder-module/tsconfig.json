@@ -4,13 +4,16 @@
     "rootDir": "./src",
     "outDir": "./dist"
   },
-  "include": ["src/index.ts", "src/loader.ts"],
+  "include": ["src/**/*.ts"],
   "references": [
     {
       "path": "../event-bus"
     },
     {
       "path": "../life-graph"
+    },
+    {
+      "path": "../module-loader"
     }
   ]
 }

@@ -9,7 +9,7 @@
     "prepare": "husky install .husky",
     "lifeos": "pnpm exec tsx packages/cli/src/index.ts",
     "validate": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
-    "test": "pnpm --filter @lifeos/life-graph test && pnpm --filter @lifeos/goal-engine test && pnpm --filter @lifeos/cli test",
+    "test": "pnpm --filter @lifeos/life-graph test && pnpm --filter @lifeos/goal-engine test && pnpm --filter @lifeos/module-loader test && pnpm --filter @lifeos/reminder-module test && pnpm --filter @lifeos/cli test",
     "lint": "eslint \"packages/{cli,goal-engine,life-graph}/src/**/*.ts\" && tsx scripts/ruff-task.ts check",
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",

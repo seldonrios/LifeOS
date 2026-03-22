@@ -17,19 +17,21 @@ import {
 import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
-  type LifeGraphClient,
   type GoalPlan,
   type GoalPlanRecord,
+  type LifeGraphClient,
   type LifeGraphReviewInsights,
   type LifeGraphReviewPeriod,
   type LifeGraphSummary,
 } from '@lifeos/life-graph';
+import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
   interpretGoal,
   runTick,
   type InterpretGoalStage,
   type TickResult,
 } from '@lifeos/goal-engine';
+import { reminderModule } from '@lifeos/reminder-module';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
@@ -78,6 +80,11 @@ interface EventsListenCommandOptions {
   verbose: boolean;
 }
 
+interface ModulesCommandOptions {
+  action: 'list' | 'load';
+  moduleId?: string;
+}
+
 interface SpinnerLike {
   start(): SpinnerLike;
   succeed(text?: string): SpinnerLike;
@@ -123,6 +130,9 @@ export interface RunCliDependencies {
     logger?: (message: string) => void;
   }) => Promise<TickResult>;
   createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
+  createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
+  moduleLoader?: ModuleLoader;
+  defaultModules?: LifeOSModule[];
   waitForSignal?: () => Promise<void>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
@@ -276,6 +286,18 @@ function normalizeTaskAction(action: string): TaskCommandOptions['action'] | nul
   }
 
   return null;
+}
+
+function normalizeModulesAction(action: string): ModulesCommandOptions['action'] | null {
+  if (action === 'list' || action === 'load') {
+    return action;
+  }
+
+  return null;
+}
+
+function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[] {
+  return dependencies.defaultModules ?? [reminderModule];
 }
 
 function buildClientOptions(
@@ -720,6 +742,68 @@ export async function runEventsListenCommand(
   }
 }
 
+export async function runModulesCommand(
+  options: ModulesCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const defaults = resolveDefaultModules(dependencies);
+  const knownModules = new Map(defaults.map((module) => [module.id, module]));
+  const createLoader = dependencies.createModuleLoader ?? createModuleLoader;
+
+  const ephemeralLoader =
+    dependencies.moduleLoader ??
+    createLoader({
+      env,
+      eventBus: createDefaultEventBusClient(dependencies)({
+        env,
+        name: 'lifeos-cli-modules',
+        timeoutMs: 1000,
+        maxReconnectAttempts: 0,
+      }),
+    });
+  const shouldClose = !dependencies.moduleLoader;
+
+  try {
+    await ephemeralLoader.loadMany(defaults);
+
+    if (options.action === 'load') {
+      if (!options.moduleId) {
+        writeStderr(`${chalk.red.bold('Error:')} Module id is required for "modules load".\n`);
+        return 1;
+      }
+
+      const selected = knownModules.get(options.moduleId);
+      if (!selected) {
+        writeStderr(`${chalk.red.bold('Error:')} Unknown module "${options.moduleId}".\n`);
+        return 1;
+      }
+
+      await ephemeralLoader.load(selected);
+      writeStdout(`${chalk.green(`Loaded module: ${selected.id}`)}\n`);
+      return 0;
+    }
+
+    const ids = ephemeralLoader.getModuleIds();
+    if (ids.length === 0) {
+      writeStdout('Loaded modules: none\n');
+      return 0;
+    }
+
+    writeStdout(`Loaded modules: ${ids.join(', ')}\n`);
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  } finally {
+    if (shouldClose) {
+      await ephemeralLoader.close();
+    }
+  }
+}
+
 function buildProgram(
   dependencies: RunCliDependencies,
   setExitCode: (exitCode: number) => void,
@@ -900,6 +984,36 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
+  program
+    .command('modules')
+    .description('List or load runtime modules')
+    .argument('[action]', 'list | load', 'list')
+    .argument('[id]', 'Module id for load action')
+    .action(async (action: string, id: string | undefined) => {
+      const normalizedAction = normalizeModulesAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid modules action "${action}". Use list or load.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runModulesCommand(
+        (() => {
+          const moduleOptions: ModulesCommandOptions = {
+            action: normalizedAction,
+          };
+          if (id) {
+            moduleOptions.moduleId = id;
+          }
+          return moduleOptions;
+        })(),
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
   return program;
 }
 
@@ -928,7 +1042,39 @@ export async function runCli(
 }
 
 async function main(): Promise<void> {
-  const exitCode = await runCli(process.argv.slice(2));
+  const args = process.argv.slice(2);
+  const bootCandidates =
+    !args.includes('--help') && !args.includes('-h') && !args.includes('--version');
+
+  let runtimeLoader: ModuleLoader | null = null;
+  if (bootCandidates) {
+    runtimeLoader = createModuleLoader({
+      env: process.env,
+      eventBus: createDefaultEventBusClient({})({
+        env: process.env,
+        name: 'lifeos-cli-runtime',
+        timeoutMs: 1000,
+        maxReconnectAttempts: 0,
+      }),
+      logger: (line: string) => {
+        if (process.env.LIFEOS_VERBOSE_BOOT === '1') {
+          process.stderr.write(`${chalk.gray(`[modules] ${line}`)}\n`);
+        }
+      },
+    });
+
+    try {
+      await runtimeLoader.loadMany([reminderModule]);
+    } catch {
+      await runtimeLoader.close();
+      runtimeLoader = null;
+    }
+  }
+
+  const exitCode = await runCli(args, runtimeLoader ? { moduleLoader: runtimeLoader } : {});
+  if (runtimeLoader) {
+    await runtimeLoader.close();
+  }
   if (exitCode !== 0) {
     process.exitCode = exitCode;
   }
