@@ -144,7 +144,13 @@ function renderTaskTable(rows: TaskListItem[]): string {
 function findTaskMatch(
   graph: LifeGraphDocument,
   taskIdOrPrefix: string,
-): { planIndex: number; taskIndex: number; task: LifeGraphTask; goalTitle: string } {
+): {
+  planIndex: number;
+  taskIndex: number;
+  task: LifeGraphTask;
+  goalId: string;
+  goalTitle: string;
+} {
   const needle = taskIdOrPrefix.trim().toLowerCase();
   if (!needle) {
     throw new Error('Task ID is required for complete action.');
@@ -154,6 +160,7 @@ function findTaskMatch(
     planIndex: number;
     taskIndex: number;
     task: LifeGraphTask;
+    goalId: string;
     goalTitle: string;
   }> = [];
   graph.plans.forEach((plan, planIndex) => {
@@ -163,6 +170,7 @@ function findTaskMatch(
           planIndex,
           taskIndex,
           task,
+          goalId: plan.id,
           goalTitle: plan.title,
         });
       }
@@ -182,6 +190,7 @@ function findTaskMatch(
     planIndex: number;
     taskIndex: number;
     task: LifeGraphTask;
+    goalId: string;
     goalTitle: string;
   };
 }
@@ -211,7 +220,13 @@ export async function handleTaskComplete(
   taskId: string | undefined,
   client: Pick<LifeGraphClient, 'loadGraph' | 'saveGraph'>,
   options: TaskIoOptions,
-): Promise<{ id: string; title: string; goalTitle: string; status: LifeGraphTask['status'] }> {
+): Promise<{
+  id: string;
+  title: string;
+  goalId: string;
+  goalTitle: string;
+  status: LifeGraphTask['status'];
+}> {
   const graph = await client.loadGraph();
   const match = findTaskMatch(graph, taskId ?? '');
 
@@ -245,6 +260,7 @@ export async function handleTaskComplete(
   const payload = {
     id: updatedTask.id,
     title: updatedTask.title,
+    goalId: match.goalId,
     goalTitle: match.goalTitle,
     status: updatedTask.status,
   };

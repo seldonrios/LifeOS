@@ -12,6 +12,6 @@
     }
   },
   "dependencies": {
-    "@lifeos/security": "workspace:*"
+    "nats": "^2.29.3"
   }
 }

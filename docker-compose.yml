@@ -33,19 +33,11 @@ services:
     networks: [lifeos-network]
 
   nats:
-    <<: *dormant_profile
-    image: nats:2-alpine
-    env_file: .env
-    command: ['--config', '/etc/nats/nats-server.conf']
-    depends_on:
-      init-db:
-        condition: service_completed_successfully
+    image: nats:2.10-alpine
+    command: ['-js', '-m', '8222']
     ports:
       - '4222:4222'
       - '8222:8222'
-    volumes:
-      - ./config/nats-server.conf:/etc/nats/nats-server.conf:ro
-      - ./.nats/resolver:/data/resolver
     networks: [lifeos-network]
 
   opa:

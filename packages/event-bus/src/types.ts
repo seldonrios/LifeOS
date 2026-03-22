@@ -24,6 +24,10 @@ export interface EventBus {
   subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void>): Promise<void>;
 }
 
+export interface ManagedEventBus extends EventBus {
+  close(): Promise<void>;
+}
+
 export const Topics = {
   person: {
     created: 'person.created',
@@ -64,5 +68,9 @@ export const Topics = {
   agent: {
     workRequested: 'agent.work.requested',
     workCompleted: 'agent.work.completed',
+  },
+  lifeos: {
+    tickOverdue: 'lifeos.tick.overdue',
+    taskCompleted: 'lifeos.task.completed',
   },
 } as const;

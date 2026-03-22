@@ -64,6 +64,7 @@ pnpm lifeos review --period weekly
 pnpm lifeos task list
 pnpm lifeos next
 pnpm lifeos tick
+pnpm lifeos events listen --topic "lifeos.>"
 ```
 
 Common flags:
@@ -77,15 +78,17 @@ Common flags:
 - `review --json` output machine-readable review insights
 - `task list|complete|next` manage and execute tasks from the life graph
 - `tick` run a deadline check for overdue tasks
+- `events listen --topic <subject>` watch live event stream from NATS
 
 Environment overrides:
 
 - `LIFEOS_GRAPH_PATH` sets the default graph path when `--graph-path` is not provided
+- `LIFEOS_NATS_URL` sets the event bus endpoint (default `nats://127.0.0.1:4222`)
 
-Optional Docker shortcut for local Ollama:
+Optional Docker shortcut for local Ollama + NATS:
 
 ```powershell
-docker compose up -d ollama
+docker compose up -d ollama nats
 ```
 
 Sample run:
@@ -324,7 +327,7 @@ All other packages and services remain in-repo as dormant architecture placehold
 
 Docker note:
 
-- `docker compose up` starts only the MVP `ollama` path by default.
+- `docker compose up` starts the MVP local inference + event stack (`ollama`, `nats`).
 - Legacy services are still present under the `dormant` profile (`docker compose --profile dormant up`).
 
 That means the primary deliverables right now are:

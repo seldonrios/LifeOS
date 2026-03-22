@@ -20,6 +20,7 @@
     "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts"
   },
   "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
     "boxen": "^8.0.1",

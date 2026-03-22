@@ -1,8 +1,8 @@
 # @lifeos/event-bus
 
-Event bus contracts for publish and subscribe workflows across domains.
+Event bus contracts and a NATS-backed runtime implementation for publish and subscribe workflows across domains.
 
-The intended implementation uses NATS JetStream with CloudEvents-style envelopes and subject naming conventions.
+Default endpoint: `nats://127.0.0.1:4222` (override with `LIFEOS_NATS_URL`).
 
 ## Spec References
 

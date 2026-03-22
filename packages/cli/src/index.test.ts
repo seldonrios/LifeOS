@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
 import type {
   GoalPlan,
   LifeGraphDocument,
@@ -110,6 +111,24 @@ function createSpinnerRecorder() {
       },
     },
   };
+}
+
+function createMockEventBus() {
+  const published: Array<{ topic: string; event: BaseEvent<unknown> }> = [];
+
+  const bus: ManagedEventBus = {
+    async publish(topic, event) {
+      published.push({ topic, event: event as BaseEvent<unknown> });
+    },
+    async subscribe() {
+      return;
+    },
+    async close() {
+      return;
+    },
+  };
+
+  return { bus, published };
 }
 
 test('goal command prints human output, starts spinner, and saves by default', async () => {
@@ -490,6 +509,7 @@ test('task list --json emits flattened task rows', async () => {
 test('task complete updates task status via saveGraph', async () => {
   const stdout: string[] = [];
   let savedGraph: LifeGraphDocument = sampleGraph();
+  const eventBus = createMockEventBus();
 
   const exitCode = await runCli(['task', 'complete', 'task_alpha'], {
     createLifeGraphClient: () =>
@@ -501,6 +521,7 @@ test('task complete updates task status via saveGraph', async () => {
           savedGraph = graph;
         },
       }) as never,
+    createEventBusClient: () => eventBus.bus,
     stdout: (message) => {
       stdout.push(message);
     },
@@ -509,6 +530,8 @@ test('task complete updates task status via saveGraph', async () => {
   assert.equal(exitCode, 0);
   assert.match(stdout.join(''), /Task .* completed/);
   assert.equal(savedGraph.plans[0]?.tasks[0]?.status, 'done');
+  assert.equal(eventBus.published.length, 1);
+  assert.equal(eventBus.published[0]?.topic, Topics.lifeos.taskCompleted);
 });
 
 test('next command prints next actions', async () => {
@@ -542,6 +565,7 @@ test('next command prints next actions', async () => {
 
 test('tick --json emits tick result payload', async () => {
   const stdout: string[] = [];
+  const eventBus = createMockEventBus();
 
   const exitCode = await runCli(['tick', '--json'], {
     runTick: async () => ({
@@ -556,6 +580,7 @@ test('tick --json emits tick result payload', async () => {
         },
       ],
     }),
+    createEventBusClient: () => eventBus.bus,
     stdout: (message) => {
       stdout.push(message);
     },
@@ -565,4 +590,49 @@ test('tick --json emits tick result payload', async () => {
   const payload = JSON.parse(stdout.join('')) as { checkedTasks: number; overdueTasks: unknown[] };
   assert.equal(payload.checkedTasks, 3);
   assert.equal(payload.overdueTasks.length, 1);
+  assert.equal(eventBus.published.length, 1);
+  assert.equal(eventBus.published[0]?.topic, Topics.lifeos.tickOverdue);
+});
+
+test('events listen --json prints event lines and exits on signal', async () => {
+  const stdout: string[] = [];
+
+  const bus: ManagedEventBus = {
+    async publish() {
+      return;
+    },
+    async subscribe(_topic, handler) {
+      const typedHandler = handler as (event: BaseEvent<unknown>) => Promise<void>;
+      await typedHandler({
+        id: 'evt_1',
+        type: Topics.lifeos.tickOverdue,
+        timestamp: '2026-03-22T00:00:00.000Z',
+        source: 'test',
+        version: '0.1.0',
+        data: {
+          checkedTasks: 3,
+          overdueTasks: [{ id: 'task_1' }],
+        },
+      });
+    },
+    async close() {
+      return;
+    },
+  };
+
+  const exitCode = await runCli(['events', 'listen', '--json'], {
+    createEventBusClient: () => bus,
+    waitForSignal: async () => {
+      return;
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const line = stdout.join('').trim();
+  const parsed = JSON.parse(line) as BaseEvent<{ checkedTasks: number }>;
+  assert.equal(parsed.type, Topics.lifeos.tickOverdue);
+  assert.equal(parsed.data.checkedTasks, 3);
 });

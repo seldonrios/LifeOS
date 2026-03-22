@@ -64,6 +64,7 @@ pnpm lifeos task list
 pnpm lifeos task complete <task-id-prefix>
 pnpm lifeos next
 pnpm lifeos tick
+pnpm lifeos events listen --topic "lifeos.>"
 ```
 
 ## Useful Flags
@@ -124,10 +125,18 @@ pnpm lifeos tick
 pnpm lifeos tick --json
 ```
 
+- Event stream listener:
+
+```powershell
+pnpm lifeos events listen --topic "lifeos.>"
+pnpm lifeos events listen --topic "lifeos.tick.overdue" --json
+```
+
 ## Environment Overrides
 
 - `LIFEOS_GOAL_MODEL`: default model name used by the CLI
 - `OLLAMA_HOST`: remote Ollama endpoint, for example `http://192.168.1.20:11434`
+- `LIFEOS_NATS_URL`: NATS endpoint for event publish/listen, default `nats://127.0.0.1:4222`
 
 Example:
 
@@ -147,6 +156,8 @@ pnpm lifeos status --help
 pnpm lifeos review --help
 pnpm lifeos task --help
 pnpm lifeos tick --help
+pnpm lifeos events --help
+pnpm lifeos events listen --help
 ```
 
 - Test global command locally:

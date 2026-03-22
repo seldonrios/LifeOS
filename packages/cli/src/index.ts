@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from 'node:crypto';
 import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
@@ -6,6 +7,13 @@ import { existsSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
 
+import {
+  Topics,
+  createEventBusClient,
+  type BaseEvent,
+  type CreateEventBusClientOptions,
+  type ManagedEventBus,
+} from '@lifeos/event-bus';
 import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
@@ -64,6 +72,12 @@ interface TickCommandOptions {
   verbose: boolean;
 }
 
+interface EventsListenCommandOptions {
+  topic: string;
+  outputJson: boolean;
+  verbose: boolean;
+}
+
 interface SpinnerLike {
   start(): SpinnerLike;
   succeed(text?: string): SpinnerLike;
@@ -108,6 +122,8 @@ export interface RunCliDependencies {
     client?: Pick<LifeGraphClient, 'loadGraph'>;
     logger?: (message: string) => void;
   }) => Promise<TickResult>;
+  createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
+  waitForSignal?: () => Promise<void>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
   fileExists?: (path: string) => boolean;
@@ -132,6 +148,65 @@ function createDefaultSpinner(text: string): SpinnerLike {
     text,
     color: 'blue',
   }) as Ora;
+}
+
+function createCliEvent<T extends Record<string, unknown>>(type: string, data: T): BaseEvent<T> {
+  return {
+    id: randomUUID(),
+    type,
+    timestamp: new Date().toISOString(),
+    source: 'lifeos-cli',
+    version: '0.1.0',
+    data,
+  };
+}
+
+function createDefaultEventBusClient(
+  dependencies: RunCliDependencies,
+): (options?: CreateEventBusClientOptions) => ManagedEventBus {
+  return dependencies.createEventBusClient ?? createEventBusClient;
+}
+
+async function publishEventSafely<T extends Record<string, unknown>>(
+  topic: string,
+  data: T,
+  dependencies: RunCliDependencies,
+  env: NodeJS.ProcessEnv,
+  verboseLog: (line: string) => void,
+): Promise<void> {
+  const createBus = createDefaultEventBusClient(dependencies);
+  const eventBus = createBus({
+    env,
+    name: 'lifeos-cli-publisher',
+    timeoutMs: 1000,
+    maxReconnectAttempts: 0,
+    logger: (line) => verboseLog(line),
+  });
+  try {
+    await eventBus.publish(topic, createCliEvent(topic, data));
+    verboseLog(`event_published topic=${topic}`);
+  } catch (error: unknown) {
+    verboseLog(`event_publish_skipped topic=${topic} reason=${normalizeErrorMessage(error)}`);
+  } finally {
+    await eventBus.close();
+  }
+}
+
+function waitForSignalDefault(): Promise<void> {
+  return new Promise((resolve) => {
+    let settled = false;
+    const complete = (): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      process.off('SIGINT', complete);
+      process.off('SIGTERM', complete);
+      resolve();
+    };
+    process.on('SIGINT', complete);
+    process.on('SIGTERM', complete);
+  });
 }
 
 function mapStageToVerboseLine(stage: InterpretGoalStage): string {
@@ -480,11 +555,24 @@ export async function runTaskCommand(
     }
 
     if (options.action === 'complete') {
-      await handleTaskComplete(options.taskId, client, {
+      const completedTask = await handleTaskComplete(options.taskId, client, {
         outputJson: options.outputJson,
         stdout: writeStdout,
         now: now(),
       });
+      await publishEventSafely(
+        Topics.lifeos.taskCompleted,
+        {
+          taskId: completedTask.id,
+          goalId: completedTask.goalId,
+          title: completedTask.title,
+          status: completedTask.status,
+          completedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
       return 0;
     }
 
@@ -512,6 +600,12 @@ export async function runTickCommand(
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const tick = dependencies.runTick ?? runTick;
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
 
   try {
     const result = await tick({
@@ -519,11 +613,23 @@ export async function runTickCommand(
       env,
       now: now(),
       logger: (line) => {
-        if (options.verbose) {
-          writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
-        }
+        verboseLog(line);
       },
     });
+
+    if (result.overdueTasks.length > 0) {
+      await publishEventSafely(
+        Topics.lifeos.tickOverdue,
+        {
+          checkedTasks: result.checkedTasks,
+          overdueTasks: result.overdueTasks,
+          tickedAt: result.now,
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+    }
 
     if (options.outputJson) {
       writeStdout(`${JSON.stringify(result, null, 2)}\n`);
@@ -550,6 +656,66 @@ export async function runTickCommand(
     return 0;
   } catch (error: unknown) {
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
+export async function runEventsListenCommand(
+  options: EventsListenCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createBus = createDefaultEventBusClient(dependencies);
+  const waitForSignal = dependencies.waitForSignal ?? waitForSignalDefault;
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  const eventBus = createBus({
+    env,
+    name: 'lifeos-cli-events-listen',
+    timeoutMs: 2000,
+    maxReconnectAttempts: -1,
+    logger: (line) => verboseLog(line),
+  });
+
+  try {
+    await eventBus.subscribe(options.topic, async (event) => {
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(event)}\n`);
+        return;
+      }
+
+      const rendered = [
+        chalk.cyan(`[${event.type}]`),
+        chalk.gray(event.timestamp),
+        `source=${event.source}`,
+        `${JSON.stringify(event.data)}`,
+      ].join(' ');
+      writeStdout(`${rendered}\n`);
+    });
+
+    if (!options.outputJson) {
+      const endpoint = env.LIFEOS_NATS_URL?.trim() || 'nats://127.0.0.1:4222';
+      writeStdout(chalk.blue(`Listening for events on "${options.topic}" via ${endpoint}\n`));
+      writeStdout(chalk.gray('Press Ctrl+C to stop.\n'));
+    }
+
+    await waitForSignal();
+    await eventBus.close();
+    return 0;
+  } catch (error: unknown) {
+    await eventBus.close();
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    writeStderr(
+      `${chalk.yellow('Quick fix:\n  docker compose up -d nats\n  or run local NATS on nats://127.0.0.1:4222')}\n`,
+    );
     return 1;
   }
 }
@@ -707,6 +873,26 @@ function buildProgram(
         {
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('events')
+    .description('Inspect LifeOS event stream')
+    .command('listen')
+    .description('Listen for published LifeOS events')
+    .option('--topic <topic>', 'Subject filter (supports wildcards)', 'lifeos.>')
+    .option('--json', 'Output raw event JSON lines')
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runEventsListenCommand(
+        {
+          topic: commandOptions.topic,
+          outputJson: Boolean(commandOptions.json),
           verbose: Boolean(commandOptions.verbose),
         },
         dependencies,
