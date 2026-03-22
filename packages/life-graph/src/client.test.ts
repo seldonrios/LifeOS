@@ -155,3 +155,82 @@ test('registerModuleSchema writes sidecar file and dedupes by id+version', async
   assert.equal(raw.schemas[0]?.meta.version, '1.0.0');
   assert.equal(raw.schemas[1]?.meta.version, '1.1.0');
 });
+
+test('getSummary returns active goals with task counts', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.createNode('plan', {
+    title: 'Board Prep',
+    description: 'Prepare for board meeting',
+    tasks: [
+      { title: 'Draft deck', status: 'done', priority: 5 },
+      { title: 'Rehearse', status: 'todo', priority: 4 },
+    ],
+  });
+
+  const summary = await client.getSummary();
+  assert.equal(summary.totalGoals, 1);
+  assert.equal(summary.activeGoals.length, 1);
+  assert.equal(summary.activeGoals[0]?.completedTasks, 1);
+  assert.equal(summary.activeGoals[0]?.totalTasks, 2);
+});
+
+test('generateReview returns llm insights when review client returns valid json', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: JSON.stringify({
+              wins: ['Closed sprint commitments'],
+              nextActions: ['Prepare Monday sprint plan'],
+            }),
+          },
+        };
+      },
+    },
+  });
+
+  await client.createNode('plan', {
+    title: 'Sprint Ops',
+    description: 'Track sprint work',
+    tasks: [{ title: 'Close sprint', status: 'done', priority: 4 }],
+  });
+
+  const insights = await client.generateReview('weekly');
+  assert.equal(insights.source, 'llm');
+  assert.equal(insights.wins[0], 'Closed sprint commitments');
+});
+
+test('generateReview falls back to heuristic insights on invalid llm output', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  await client.createNode('plan', {
+    title: 'Planning',
+    description: 'Keep planning on track',
+    tasks: [{ title: 'Define next actions', status: 'todo', priority: 5 }],
+  });
+
+  const insights = await client.generateReview('daily');
+  assert.equal(insights.source, 'heuristic');
+  assert.equal(insights.period, 'daily');
+  assert.ok(insights.nextActions.length >= 1);
+});

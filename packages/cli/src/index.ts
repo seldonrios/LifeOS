@@ -9,15 +9,15 @@ import ora, { type Ora } from 'ora';
 import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
-  getGraphSummary,
-  loadGraph,
   type GoalPlan,
   type GoalPlanRecord,
-  type LifeGraphDocument,
+  type LifeGraphReviewInsights,
+  type LifeGraphReviewPeriod,
   type LifeGraphSummary,
 } from '@lifeos/life-graph';
 import { interpretGoal, type InterpretGoalStage } from '@lifeos/goal-engine';
 import { formatGoalPlan } from './format';
+import { printGraphSummary, printReviewInsights } from './printer';
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
@@ -33,6 +33,13 @@ interface GoalCommandOptions {
 interface StatusCommandOptions {
   outputJson: boolean;
   graphPath: string;
+  verbose: boolean;
+}
+
+interface ReviewCommandOptions {
+  outputJson: boolean;
+  graphPath: string;
+  period: LifeGraphReviewPeriod;
   verbose: boolean;
 }
 
@@ -65,8 +72,11 @@ export interface RunCliDependencies {
     },
     graphPath?: string,
   ) => Promise<GoalPlanRecord<GoalPlan>>;
-  loadGraph?: (graphPath?: string) => Promise<LifeGraphDocument>;
   getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
+  generateReview?: (
+    period: LifeGraphReviewPeriod,
+    graphPath?: string,
+  ) => Promise<LifeGraphReviewInsights>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
   fileExists?: (path: string) => boolean;
@@ -150,18 +160,8 @@ function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
   return { message };
 }
 
-function formatStatusSummary(summary: LifeGraphSummary): string {
-  const lines: string[] = [];
-  lines.push(`Version: ${summary.version}`);
-  lines.push(`Total Plans: ${summary.totalPlans}`);
-  lines.push(`Updated At: ${summary.updatedAt}`);
-  lines.push(`Latest Plan: ${summary.latestPlanCreatedAt ?? 'none'}`);
-  lines.push(
-    `Recent Titles: ${
-      summary.recentPlanTitles.length > 0 ? summary.recentPlanTitles.join(' | ') : 'none'
-    }`,
-  );
-  return lines.join('\n');
+function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
+  return period === 'daily' ? 'daily' : 'weekly';
 }
 
 export async function runGoalCommand(
@@ -306,10 +306,19 @@ export async function runStatusCommand(
   options: StatusCommandOptions,
   dependencies: RunCliDependencies = {},
 ): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
-  const load = dependencies.loadGraph ?? loadGraph;
-  const summarize = dependencies.getGraphSummary ?? getGraphSummary;
+  const summarize =
+    dependencies.getGraphSummary ??
+    (async (graphPath?: string) => {
+      const clientOptions: Parameters<typeof createLifeGraphClient>[0] = { baseDir: baseCwd, env };
+      if (graphPath) {
+        clientOptions.graphPath = graphPath;
+      }
+      return createLifeGraphClient(clientOptions).getSummary();
+    });
 
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
@@ -321,24 +330,72 @@ export async function runStatusCommand(
   verboseLog(`graph_path=${options.graphPath}`);
 
   try {
-    if (options.outputJson) {
-      verboseLog('stage=graph_load_started');
-      const graph = await load(options.graphPath);
-      verboseLog('stage=graph_load_completed');
-      writeStdout(`${JSON.stringify(graph, null, 2)}\n`);
-      return 0;
-    }
-
     verboseLog('stage=summary_load_started');
     const summary = await summarize(options.graphPath);
     verboseLog('stage=summary_load_completed');
 
-    writeStdout(`${chalk.bold('Life Graph Status')}\n`);
-    writeStdout(`${chalk.dim('-'.repeat(60))}\n`);
-    writeStdout(`${formatStatusSummary(summary)}\n`);
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(summary, null, 2)}\n`);
+      return 0;
+    }
+
+    writeStdout(`${printGraphSummary(summary)}\n`);
     return 0;
   } catch (error: unknown) {
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    if (options.verbose && error instanceof Error) {
+      writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
+    }
+    return 1;
+  }
+}
+
+export async function runReviewCommand(
+  options: ReviewCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const review =
+    dependencies.generateReview ??
+    (async (period: LifeGraphReviewPeriod, graphPath?: string) => {
+      const clientOptions: Parameters<typeof createLifeGraphClient>[0] = { baseDir: baseCwd, env };
+      if (graphPath) {
+        clientOptions.graphPath = graphPath;
+      }
+      return createLifeGraphClient(clientOptions).generateReview(period);
+    });
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  verboseLog(`graph_path=${options.graphPath}`);
+  verboseLog(`period=${options.period}`);
+
+  try {
+    verboseLog('stage=review_generation_started');
+    const insights = await review(options.period, options.graphPath);
+    verboseLog('stage=review_generation_completed');
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(insights, null, 2)}\n`);
+      return 0;
+    }
+
+    writeStdout(`${printReviewInsights(insights)}\n`);
+    return 0;
+  } catch (error: unknown) {
+    const message = normalizeErrorMessage(error);
+    writeStderr(`${chalk.red.bold('Error:')} ${message}\n`);
+    if (/fetch failed|econnrefused|connection refused/i.test(message)) {
+      writeStderr(`${chalk.yellow('Quick fix:\n  ollama serve\n  ollama pull llama3.1:8b')}\n`);
+    }
     if (options.verbose && error instanceof Error) {
       writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
     }
@@ -398,7 +455,7 @@ function buildProgram(
   program
     .command('status')
     .description('Show current life graph summary')
-    .option('--json', 'Output full life graph JSON')
+    .option('--json', 'Output summary JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
     .action(async (commandOptions) => {
@@ -406,6 +463,26 @@ function buildProgram(
         {
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('review')
+    .description('Generate daily or weekly insights and next actions')
+    .option('--period <period>', 'daily or weekly', 'weekly')
+    .option('--json', 'Output review JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runReviewCommand(
+        {
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          period: normalizeReviewPeriod(commandOptions.period),
           verbose: Boolean(commandOptions.verbose),
         },
         dependencies,

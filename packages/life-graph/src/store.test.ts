@@ -159,4 +159,6 @@ test('compatibility wrappers still work with legacy signatures', async () => {
   assert.equal(summary.totalGoals, 1);
   assert.equal(summary.recentPlanTitles[0], 'Compat Plan');
   assert.equal(summary.recentGoalTitles[0], 'Compat Plan');
+  assert.equal(summary.activeGoals.length, 1);
+  assert.equal(summary.activeGoals[0]?.title, 'Compat Plan');
 });

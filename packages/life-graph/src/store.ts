@@ -53,6 +53,21 @@ export async function getGraphSummary(graphPath?: string): Promise<LifeGraphSumm
     .slice(-3)
     .reverse()
     .map((plan) => plan.title);
+  const activeGoals = graph.plans
+    .map((plan) => {
+      const totalTasks = plan.tasks.length;
+      const completedTasks = plan.tasks.filter((task) => task.status === 'done').length;
+      const priority = plan.tasks.reduce((max, task) => Math.max(max, task.priority), 3);
+      return {
+        id: plan.id,
+        title: plan.title,
+        totalTasks,
+        completedTasks,
+        priority,
+        deadline: plan.deadline,
+      };
+    })
+    .filter((goal) => goal.totalTasks === 0 || goal.completedTasks < goal.totalTasks);
 
   return {
     version: graph.version,
@@ -63,6 +78,7 @@ export async function getGraphSummary(graphPath?: string): Promise<LifeGraphSumm
     latestGoalCreatedAt: latestPlanCreatedAt,
     recentPlanTitles,
     recentGoalTitles: recentPlanTitles,
+    activeGoals,
   };
 }
 

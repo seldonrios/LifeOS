@@ -46,6 +46,8 @@ test('interpretGoal uses chat json mode and low temperature', async () => {
   assert.equal(requests.length, 1);
   assert.equal(requests[0]?.format, 'json');
   assert.equal(requests[0]?.options?.temperature, 0.2);
+  assert.match(requests[0]?.messages[0]?.content ?? '', /Exact schema:/);
+  assert.match(requests[0]?.messages[0]?.content ?? '', /\"title\"/);
   assert.equal(result.title, 'Board Meeting Prep');
 });
 

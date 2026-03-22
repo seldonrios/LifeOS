@@ -266,7 +266,6 @@ export async function interpretGoal(
   const now = options.now ?? new Date();
   const client = options.client ?? createDefaultClient(options.host);
   const model = options.model ?? DEFAULT_MODEL;
-  const systemPrompt = getGoalDecompositionSystemPrompt();
   let repairUserPrompt: string | null = null;
   let lastError: Error | null = null;
   let lastOutput = '';
@@ -294,7 +293,7 @@ export async function interpretGoal(
       response = await client.chat({
         model,
         messages: [
-          { role: 'system', content: systemPrompt },
+          { role: 'system', content: getGoalDecompositionSystemPrompt() },
           { role: 'user', content: userPrompt },
         ],
         format: 'json',

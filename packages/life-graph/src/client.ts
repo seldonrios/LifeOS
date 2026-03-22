@@ -3,7 +3,16 @@ import { dirname, join } from 'node:path';
 
 import { LifeGraphManager, type LifeGraphManagerOptions } from './manager';
 import { resolveLifeGraphPath } from './path';
-import type { GoalPlan, LifeGraphClient, LifeGraphTask, ModuleSchema } from './types';
+import { getGraphSummary } from './store';
+import type {
+  GoalPlan,
+  LifeGraphClient,
+  LifeGraphReviewInsights,
+  LifeGraphReviewPeriod,
+  LifeGraphSummary,
+  LifeGraphTask,
+  ModuleSchema,
+} from './types';
 
 export class UnsupportedQueryError extends Error {
   constructor(public readonly query: string) {
@@ -28,10 +37,31 @@ export class UnsupportedOperationError extends Error {
 
 export interface CreateLifeGraphClientOptions extends LifeGraphManagerOptions {
   graphPath?: string;
+  reviewClient?: ReviewChatClient;
 }
 
 interface ModuleSchemaDocument {
   schemas: ModuleSchema[];
+}
+
+interface ReviewChatRequest {
+  model: string;
+  format: 'json';
+  options: {
+    temperature: number;
+    num_ctx: number;
+  };
+  messages: Array<{ role: 'system' | 'user'; content: string }>;
+}
+
+interface ReviewChatResponse {
+  message: {
+    content: string;
+  };
+}
+
+interface ReviewChatClient {
+  chat(request: ReviewChatRequest): Promise<ReviewChatResponse>;
 }
 
 type QueryParams = Record<string, unknown> | undefined;
@@ -157,6 +187,165 @@ function normalizeLabel(label: string): string {
   }
 
   return normalized;
+}
+
+function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
+  return period === 'daily' ? 'daily' : 'weekly';
+}
+
+function extractReviewJson(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+    return trimmed;
+  }
+
+  const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1]?.trim();
+  if (fenced) {
+    return fenced;
+  }
+
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let index = 0; index < trimmed.length; index += 1) {
+    const char = trimmed[index];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char === '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) {
+      continue;
+    }
+    if (char === '{') {
+      if (depth === 0) {
+        start = index;
+      }
+      depth += 1;
+      continue;
+    }
+    if (char === '}') {
+      if (depth === 0) {
+        continue;
+      }
+      depth -= 1;
+      if (depth === 0 && start >= 0) {
+        return trimmed.slice(start, index + 1);
+      }
+    }
+  }
+
+  throw new Error('Review response did not contain valid JSON');
+}
+
+function parseInsightsOutput(raw: string): { wins: string[]; nextActions: string[] } {
+  const parsed = JSON.parse(extractReviewJson(raw)) as unknown;
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('Review JSON must be an object');
+  }
+
+  const candidate = parsed as {
+    wins?: unknown;
+    nextActions?: unknown;
+  };
+
+  const wins = Array.isArray(candidate.wins)
+    ? candidate.wins.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      )
+    : [];
+  const nextActions = Array.isArray(candidate.nextActions)
+    ? candidate.nextActions.filter(
+        (item): item is string => typeof item === 'string' && item.trim().length > 0,
+      )
+    : [];
+
+  if (wins.length === 0 && nextActions.length === 0) {
+    throw new Error('Review JSON did not include wins or nextActions');
+  }
+
+  return {
+    wins: wins.slice(0, 5),
+    nextActions: nextActions.slice(0, 5),
+  };
+}
+
+function deriveHeuristicInsights(
+  plans: GoalPlan[],
+  period: LifeGraphReviewPeriod,
+): Pick<LifeGraphReviewInsights, 'wins' | 'nextActions'> {
+  const completedTaskTitles = plans.flatMap((plan) =>
+    plan.tasks
+      .filter((task) => task.status === 'done')
+      .map((task) => `${plan.title}: ${task.title}`),
+  );
+  const todoTaskTitles = plans.flatMap((plan) =>
+    plan.tasks
+      .filter((task) => task.status !== 'done')
+      .sort((left, right) => right.priority - left.priority)
+      .map((task) => `${plan.title}: ${task.title}`),
+  );
+
+  const wins =
+    completedTaskTitles.slice(0, 3).length > 0
+      ? completedTaskTitles.slice(0, 3)
+      : [`No completed tasks recorded in the ${period} window yet.`];
+  const nextActions =
+    todoTaskTitles.slice(0, 3).length > 0
+      ? todoTaskTitles.slice(0, 3)
+      : ['Capture one next concrete task for your highest-priority goal.'];
+
+  return { wins, nextActions };
+}
+
+function createReviewChatClient(host?: string): ReviewChatClient {
+  const normalizedHost = host?.trim() || 'http://127.0.0.1:11434';
+  const endpoint = `${normalizedHost.replace(/\/+$/, '')}/api/chat`;
+
+  return {
+    async chat(request: ReviewChatRequest): Promise<ReviewChatResponse> {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: request.model,
+          messages: request.messages,
+          format: request.format,
+          options: request.options,
+          stream: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const body = await response.text();
+        throw new Error(`Ollama request failed (${response.status}): ${body}`);
+      }
+
+      const data = (await response.json()) as { message?: { content?: unknown } };
+      const content = data.message?.content;
+      if (typeof content !== 'string') {
+        throw new Error('Ollama response missing message.content');
+      }
+
+      return {
+        message: {
+          content,
+        },
+      };
+    },
+  };
 }
 
 async function readModuleSchemaDocument(sidecarPath: string): Promise<ModuleSchemaDocument> {
@@ -298,6 +487,80 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       );
       deduped.push(schema);
       await writeModuleSchemaDocument(moduleSchemaPath, { schemas: deduped });
+    },
+
+    async getSummary(): Promise<LifeGraphSummary> {
+      return getGraphSummary(resolvedGraphPath);
+    },
+
+    async generateReview(
+      period: LifeGraphReviewPeriod = 'weekly',
+    ): Promise<LifeGraphReviewInsights> {
+      const normalizedPeriod = normalizeReviewPeriod(period);
+      const graph = await manager.load(resolvedGraphPath);
+      const generatedAt = new Date().toISOString();
+      const model = options.env?.LIFEOS_GOAL_MODEL?.trim() || 'llama3.1:8b';
+      const host = options.env?.OLLAMA_HOST;
+      const heuristic = deriveHeuristicInsights(graph.plans, normalizedPeriod);
+
+      const reviewPrompt = JSON.stringify(
+        {
+          period: normalizedPeriod,
+          updatedAt: graph.updatedAt,
+          plans: graph.plans.map((plan) => ({
+            title: plan.title,
+            deadline: plan.deadline,
+            tasks: plan.tasks.map((task) => ({
+              title: task.title,
+              status: task.status,
+              priority: task.priority,
+              dueDate: task.dueDate ?? null,
+            })),
+          })),
+        },
+        null,
+        2,
+      );
+
+      try {
+        const reviewClient = options.reviewClient ?? createReviewChatClient(host);
+        const response = await reviewClient.chat({
+          model,
+          format: 'json',
+          options: {
+            temperature: 0.2,
+            num_ctx: 8192,
+          },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a practical LifeOS review assistant. Return only JSON with {"wins": string[], "nextActions": string[]}. Keep each item concise and actionable.',
+            },
+            {
+              role: 'user',
+              content: `Generate a ${normalizedPeriod} review from this life graph snapshot:\n\n${reviewPrompt}`,
+            },
+          ],
+        });
+
+        const parsed = parseInsightsOutput(response.message.content);
+        return {
+          period: normalizedPeriod,
+          wins: parsed.wins,
+          nextActions: parsed.nextActions,
+          generatedAt,
+          source: 'llm',
+        };
+      } catch {
+        return {
+          period: normalizedPeriod,
+          wins: heuristic.wins,
+          nextActions: heuristic.nextActions,
+          generatedAt,
+          source: 'heuristic',
+        };
+      }
     },
   };
 }

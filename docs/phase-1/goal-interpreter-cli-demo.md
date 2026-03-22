@@ -59,6 +59,7 @@ Get-Content .\.lifeos\life-graph.json
 ```powershell
 pnpm lifeos status
 pnpm lifeos status --json
+pnpm lifeos review --period weekly
 ```
 
 ## Useful Flags
@@ -69,7 +70,7 @@ pnpm lifeos status --json
 pnpm lifeos goal "..." --json
 ```
 
-Note: `goal --json` prints the normalized plan only. Use `status --json` to print the full life graph document.
+Note: `goal --json` prints the normalized plan only. Use `status --json` for status summary JSON and `review --json` for insights JSON.
 
 - Skip persistence:
 
@@ -95,6 +96,13 @@ pnpm lifeos goal "..." --graph-path .\tmp\life-graph.json
 pnpm lifeos goal "..." --verbose
 ```
 
+- Review insights:
+
+```powershell
+pnpm lifeos review --period weekly
+pnpm lifeos review --period daily --json
+```
+
 ## Environment Overrides
 
 - `LIFEOS_GOAL_MODEL`: default model name used by the CLI
@@ -115,6 +123,7 @@ pnpm lifeos goal "Plan my next 2 weeks"
 pnpm lifeos --help
 pnpm lifeos goal --help
 pnpm lifeos status --help
+pnpm lifeos review --help
 ```
 
 - Test global command locally:

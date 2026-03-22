@@ -60,6 +60,7 @@ pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 ```powershell
 pnpm lifeos status
 pnpm lifeos status --json
+pnpm lifeos review --period weekly
 ```
 
 Common flags:
@@ -69,7 +70,8 @@ Common flags:
 - `--model <name>` override model (default `llama3.1:8b`, or `LIFEOS_GOAL_MODEL`)
 - `--graph-path <path>` override default graph location
 - `--verbose` print safe diagnostics to stderr
-- `status --json` output the full life graph JSON document
+- `status --json` output a machine-readable status summary
+- `review --json` output machine-readable review insights
 
 Environment overrides:
 

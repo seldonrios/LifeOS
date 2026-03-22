@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { GoalPlan, LifeGraphDocument } from '@lifeos/life-graph';
+import type { GoalPlan, LifeGraphReviewInsights, LifeGraphSummary } from '@lifeos/life-graph';
 
 import { runCli } from './index';
 
@@ -24,20 +24,36 @@ function samplePlan(): GoalPlan {
   };
 }
 
-function sampleGraph(): LifeGraphDocument {
+function sampleSummary(): LifeGraphSummary {
   return {
     version: '0.1.0',
     updatedAt: '2026-03-21T14:00:00.000Z',
-    plans: [
+    totalPlans: 2,
+    totalGoals: 2,
+    latestPlanCreatedAt: '2026-03-21T14:00:00.000Z',
+    latestGoalCreatedAt: '2026-03-21T14:00:00.000Z',
+    recentPlanTitles: ['Board Meeting Prep', 'Quarterly Review'],
+    recentGoalTitles: ['Board Meeting Prep', 'Quarterly Review'],
+    activeGoals: [
       {
         id: 'goal_123',
         title: 'Board Meeting Prep',
-        description: 'Prepare deck, notes, and decision log.',
+        totalTasks: 4,
+        completedTasks: 1,
+        priority: 4,
         deadline: '2026-03-26',
-        tasks: [],
-        createdAt: '2026-03-21T14:00:00.000Z',
       },
     ],
+  };
+}
+
+function sampleReviewInsights(): LifeGraphReviewInsights {
+  return {
+    period: 'weekly',
+    wins: ['Finished board deck draft'],
+    nextActions: ['Schedule rehearsal with leadership'],
+    generatedAt: '2026-03-21T14:00:00.000Z',
+    source: 'heuristic',
   };
 }
 
@@ -354,16 +370,7 @@ test('status command prints concise summary in human mode', async () => {
   const stdout: string[] = [];
 
   const exitCode = await runCli(['status'], {
-    getGraphSummary: async () => ({
-      version: '0.1.0',
-      totalPlans: 2,
-      totalGoals: 2,
-      updatedAt: '2026-03-21T14:00:00.000Z',
-      latestPlanCreatedAt: '2026-03-21T14:00:00.000Z',
-      latestGoalCreatedAt: '2026-03-21T14:00:00.000Z',
-      recentPlanTitles: ['Board Meeting Prep', 'Quarterly Review'],
-      recentGoalTitles: ['Board Meeting Prep', 'Quarterly Review'],
-    }),
+    getGraphSummary: async () => sampleSummary(),
     stdout: (message) => {
       stdout.push(message);
     },
@@ -371,24 +378,60 @@ test('status command prints concise summary in human mode', async () => {
 
   assert.equal(exitCode, 0);
   const output = stdout.join('');
-  assert.match(output, /Life Graph Status/);
-  assert.match(output, /Total Plans: 2/);
-  assert.match(output, /Recent Titles: Board Meeting Prep \| Quarterly Review/);
+  assert.match(output, /LifeOS Status/);
+  assert.match(output, /Board Meeting Prep/);
+  assert.match(output, /2 total goals/);
 });
 
-test('status --json emits full versioned graph document', async () => {
+test('status --json emits summary JSON', async () => {
   const stdout: string[] = [];
 
   const exitCode = await runCli(['status', '--json'], {
-    loadGraph: async () => sampleGraph(),
+    getGraphSummary: async () => sampleSummary(),
     stdout: (message) => {
       stdout.push(message);
     },
   });
 
   assert.equal(exitCode, 0);
-  const parsed = JSON.parse(stdout.join('')) as LifeGraphDocument;
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphSummary;
   assert.equal(parsed.version, '0.1.0');
-  assert.equal(parsed.plans.length, 1);
-  assert.equal(parsed.plans[0]?.title, 'Board Meeting Prep');
+  assert.equal(parsed.totalGoals, 2);
+  assert.equal(parsed.activeGoals[0]?.title, 'Board Meeting Prep');
+});
+
+test('review command prints human insights', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['review', '--period', 'weekly'], {
+    generateReview: async () => sampleReviewInsights(),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /WEEKLY Review Insights/);
+  assert.match(output, /Finished board deck draft/);
+  assert.match(output, /Schedule rehearsal with leadership/);
+});
+
+test('review --json emits review insight JSON', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['review', '--json', '--period', 'daily'], {
+    generateReview: async (period) => ({
+      ...sampleReviewInsights(),
+      period,
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphReviewInsights;
+  assert.equal(parsed.period, 'daily');
+  assert.equal(parsed.wins[0], 'Finished board deck draft');
 });

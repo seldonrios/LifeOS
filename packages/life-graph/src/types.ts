@@ -130,6 +130,8 @@ export interface LifeGraphClient {
     properties?: Record<string, unknown>,
   ): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
+  getSummary(): Promise<LifeGraphSummary>;
+  generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
 }
 
 export interface GoalPlanRecord<TPlan = Record<string, unknown>> {
@@ -185,4 +187,24 @@ export interface LifeGraphSummary {
   latestGoalCreatedAt: string | null;
   recentPlanTitles: string[];
   recentGoalTitles: string[];
+  activeGoals: LifeGraphActiveGoalSummary[];
+}
+
+export interface LifeGraphActiveGoalSummary {
+  id: string;
+  title: string;
+  totalTasks: number;
+  completedTasks: number;
+  priority: number;
+  deadline: string | null;
+}
+
+export type LifeGraphReviewPeriod = 'daily' | 'weekly';
+
+export interface LifeGraphReviewInsights {
+  period: LifeGraphReviewPeriod;
+  wins: string[];
+  nextActions: string[];
+  generatedAt: string;
+  source: 'llm' | 'heuristic';
 }
