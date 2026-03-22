@@ -14,6 +14,12 @@ This demo is currently **CLI-only**.
 
 The command runs a local model through Ollama, prints a structured plan, and writes the result to a local versioned JSON life graph.
 
+You can also run a full end-to-end walkthrough with:
+
+```powershell
+pnpm lifeos demo
+```
+
 ## Prerequisites
 
 - Node.js >= 20
@@ -46,6 +52,12 @@ ollama pull llama3.1:8b
 
 ```powershell
 pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
+```
+
+Optional one-command walkthrough:
+
+```powershell
+pnpm lifeos demo
 ```
 
 5. Verify persisted output:

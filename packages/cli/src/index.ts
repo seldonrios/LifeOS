@@ -75,6 +75,13 @@ interface TickCommandOptions {
   verbose: boolean;
 }
 
+interface DemoCommandOptions {
+  goal: string;
+  model: string;
+  graphPath: string;
+  verbose: boolean;
+}
+
 interface EventsListenCommandOptions {
   topic: string;
   outputJson: boolean;
@@ -674,15 +681,29 @@ export async function runTickCommand(
 
     if (result.overdueTasks.length === 0) {
       writeStdout(
-        chalk.green(`Tick complete. Checked ${result.checkedTasks} task(s), no overdue tasks.\n`),
+        `${boxen(
+          chalk.green(`Tick complete. Checked ${result.checkedTasks} task(s), no overdue tasks.`),
+          {
+            padding: 1,
+            borderStyle: 'round',
+            borderColor: 'green',
+          },
+        )}\n`,
       );
       return 0;
     }
 
     writeStdout(
-      chalk.red(
-        `Tick complete. Checked ${result.checkedTasks} task(s), found ${result.overdueTasks.length} overdue.\n`,
-      ),
+      `${boxen(
+        chalk.red(
+          `Tick complete. Checked ${result.checkedTasks} task(s), found ${result.overdueTasks.length} overdue.`,
+        ),
+        {
+          padding: 1,
+          borderStyle: 'round',
+          borderColor: 'red',
+        },
+      )}\n`,
     );
     result.overdueTasks.slice(0, 10).forEach((task) => {
       writeStdout(
@@ -694,6 +715,64 @@ export async function runTickCommand(
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
     return 1;
   }
+}
+
+export async function runDemoCommand(
+  options: DemoCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  writeStdout(
+    `${boxen(chalk.bold.blue('LifeOS Demo Starting...'), {
+      padding: 1,
+      borderStyle: 'round',
+      borderColor: 'blue',
+    })}\n`,
+  );
+
+  const goalExitCode = await runGoalCommand(
+    options.goal,
+    {
+      outputJson: false,
+      save: true,
+      model: options.model,
+      graphPath: options.graphPath,
+      verbose: options.verbose,
+    },
+    dependencies,
+  );
+
+  if (goalExitCode !== 0) {
+    writeStderr(`${chalk.red.bold('Error:')} Demo stopped during goal decomposition.\n`);
+    return goalExitCode;
+  }
+
+  const tickExitCode = await runTickCommand(
+    {
+      outputJson: false,
+      graphPath: options.graphPath,
+      verbose: options.verbose,
+    },
+    dependencies,
+  );
+
+  if (tickExitCode !== 0) {
+    writeStderr(`${chalk.red.bold('Error:')} Demo stopped during tick execution.\n`);
+    return tickExitCode;
+  }
+
+  writeStdout(
+    `${boxen(chalk.green('Demo complete! LifeOS is now running as your personal AI node.'), {
+      padding: 1,
+      borderStyle: 'round',
+      borderColor: 'green',
+    })}\n`,
+  );
+  writeStdout('Next: `lifeos status`, `lifeos task list`, `lifeos modules`\n');
+
+  return 0;
 }
 
 export async function runEventsListenCommand(
@@ -977,6 +1056,30 @@ function buildProgram(
       const commandExitCode = await runTickCommand(
         {
           outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('demo')
+    .description('Run full end-to-end LifeOS demo (goal -> tick -> reminder reaction)')
+    .option('--goal <goal>', 'Override demo goal', 'Prepare taxes by end of month')
+    .option(
+      '--model <model>',
+      'Override model (default: llama3.1:8b or LIFEOS_GOAL_MODEL)',
+      defaultModel,
+    )
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runDemoCommand(
+        {
+          goal: commandOptions.goal,
+          model: commandOptions.model,
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },

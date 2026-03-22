@@ -597,6 +597,86 @@ test('tick --json emits tick result payload', async () => {
   assert.equal(eventBus.published[0]?.topic, Topics.lifeos.tickOverdue);
 });
 
+test('tick human mode shows fallback notice and overdue summary', async () => {
+  const stdout: string[] = [];
+
+  const bus: ManagedEventBus = {
+    async publish() {
+      return;
+    },
+    async subscribe() {
+      return;
+    },
+    async close() {
+      return;
+    },
+    getTransport() {
+      return 'in-memory';
+    },
+  };
+
+  const exitCode = await runCli(['tick'], {
+    runTick: async () => ({
+      now: '2026-03-22T00:00:00.000Z',
+      checkedTasks: 2,
+      overdueTasks: [
+        {
+          id: 'task_1',
+          title: 'Draft deck',
+          goalTitle: 'Board Prep',
+          dueDate: '2026-03-21',
+        },
+      ],
+    }),
+    createEventBusClient: () => bus,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /in-memory fallback mode/i);
+  assert.match(output, /Tick complete\. Checked 2 task\(s\), found 1 overdue\./);
+  assert.match(output, /task_1/);
+});
+
+test('demo runs goal then tick and prints completion guidance', async () => {
+  const stdout: string[] = [];
+  const spinnerRecorder = createSpinnerRecorder();
+
+  const exitCode = await runCli(['demo'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => samplePlan(),
+    appendGoalPlan: async () => ({
+      id: 'goal_123',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Prepare taxes by end of month',
+      plan: samplePlan(),
+    }),
+    runTick: async () => ({
+      now: '2026-03-22T00:00:00.000Z',
+      checkedTasks: 1,
+      overdueTasks: [],
+    }),
+    createSpinner: () => spinnerRecorder.spinner,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /LifeOS Demo Starting/);
+  assert.match(output, /Goal planned successfully/);
+  assert.match(output, /Tick complete\. Checked 1 task\(s\), no overdue tasks\./);
+  assert.match(output, /Demo complete!/);
+  assert.match(output, /Next: `lifeos status`, `lifeos task list`, `lifeos modules`/);
+});
+
 test('events listen --json prints event lines and exits on signal', async () => {
   const stdout: string[] = [];
 

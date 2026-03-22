@@ -55,7 +55,13 @@ pnpm lifeos --version
 pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 ```
 
-6. Check graph status:
+6. Run the one-command MVP demo:
+
+```powershell
+pnpm lifeos demo
+```
+
+7. Check graph status:
 
 ```powershell
 pnpm lifeos status
@@ -75,6 +81,7 @@ Common flags:
 - `--model <name>` override model (default `llama3.1:8b`, or `LIFEOS_GOAL_MODEL`)
 - `--graph-path <path>` override default graph location
 - `--verbose` print safe diagnostics to stderr
+- `demo` runs a full goal -> tick walkthrough in one command
 - `status --json` output a machine-readable status summary
 - `review --json` output machine-readable review insights
 - `task list|complete|next` manage and execute tasks from the life graph
@@ -438,6 +445,8 @@ Help make personal AI more open, local, modular, and human-centered.
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
 - [Contributing Guide](docs/CONTRIBUTING.md)
 - [Contributor Map](docs/community/contributor-map.md)
+- [Phase 1 MVP North Star Issue Draft](docs/community/phase-1-mvp-north-star-issue.md)
+- [v0.1.0 Launch Thread Draft](docs/community/v0.1.0-launch-thread.md)
 
 ---
 

@@ -75,3 +75,5 @@ Other packages and services in the repo are currently dormant placeholders for l
 - [Open Source Direction](community/open-source-direction.md)
 - [Contributor Map](community/contributor-map.md)
 - [Glossary](community/glossary.md)
+- [Phase 1 MVP North Star Issue Draft](community/phase-1-mvp-north-star-issue.md)
+- [v0.1.0 Launch Thread Draft](community/v0.1.0-launch-thread.md)
