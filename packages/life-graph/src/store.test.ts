@@ -74,6 +74,23 @@ test('loadGraph migrates legacy versioned graph with goals[]', async () => {
   assert.equal(graph.plans[0]?.title, 'Legacy Plan');
 });
 
+test('loadGraph accepts UTF-8 BOM-prefixed JSON files', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const json = JSON.stringify({
+    version: '0.1.0',
+    updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
+    plans: [],
+  });
+  await writeFile(graphPath, `\uFEFF${json}`, 'utf8');
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.version, '0.1.0');
+  assert.equal(graph.plans.length, 0);
+});
+
 test('loadGraph rejects invalid graph shape/version', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
   const graphPath = join(tempDir, '.lifeos', 'life-graph.json');

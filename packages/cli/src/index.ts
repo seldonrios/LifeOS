@@ -4,6 +4,7 @@ import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { existsSync } from 'node:fs';
+import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
 
@@ -98,6 +99,70 @@ interface SpinnerLike {
   succeed(text?: string): SpinnerLike;
   fail(text?: string): SpinnerLike;
   stop(): SpinnerLike;
+}
+
+type RuntimeEventHandler = (event: BaseEvent<unknown>) => Promise<void>;
+
+function topicMatches(pattern: string, topic: string): boolean {
+  if (pattern === topic) {
+    return true;
+  }
+
+  const patternParts = pattern.split('.');
+  const topicParts = topic.split('.');
+  for (let index = 0; index < patternParts.length; index += 1) {
+    const token = patternParts[index];
+    if (token === '>') {
+      return true;
+    }
+    const part = topicParts[index];
+    if (!part) {
+      return false;
+    }
+    if (token !== '*' && token !== part) {
+      return false;
+    }
+  }
+  return patternParts.length === topicParts.length;
+}
+
+class LocalRuntimeEventBus implements ManagedEventBus {
+  private readonly handlers = new Map<string, Set<RuntimeEventHandler>>();
+
+  async publish<T>(topic: string, event: BaseEvent<T>): Promise<void> {
+    const callbacks: RuntimeEventHandler[] = [];
+    this.handlers.forEach((set, pattern) => {
+      if (!topicMatches(pattern, topic)) {
+        return;
+      }
+      set.forEach((handler) => callbacks.push(handler));
+    });
+
+    for (const callback of callbacks) {
+      await callback(event as BaseEvent<unknown>);
+    }
+  }
+
+  async subscribe<T>(
+    topic: string,
+    handler: (event: BaseEvent<T>) => Promise<void>,
+  ): Promise<void> {
+    const existing = this.handlers.get(topic) ?? new Set<RuntimeEventHandler>();
+    existing.add(handler as RuntimeEventHandler);
+    this.handlers.set(topic, existing);
+  }
+
+  async close(): Promise<void> {
+    this.handlers.clear();
+  }
+
+  getTransport(): EventBusTransport {
+    return 'in-memory';
+  }
+}
+
+function createLocalRuntimeEventBus(): ManagedEventBus {
+  return new LocalRuntimeEventBus();
 }
 
 export interface RunCliDependencies {
@@ -202,14 +267,25 @@ async function publishEventSafely<T extends Record<string, unknown>>(
   });
   let transport: EventBusTransport = eventBus.getTransport();
   try {
-    await eventBus.publish(topic, createCliEvent(topic, data));
+    await Promise.race([
+      eventBus.publish(topic, createCliEvent(topic, data)),
+      (async () => {
+        await delay(2000);
+        throw new Error(`event publish timeout for topic ${topic}`);
+      })(),
+    ]);
     transport = eventBus.getTransport();
     verboseLog(`event_published topic=${topic}`);
   } catch (error: unknown) {
     transport = eventBus.getTransport();
     verboseLog(`event_publish_skipped topic=${topic} reason=${normalizeErrorMessage(error)}`);
   } finally {
-    await eventBus.close();
+    await Promise.race([
+      eventBus.close(),
+      (async () => {
+        await delay(1500);
+      })(),
+    ]);
   }
   return transport;
 }
@@ -306,6 +382,23 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
   }
 
   return null;
+}
+
+function extractGraphPathArg(args: string[]): string | undefined {
+  for (let index = 0; index < args.length; index += 1) {
+    const token = args[index];
+    if (!token) {
+      continue;
+    }
+    if (token === '--graph-path') {
+      return args[index + 1];
+    }
+    if (token.startsWith('--graph-path=')) {
+      const value = token.slice('--graph-path='.length).trim();
+      return value.length > 0 ? value : undefined;
+    }
+  }
+  return undefined;
 }
 
 function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[] {
@@ -594,15 +687,23 @@ export async function runTaskCommand(
         stdout: writeStdout,
         now: now(),
       });
+      const eventPayload = {
+        taskId: completedTask.id,
+        goalId: completedTask.goalId,
+        title: completedTask.title,
+        status: completedTask.status,
+        completedAt: new Date().toISOString(),
+      };
+      if (dependencies.moduleLoader) {
+        await dependencies.moduleLoader.publish(
+          Topics.lifeos.taskCompleted,
+          eventPayload,
+          'lifeos-cli',
+        );
+      }
       await publishEventSafely(
         Topics.lifeos.taskCompleted,
-        {
-          taskId: completedTask.id,
-          goalId: completedTask.goalId,
-          title: completedTask.title,
-          status: completedTask.status,
-          completedAt: new Date().toISOString(),
-        },
+        eventPayload,
         dependencies,
         env,
         verboseLog,
@@ -653,13 +754,21 @@ export async function runTickCommand(
 
     let publishTransport: EventBusTransport = 'unknown';
     if (result.overdueTasks.length > 0) {
+      const eventPayload = {
+        checkedTasks: result.checkedTasks,
+        overdueTasks: result.overdueTasks,
+        tickedAt: result.now,
+      };
+      if (dependencies.moduleLoader) {
+        await dependencies.moduleLoader.publish(
+          Topics.lifeos.tickOverdue,
+          eventPayload,
+          'lifeos-cli',
+        );
+      }
       publishTransport = await publishEventSafely(
         Topics.lifeos.tickOverdue,
-        {
-          checkedTasks: result.checkedTasks,
-          overdueTasks: result.overdueTasks,
-          tickedAt: result.now,
-        },
+        eventPayload,
         dependencies,
         env,
         verboseLog,
@@ -1169,21 +1278,22 @@ async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const bootCandidates =
     !args.includes('--help') && !args.includes('-h') && !args.includes('--version');
+  const runtimeGraphPath = extractGraphPathArg(args);
 
   let runtimeLoader: ModuleLoader | null = null;
   if (bootCandidates) {
-    runtimeLoader = createModuleLoader({
+    const loaderOptions: Parameters<typeof createModuleLoader>[0] = {
       env: process.env,
-      eventBus: createDefaultEventBusClient({})({
-        env: process.env,
-        name: 'lifeos-cli-runtime',
-        timeoutMs: 1000,
-        maxReconnectAttempts: 0,
-      }),
+      eventBus: createLocalRuntimeEventBus(),
       logger: (line: string) => {
         process.stdout.write(`${chalk.gray(`[modules] ${line}`)}\n`);
       },
-    });
+    };
+    if (runtimeGraphPath) {
+      loaderOptions.graphPath = runtimeGraphPath;
+    }
+
+    runtimeLoader = createModuleLoader(loaderOptions);
 
     try {
       await runtimeLoader.loadMany([reminderModule]);
@@ -1194,8 +1304,23 @@ async function main(): Promise<void> {
   }
 
   const exitCode = await runCli(args, runtimeLoader ? { moduleLoader: runtimeLoader } : {});
+  let forceExit = false;
   if (runtimeLoader) {
-    await runtimeLoader.close();
+    try {
+      await Promise.race([
+        runtimeLoader.close(),
+        (async () => {
+          await delay(2000);
+          throw new Error('module runtime close timeout');
+        })(),
+      ]);
+    } catch {
+      forceExit = true;
+      process.stderr.write(`${chalk.yellow('[modules] runtime close timed out; forcing exit')}\n`);
+    }
+  }
+  if (forceExit) {
+    process.exit(exitCode);
   }
   if (exitCode !== 0) {
     process.exitCode = exitCode;

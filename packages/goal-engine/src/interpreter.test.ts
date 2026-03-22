@@ -94,3 +94,42 @@ test('interpretGoal throws after max retries', async () => {
     /failed after 3 attempts/i,
   );
 });
+
+test('interpretGoal ignores model-provided ids/timestamps and drops past deadlines', async () => {
+  const now = new Date('2026-03-22T12:00:00.000Z');
+  const client: OllamaChatClient = {
+    async chat() {
+      return {
+        message: {
+          content: JSON.stringify({
+            id: '12345',
+            title: 'Prepare Taxes',
+            description: 'Plan generated from goal: Prepare taxes by end of month',
+            createdAt: '2024-02-08T14:30:00.000Z',
+            deadline: '2024-02-28',
+            tasks: [
+              {
+                id: 'task_static',
+                title: 'Gather tax documents',
+                status: 'todo',
+                priority: 5,
+                dueDate: '2024-02-20',
+              },
+            ],
+          }),
+        },
+      };
+    },
+  };
+
+  const result = await interpretGoal('Prepare taxes by end of month', {
+    now,
+    client,
+  });
+
+  assert.notEqual(result.id, '12345');
+  assert.equal(result.createdAt, now.toISOString());
+  assert.equal(result.deadline, null);
+  assert.notEqual(result.tasks[0]?.id, 'task_static');
+  assert.equal(result.tasks[0]?.dueDate, undefined);
+});

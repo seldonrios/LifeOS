@@ -32,6 +32,13 @@ function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error;
 }
 
+function stripUtf8Bom(content: string): string {
+  if (content.charCodeAt(0) === 0xfeff) {
+    return content.slice(1);
+  }
+  return content;
+}
+
 function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
   return {
     version: LIFE_GRAPH_VERSION,
@@ -177,7 +184,7 @@ export class LifeGraphManager {
 
     try {
       const content = await readFile(resolvedPath, 'utf8');
-      const parsed = JSON.parse(content) as unknown;
+      const parsed = JSON.parse(stripUtf8Bom(content)) as unknown;
       return normalizeDocument(parsed, new Date());
     } catch (error: unknown) {
       if (isErrnoException(error) && error.code === 'ENOENT') {

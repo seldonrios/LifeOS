@@ -1,5 +1,6 @@
 export * from './types';
 
+import { setTimeout as delay } from 'node:timers/promises';
 import { connect, StringCodec, type NatsConnection, type Subscription } from 'nats';
 
 import type { BaseEvent, EventBusTransport, ManagedEventBus } from './types';
@@ -236,12 +237,25 @@ class LifeOSEventBus implements ManagedEventBus {
       return;
     }
 
+    const connection = this.connection;
+
     try {
-      const connection = this.connection;
-      await connection.drain();
-      await connection.closed();
+      await Promise.race([
+        connection.drain(),
+        (async () => {
+          await delay(1500);
+          throw new Error('drain timeout');
+        })(),
+      ]);
+      await Promise.race([connection.closed(), delay(1000)]);
     } catch (error: unknown) {
-      this.logger?.(`[event-bus] close failed: ${toErrorMessage(error)}`);
+      this.logger?.(`[event-bus] close degraded: ${toErrorMessage(error)}`);
+      try {
+        connection.close();
+        await Promise.race([connection.closed(), delay(500)]);
+      } catch (closeError: unknown) {
+        this.logger?.(`[event-bus] force close failed: ${toErrorMessage(closeError)}`);
+      }
     } finally {
       this.connection = null;
       this.connectionPromise = null;

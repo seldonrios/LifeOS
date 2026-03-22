@@ -137,9 +137,15 @@ function sanitizeDateOnly(value: unknown): string | null {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : null;
 }
 
-function sanitizeTask(task: unknown, index: number): LifeGraphTask {
+function todayDateOnly(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
+
+function sanitizeTask(task: unknown, index: number, now: Date): LifeGraphTask {
   const candidate = task && typeof task === 'object' ? (task as Record<string, unknown>) : {};
-  const dueDate = sanitizeDateOnly(candidate.dueDate);
+  const dueDateCandidate = sanitizeDateOnly(candidate.dueDate);
+  const dueDate =
+    dueDateCandidate && dueDateCandidate >= todayDateOnly(now) ? dueDateCandidate : null;
   const priorityValue = candidate.priority;
   const normalizedPriority =
     typeof priorityValue === 'number' && Number.isFinite(priorityValue)
@@ -147,7 +153,7 @@ function sanitizeTask(task: unknown, index: number): LifeGraphTask {
       : 3;
 
   const normalized: LifeGraphTask = {
-    id: sanitizeString(candidate.id) ?? `task_${randomUUID()}`,
+    id: `task_${randomUUID()}`,
     title:
       sanitizeString(candidate.title) ??
       sanitizeString(candidate.description) ??
@@ -165,18 +171,21 @@ function sanitizeTask(task: unknown, index: number): LifeGraphTask {
 
 function normalizeGoalPlanInput(raw: unknown, goalText: string, now: Date): GoalPlan {
   const candidate = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
+  const deadlineCandidate = sanitizeDateOnly(candidate.deadline);
+  const normalizedDeadline =
+    deadlineCandidate && deadlineCandidate >= todayDateOnly(now) ? deadlineCandidate : null;
   const tasks = Array.isArray(candidate.tasks)
-    ? candidate.tasks.map((task, index) => sanitizeTask(task, index))
+    ? candidate.tasks.map((task, index) => sanitizeTask(task, index, now))
     : [];
 
   const normalized: GoalPlan = {
-    id: sanitizeString(candidate.id) ?? `goal_${randomUUID()}`,
+    id: `goal_${randomUUID()}`,
     title: sanitizeString(candidate.title) ?? goalText.trim(),
     description:
       sanitizeString(candidate.description) ?? `Plan generated from goal: ${goalText.trim()}`,
-    deadline: sanitizeDateOnly(candidate.deadline),
+    deadline: normalizedDeadline,
     tasks,
-    createdAt: sanitizeString(candidate.createdAt) ?? now.toISOString(),
+    createdAt: now.toISOString(),
   };
 
   return GoalPlanSchema.parse(normalized) as GoalPlan;
