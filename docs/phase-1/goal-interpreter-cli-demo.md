@@ -60,6 +60,10 @@ Get-Content .\.lifeos\life-graph.json
 pnpm lifeos status
 pnpm lifeos status --json
 pnpm lifeos review --period weekly
+pnpm lifeos task list
+pnpm lifeos task complete <task-id-prefix>
+pnpm lifeos next
+pnpm lifeos tick
 ```
 
 ## Useful Flags
@@ -103,6 +107,23 @@ pnpm lifeos review --period weekly
 pnpm lifeos review --period daily --json
 ```
 
+- Task operations:
+
+```powershell
+pnpm lifeos task list
+pnpm lifeos task list --json
+pnpm lifeos task complete <task-id-prefix>
+pnpm lifeos task next
+pnpm lifeos next
+```
+
+- Deadline tick:
+
+```powershell
+pnpm lifeos tick
+pnpm lifeos tick --json
+```
+
 ## Environment Overrides
 
 - `LIFEOS_GOAL_MODEL`: default model name used by the CLI
@@ -124,6 +145,8 @@ pnpm lifeos --help
 pnpm lifeos goal --help
 pnpm lifeos status --help
 pnpm lifeos review --help
+pnpm lifeos task --help
+pnpm lifeos tick --help
 ```
 
 - Test global command locally:

@@ -391,6 +391,14 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
   const moduleSchemaPath = join(dirname(resolvedGraphPath), 'module-schemas.json');
 
   return {
+    async loadGraph() {
+      return manager.load(resolvedGraphPath);
+    },
+
+    async saveGraph(graph) {
+      await manager.save(graph, resolvedGraphPath);
+    },
+
     async query<T = unknown>(query: string, params?: Record<string, unknown>): Promise<T[]> {
       const normalizedQuery = normalizeQuery(query);
       const graph = await manager.load(resolvedGraphPath);

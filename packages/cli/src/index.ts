@@ -9,15 +9,22 @@ import ora, { type Ora } from 'ora';
 import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
+  type LifeGraphClient,
   type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphReviewInsights,
   type LifeGraphReviewPeriod,
   type LifeGraphSummary,
 } from '@lifeos/life-graph';
-import { interpretGoal, type InterpretGoalStage } from '@lifeos/goal-engine';
+import {
+  interpretGoal,
+  runTick,
+  type InterpretGoalStage,
+  type TickResult,
+} from '@lifeos/goal-engine';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
+import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
@@ -40,6 +47,20 @@ interface ReviewCommandOptions {
   outputJson: boolean;
   graphPath: string;
   period: LifeGraphReviewPeriod;
+  verbose: boolean;
+}
+
+interface TaskCommandOptions {
+  action: 'list' | 'complete' | 'next';
+  taskId?: string;
+  outputJson: boolean;
+  graphPath: string;
+  verbose: boolean;
+}
+
+interface TickCommandOptions {
+  outputJson: boolean;
+  graphPath: string;
   verbose: boolean;
 }
 
@@ -77,6 +98,16 @@ export interface RunCliDependencies {
     period: LifeGraphReviewPeriod,
     graphPath?: string,
   ) => Promise<LifeGraphReviewInsights>;
+  createLifeGraphClient?: (
+    options?: Parameters<typeof createLifeGraphClient>[0],
+  ) => LifeGraphClient;
+  runTick?: (options: {
+    graphPath?: string;
+    env?: NodeJS.ProcessEnv;
+    now?: Date;
+    client?: Pick<LifeGraphClient, 'loadGraph'>;
+    logger?: (message: string) => void;
+  }) => Promise<TickResult>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
   fileExists?: (path: string) => boolean;
@@ -164,6 +195,26 @@ function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
   return period === 'daily' ? 'daily' : 'weekly';
 }
 
+function normalizeTaskAction(action: string): TaskCommandOptions['action'] | null {
+  if (action === 'list' || action === 'complete' || action === 'next') {
+    return action;
+  }
+
+  return null;
+}
+
+function buildClientOptions(
+  baseCwd: string,
+  env: NodeJS.ProcessEnv,
+  graphPath?: string,
+): Parameters<typeof createLifeGraphClient>[0] {
+  const options: Parameters<typeof createLifeGraphClient>[0] = { baseDir: baseCwd, env };
+  if (graphPath) {
+    options.graphPath = graphPath;
+  }
+  return options;
+}
+
 export async function runGoalCommand(
   goal: string,
   options: GoalCommandOptions,
@@ -175,6 +226,7 @@ export async function runGoalCommand(
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const interpret = dependencies.interpretGoal ?? interpretGoal;
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const fileExists = dependencies.fileExists ?? existsSync;
   const createSpinner = dependencies.createSpinner ?? createDefaultSpinner;
 
@@ -254,7 +306,7 @@ export async function runGoalCommand(
             options.graphPath,
           )
         : await (async (): Promise<GoalPlanRecord<GoalPlan>> => {
-            const graphClient = createLifeGraphClient({ graphPath: options.graphPath, env });
+            const graphClient = createClient({ graphPath: options.graphPath, env });
             const id = await graphClient.createNode(
               'plan',
               plan as unknown as Record<string, unknown>,
@@ -310,15 +362,11 @@ export async function runStatusCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const summarize =
     dependencies.getGraphSummary ??
-    (async (graphPath?: string) => {
-      const clientOptions: Parameters<typeof createLifeGraphClient>[0] = { baseDir: baseCwd, env };
-      if (graphPath) {
-        clientOptions.graphPath = graphPath;
-      }
-      return createLifeGraphClient(clientOptions).getSummary();
-    });
+    (async (graphPath?: string) =>
+      createClient(buildClientOptions(baseCwd, env, graphPath)).getSummary());
 
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
@@ -358,15 +406,11 @@ export async function runReviewCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const review =
     dependencies.generateReview ??
-    (async (period: LifeGraphReviewPeriod, graphPath?: string) => {
-      const clientOptions: Parameters<typeof createLifeGraphClient>[0] = { baseDir: baseCwd, env };
-      if (graphPath) {
-        clientOptions.graphPath = graphPath;
-      }
-      return createLifeGraphClient(clientOptions).generateReview(period);
-    });
+    (async (period: LifeGraphReviewPeriod, graphPath?: string) =>
+      createClient(buildClientOptions(baseCwd, env, graphPath)).generateReview(period));
 
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
@@ -399,6 +443,113 @@ export async function runReviewCommand(
     if (options.verbose && error instanceof Error) {
       writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
     }
+    return 1;
+  }
+}
+
+export async function runTaskCommand(
+  options: TaskCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const now = dependencies.now ?? (() => new Date());
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    verboseLog(`graph_path=${options.graphPath}`);
+    verboseLog(`action=${options.action}`);
+
+    if (options.action === 'list') {
+      await handleTaskList(client, {
+        outputJson: options.outputJson,
+        stdout: writeStdout,
+        now: now(),
+      });
+      return 0;
+    }
+
+    if (options.action === 'complete') {
+      await handleTaskComplete(options.taskId, client, {
+        outputJson: options.outputJson,
+        stdout: writeStdout,
+        now: now(),
+      });
+      return 0;
+    }
+
+    await handleNextActions(client, {
+      outputJson: options.outputJson,
+      stdout: writeStdout,
+      now: now(),
+    });
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    if (options.verbose && error instanceof Error) {
+      writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
+    }
+    return 1;
+  }
+}
+
+export async function runTickCommand(
+  options: TickCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const now = dependencies.now ?? (() => new Date());
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const tick = dependencies.runTick ?? runTick;
+
+  try {
+    const result = await tick({
+      graphPath: options.graphPath,
+      env,
+      now: now(),
+      logger: (line) => {
+        if (options.verbose) {
+          writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+        }
+      },
+    });
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    if (result.overdueTasks.length === 0) {
+      writeStdout(
+        chalk.green(`Tick complete. Checked ${result.checkedTasks} task(s), no overdue tasks.\n`),
+      );
+      return 0;
+    }
+
+    writeStdout(
+      chalk.red(
+        `Tick complete. Checked ${result.checkedTasks} task(s), found ${result.overdueTasks.length} overdue.\n`,
+      ),
+    );
+    result.overdueTasks.slice(0, 10).forEach((task) => {
+      writeStdout(
+        `- ${task.id.slice(0, 8)} | ${task.goalTitle} | ${task.title} | due ${task.dueDate}\n`,
+      );
+    });
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
     return 1;
   }
 }
@@ -483,6 +634,79 @@ function buildProgram(
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
           period: normalizeReviewPeriod(commandOptions.period),
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('task')
+    .description('Manage tasks')
+    .argument('[action]', 'list | complete | next', 'list')
+    .argument('[id]', 'Task ID for complete action')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (action: string, id: string | undefined, commandOptions) => {
+      const normalizedAction = normalizeTaskAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid task action "${action}". Use list, complete, or next.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runTaskCommand(
+        (() => {
+          const taskOptions: TaskCommandOptions = {
+            action: normalizedAction,
+            outputJson: Boolean(commandOptions.json),
+            graphPath: commandOptions.graphPath,
+            verbose: Boolean(commandOptions.verbose),
+          };
+          if (id) {
+            taskOptions.taskId = id;
+          }
+          return taskOptions;
+        })(),
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('next')
+    .description('Show top next actions')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runTaskCommand(
+        {
+          action: 'next',
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('tick')
+    .description('Run a deadline tick and detect overdue tasks')
+    .option('--json', 'Output tick result JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runTickCommand(
+        {
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },
         dependencies,

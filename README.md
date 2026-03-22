@@ -61,6 +61,9 @@ pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 pnpm lifeos status
 pnpm lifeos status --json
 pnpm lifeos review --period weekly
+pnpm lifeos task list
+pnpm lifeos next
+pnpm lifeos tick
 ```
 
 Common flags:
@@ -72,6 +75,8 @@ Common flags:
 - `--verbose` print safe diagnostics to stderr
 - `status --json` output a machine-readable status summary
 - `review --json` output machine-readable review insights
+- `task list|complete|next` manage and execute tasks from the life graph
+- `tick` run a deadline check for overdue tasks
 
 Environment overrides:
 

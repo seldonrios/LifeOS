@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { GoalPlan, LifeGraphReviewInsights, LifeGraphSummary } from '@lifeos/life-graph';
+import type {
+  GoalPlan,
+  LifeGraphDocument,
+  LifeGraphReviewInsights,
+  LifeGraphSummary,
+} from '@lifeos/life-graph';
 
 import { runCli } from './index';
 
@@ -54,6 +59,31 @@ function sampleReviewInsights(): LifeGraphReviewInsights {
     nextActions: ['Schedule rehearsal with leadership'],
     generatedAt: '2026-03-21T14:00:00.000Z',
     source: 'heuristic',
+  };
+}
+
+function sampleGraph(): LifeGraphDocument {
+  return {
+    version: '0.1.0',
+    updatedAt: '2026-03-21T14:00:00.000Z',
+    plans: [
+      {
+        id: 'goal_123',
+        title: 'Board Meeting Prep',
+        description: 'Prepare deck, notes, and decision log.',
+        deadline: '2026-03-26',
+        createdAt: '2026-03-21T14:00:00.000Z',
+        tasks: [
+          {
+            id: 'task_alpha1234',
+            title: 'Draft board deck',
+            status: 'todo',
+            priority: 5,
+            dueDate: '2026-03-20',
+          },
+        ],
+      },
+    ],
   };
 }
 
@@ -434,4 +464,105 @@ test('review --json emits review insight JSON', async () => {
   const parsed = JSON.parse(stdout.join('')) as LifeGraphReviewInsights;
   assert.equal(parsed.period, 'daily');
   assert.equal(parsed.wins[0], 'Finished board deck draft');
+});
+
+test('task list --json emits flattened task rows', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['task', 'list', '--json'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return sampleGraph();
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const rows = JSON.parse(stdout.join('')) as Array<{ id: string; goalTitle: string }>;
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0]?.goalTitle, 'Board Meeting Prep');
+});
+
+test('task complete updates task status via saveGraph', async () => {
+  const stdout: string[] = [];
+  let savedGraph: LifeGraphDocument = sampleGraph();
+
+  const exitCode = await runCli(['task', 'complete', 'task_alpha'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return sampleGraph();
+        },
+        async saveGraph(graph: LifeGraphDocument) {
+          savedGraph = graph;
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Task .* completed/);
+  assert.equal(savedGraph.plans[0]?.tasks[0]?.status, 'done');
+});
+
+test('next command prints next actions', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['next'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return sampleGraph();
+        },
+        async generateReview() {
+          return {
+            period: 'daily',
+            wins: [],
+            nextActions: ['Board Meeting Prep: Draft board deck'],
+            generatedAt: '2026-03-21T14:00:00.000Z',
+            source: 'heuristic',
+          };
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Top Next Actions:/);
+  assert.match(stdout.join(''), /Draft board deck/);
+});
+
+test('tick --json emits tick result payload', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['tick', '--json'], {
+    runTick: async () => ({
+      now: '2026-03-22T00:00:00.000Z',
+      checkedTasks: 3,
+      overdueTasks: [
+        {
+          id: 'task_1',
+          title: 'Draft deck',
+          goalTitle: 'Board Prep',
+          dueDate: '2026-03-21',
+        },
+      ],
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as { checkedTasks: number; overdueTasks: unknown[] };
+  assert.equal(payload.checkedTasks, 3);
+  assert.equal(payload.overdueTasks.length, 1);
 });

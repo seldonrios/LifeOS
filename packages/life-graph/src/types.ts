@@ -129,6 +129,8 @@ export interface LifeGraphClient {
     relationshipType: string,
     properties?: Record<string, unknown>,
   ): Promise<void>;
+  loadGraph(): Promise<LifeGraphDocument>;
+  saveGraph(graph: LifeGraphDocument): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
