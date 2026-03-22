@@ -24,8 +24,11 @@ export interface EventBus {
   subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void>): Promise<void>;
 }
 
+export type EventBusTransport = 'nats' | 'in-memory' | 'unknown';
+
 export interface ManagedEventBus extends EventBus {
   close(): Promise<void>;
+  getTransport(): EventBusTransport;
 }
 
 export const Topics = {

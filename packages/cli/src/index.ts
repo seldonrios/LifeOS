@@ -12,6 +12,7 @@ import {
   createEventBusClient,
   type BaseEvent,
   type CreateEventBusClientOptions,
+  type EventBusTransport,
   type ManagedEventBus,
 } from '@lifeos/event-bus';
 import {
@@ -183,7 +184,7 @@ async function publishEventSafely<T extends Record<string, unknown>>(
   dependencies: RunCliDependencies,
   env: NodeJS.ProcessEnv,
   verboseLog: (line: string) => void,
-): Promise<void> {
+): Promise<EventBusTransport> {
   const createBus = createDefaultEventBusClient(dependencies);
   const eventBus = createBus({
     env,
@@ -192,14 +193,18 @@ async function publishEventSafely<T extends Record<string, unknown>>(
     maxReconnectAttempts: 0,
     logger: (line) => verboseLog(line),
   });
+  let transport: EventBusTransport = eventBus.getTransport();
   try {
     await eventBus.publish(topic, createCliEvent(topic, data));
+    transport = eventBus.getTransport();
     verboseLog(`event_published topic=${topic}`);
   } catch (error: unknown) {
+    transport = eventBus.getTransport();
     verboseLog(`event_publish_skipped topic=${topic} reason=${normalizeErrorMessage(error)}`);
   } finally {
     await eventBus.close();
   }
+  return transport;
 }
 
 function waitForSignalDefault(): Promise<void> {
@@ -639,8 +644,9 @@ export async function runTickCommand(
       },
     });
 
+    let publishTransport: EventBusTransport = 'unknown';
     if (result.overdueTasks.length > 0) {
-      await publishEventSafely(
+      publishTransport = await publishEventSafely(
         Topics.lifeos.tickOverdue,
         {
           checkedTasks: result.checkedTasks,
@@ -650,6 +656,14 @@ export async function runTickCommand(
         dependencies,
         env,
         verboseLog,
+      );
+    }
+
+    if (!options.outputJson && publishTransport === 'in-memory') {
+      writeStdout(
+        chalk.yellow(
+          'NATS unavailable, using in-memory fallback mode. Module reactions remain active.\n',
+        ),
       );
     }
 
@@ -726,6 +740,13 @@ export async function runEventsListenCommand(
     if (!options.outputJson) {
       const endpoint = env.LIFEOS_NATS_URL?.trim() || 'nats://127.0.0.1:4222';
       writeStdout(chalk.blue(`Listening for events on "${options.topic}" via ${endpoint}\n`));
+      if (eventBus.getTransport() === 'in-memory') {
+        writeStdout(
+          chalk.yellow(
+            'Using fallback mode (in-memory event bus). Start NATS to persist externally.\n',
+          ),
+        );
+      }
       writeStdout(chalk.gray('Press Ctrl+C to stop.\n'));
     }
 
@@ -1057,9 +1078,7 @@ async function main(): Promise<void> {
         maxReconnectAttempts: 0,
       }),
       logger: (line: string) => {
-        if (process.env.LIFEOS_VERBOSE_BOOT === '1') {
-          process.stderr.write(`${chalk.gray(`[modules] ${line}`)}\n`);
-        }
+        process.stdout.write(`${chalk.gray(`[modules] ${line}`)}\n`);
       },
     });
 

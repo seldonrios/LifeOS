@@ -33,6 +33,10 @@ class MockEventBus implements ManagedEventBus {
   async close(): Promise<void> {
     this.closed = true;
   }
+
+  getTransport() {
+    return 'unknown' as const;
+  }
 }
 
 test('ModuleLoader loads modules and reports loaded ids', async () => {

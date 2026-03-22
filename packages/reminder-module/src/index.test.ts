@@ -28,6 +28,9 @@ function createContextMock() {
       async close() {
         return;
       },
+      getTransport() {
+        return 'unknown' as const;
+      },
     },
     createLifeGraphClient: () =>
       ({

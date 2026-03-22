@@ -126,6 +126,9 @@ function createMockEventBus() {
     async close() {
       return;
     },
+    getTransport() {
+      return 'unknown';
+    },
   };
 
   return { bus, published };
@@ -617,6 +620,9 @@ test('events listen --json prints event lines and exits on signal', async () => 
     },
     async close() {
       return;
+    },
+    getTransport() {
+      return 'unknown';
     },
   };
 

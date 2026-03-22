@@ -146,6 +146,8 @@ pnpm lifeos modules load reminder
 - `OLLAMA_HOST`: remote Ollama endpoint, for example `http://192.168.1.20:11434`
 - `LIFEOS_NATS_URL`: NATS endpoint for event publish/listen, default `nats://127.0.0.1:4222`
 
+If NATS is unavailable, the CLI automatically falls back to an in-memory event bus for local module reactions.
+
 Example:
 
 ```powershell

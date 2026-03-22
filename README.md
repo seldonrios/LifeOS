@@ -87,6 +87,8 @@ Environment overrides:
 - `LIFEOS_GRAPH_PATH` sets the default graph path when `--graph-path` is not provided
 - `LIFEOS_NATS_URL` sets the event bus endpoint (default `nats://127.0.0.1:4222`)
 
+If NATS is unavailable, LifeOS now falls back to an in-memory event bus so modules still react locally.
+
 Optional Docker shortcut for local Ollama + NATS:
 
 ```powershell
