@@ -27,6 +27,7 @@
     "@lifeos/module-loader": "workspace:*",
     "@lifeos/news-module": "workspace:*",
     "@lifeos/notes-module": "workspace:*",
+    "@lifeos/orchestrator": "workspace:*",
     "@lifeos/research-module": "workspace:*",
     "@lifeos/reminder-module": "workspace:*",
     "@lifeos/scheduler-module": "workspace:*",

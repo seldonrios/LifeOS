@@ -13,7 +13,7 @@ Current executable MVP targets are:
 - `@lifeos/life-graph`
 - `@lifeos/event-bus`
 - `@lifeos/module-loader`
-- Runtime modules: `@lifeos/reminder-module`, `@lifeos/calendar-module`, `@lifeos/scheduler-module`, `@lifeos/research-module`, `@lifeos/notes-module`, `@lifeos/weather-module`, `@lifeos/news-module`
+- Runtime modules: `@lifeos/reminder-module`, `@lifeos/calendar-module`, `@lifeos/scheduler-module`, `@lifeos/research-module`, `@lifeos/notes-module`, `@lifeos/weather-module`, `@lifeos/news-module`, `@lifeos/orchestrator`
 
 ## Recommended Reading Order
 

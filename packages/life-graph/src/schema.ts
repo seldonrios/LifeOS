@@ -81,6 +81,17 @@ export const NewsDigestSchema = z
   })
   .strict();
 
+export const MemoryEntrySchema = z
+  .object({
+    id: z.string().uuid(),
+    type: z.enum(['conversation', 'research', 'note', 'insight']),
+    content: z.string().trim().min(1),
+    embedding: z.array(z.number()),
+    timestamp: IsoDateTimeSchema,
+    relatedTo: z.array(z.string().trim().min(1)).default([]),
+  })
+  .strict();
+
 export const GoalPlanSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -102,6 +113,7 @@ export const LifeGraphDocumentSchema = z
     researchResults: z.array(ResearchResultSchema).default([]),
     weatherSnapshots: z.array(WeatherSnapshotSchema).default([]),
     newsDigests: z.array(NewsDigestSchema).default([]),
+    memory: z.array(MemoryEntrySchema).default([]),
   })
   .strict();
 

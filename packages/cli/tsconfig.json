@@ -35,6 +35,9 @@
       "path": "../news-module"
     },
     {
+      "path": "../orchestrator"
+    },
+    {
       "path": "../reminder-module"
     },
     {

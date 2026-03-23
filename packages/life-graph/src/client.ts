@@ -3,10 +3,15 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
 import { LifeGraphManager, type LifeGraphManagerOptions } from './manager';
+import { cosineSimilarity, createDeterministicEmbedding } from './memory';
 import { resolveLifeGraphPath } from './path';
 import { getGraphSummary } from './store';
 import type {
   GoalPlan,
+  LifeGraphMemoryEntry,
+  LifeGraphMemorySearchOptions,
+  LifeGraphMemorySearchResult,
+  LifeGraphUpdate,
   LifeGraphNewsDigest,
   LifeGraphNote,
   LifeGraphNoteSearchOptions,
@@ -89,6 +94,10 @@ const MAX_NOTES = 4000;
 const MAX_RESEARCH_RESULTS = 1500;
 const MAX_WEATHER_SNAPSHOTS = 500;
 const MAX_NEWS_DIGESTS = 1200;
+const MAX_MEMORY_ENTRIES = 10_000;
+const MAX_MEMORY_CONTENT_CHARS = 6000;
+const MAX_MEMORY_RELATED = 24;
+const MEMORY_EMBEDDING_DIM = 384;
 const MAX_NOTE_TITLE_CHARS = 200;
 const MAX_NOTE_CONTENT_CHARS = 8000;
 const MAX_NOTE_TAGS = 20;
@@ -192,6 +201,11 @@ function parsePositiveInteger(value: unknown): number | null {
     return null;
   }
   return normalized;
+}
+
+function resolveMemorySearchLimit(value: unknown): number {
+  const parsed = parsePositiveInteger(value) ?? 5;
+  return Math.min(parsed, 100);
 }
 
 function normalizeQuery(query: string): string {
@@ -325,6 +339,59 @@ function normalizeNewsInput(
     summary: normalizeStringField(digest.summary, 'No summary available.', MAX_NEWS_SUMMARY_CHARS),
     sources: sources.length > 0 ? sources : ['local-cache'],
     read: typeof digest.read === 'boolean' ? digest.read : false,
+  };
+}
+
+function normalizeEmbedding(value: unknown): number[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    return [];
+  }
+  const vector: number[] = [];
+  for (let index = 0; index < value.length && index < MEMORY_EMBEDDING_DIM; index += 1) {
+    const candidate = value[index];
+    const numeric = typeof candidate === 'number' && Number.isFinite(candidate) ? candidate : 0;
+    vector.push(numeric);
+  }
+
+  while (vector.length < MEMORY_EMBEDDING_DIM) {
+    vector.push(0);
+  }
+
+  const magnitude = Math.sqrt(vector.reduce((sum, item) => sum + item * item, 0));
+  if (!Number.isFinite(magnitude) || magnitude <= 0) {
+    return vector;
+  }
+  return vector.map((item) => item / magnitude);
+}
+
+function normalizeMemoryInput(
+  entry:
+    | (Omit<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'> &
+        Partial<Pick<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'>>)
+    | LifeGraphMemoryEntry,
+  nowIso: string,
+): LifeGraphMemoryEntry {
+  const type =
+    entry.type === 'conversation' ||
+    entry.type === 'research' ||
+    entry.type === 'note' ||
+    entry.type === 'insight'
+      ? entry.type
+      : 'insight';
+  const content = normalizeStringField(entry.content, 'Untitled memory', MAX_MEMORY_CONTENT_CHARS);
+  const relatedTo = normalizeStringArray(entry.relatedTo, MAX_MEMORY_RELATED, 120);
+  const seedEmbedding =
+    Array.isArray(entry.embedding) && entry.embedding.length > 0
+      ? normalizeEmbedding(entry.embedding)
+      : createDeterministicEmbedding(content);
+
+  return {
+    id: getString(entry.id) ?? randomUUID(),
+    type,
+    content,
+    embedding: seedEmbedding,
+    timestamp: normalizeIsoTimestamp(entry.timestamp, nowIso),
+    relatedTo,
   };
 }
 
@@ -590,6 +657,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           researchResults: graph.researchResults ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
           newsDigests: graph.newsDigests ?? [],
+          memory: graph.memory ?? [],
         },
         resolvedGraphPath,
       );
@@ -612,6 +680,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
           newsDigests: graph.newsDigests ?? [],
+          memory: graph.memory ?? [],
         },
         resolvedGraphPath,
       );
@@ -650,6 +719,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           researchResults: graph.researchResults ?? [],
           newsDigests: graph.newsDigests ?? [],
+          memory: graph.memory ?? [],
         },
         resolvedGraphPath,
       );
@@ -681,6 +751,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           researchResults: graph.researchResults ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
+          memory: graph.memory ?? [],
         },
         resolvedGraphPath,
       );
@@ -717,6 +788,67 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         .filter((note) => noteMatchesQuery(note, tokens))
         .sort((left, right) => parseIsoOrZero(right.createdAt) - parseIsoOrZero(left.createdAt))
         .slice(0, limit);
+    },
+
+    async appendMemoryEntry(entry) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeMemoryInput(entry, nowIso);
+      const memory = [...(graph.memory ?? []), normalized].slice(-MAX_MEMORY_ENTRIES);
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          memory,
+          calendarEvents: graph.calendarEvents ?? [],
+          notes: graph.notes ?? [],
+          researchResults: graph.researchResults ?? [],
+          weatherSnapshots: graph.weatherSnapshots ?? [],
+          newsDigests: graph.newsDigests ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
+    },
+
+    async searchMemory(query, options: LifeGraphMemorySearchOptions = {}) {
+      const normalizedQuery = getString(query);
+      if (!normalizedQuery) {
+        return [];
+      }
+
+      const graph = await manager.load(resolvedGraphPath);
+      const queryEmbedding = createDeterministicEmbedding(normalizedQuery);
+      const limit = resolveMemorySearchLimit(options.limit);
+      const minScore = typeof options.minScore === 'number' ? options.minScore : -1;
+      const type = options.type;
+      const filtered = (graph.memory ?? []).filter((entry) => (type ? entry.type === type : true));
+
+      const scored: LifeGraphMemorySearchResult[] = filtered
+        .map((entry) => ({
+          ...entry,
+          score: cosineSimilarity(queryEmbedding, normalizeEmbedding(entry.embedding)),
+        }))
+        .filter((entry) => entry.score >= minScore)
+        .sort((left, right) => right.score - left.score)
+        .slice(0, limit);
+
+      return scored;
+    },
+
+    async applyUpdates(updates: LifeGraphUpdate[]) {
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return;
+      }
+
+      for (const update of updates) {
+        if (!update || typeof update !== 'object') {
+          continue;
+        }
+        if (update.op === 'append_memory') {
+          await this.appendMemoryEntry(update.entry);
+        }
+      }
     },
 
     async query<T = unknown>(query: string, params?: Record<string, unknown>): Promise<T[]> {

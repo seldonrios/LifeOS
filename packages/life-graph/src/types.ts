@@ -155,6 +155,15 @@ export interface LifeGraphClient {
   ): Promise<LifeGraphNewsDigest>;
   getLatestNewsDigest(topic?: string): Promise<LifeGraphNewsDigest | null>;
   searchNotes(query: string, options?: LifeGraphNoteSearchOptions): Promise<LifeGraphNote[]>;
+  appendMemoryEntry(
+    entry: Omit<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'> &
+      Partial<Pick<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'>>,
+  ): Promise<LifeGraphMemoryEntry>;
+  searchMemory(
+    query: string,
+    options?: LifeGraphMemorySearchOptions,
+  ): Promise<LifeGraphMemorySearchResult[]>;
+  applyUpdates(updates: LifeGraphUpdate[]): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
@@ -230,6 +239,33 @@ export interface LifeGraphNoteSearchOptions {
   limit?: number;
 }
 
+export type LifeGraphMemoryType = 'conversation' | 'research' | 'note' | 'insight';
+
+export interface LifeGraphMemoryEntry {
+  id: string;
+  type: LifeGraphMemoryType;
+  content: string;
+  embedding: number[];
+  timestamp: string;
+  relatedTo: string[];
+}
+
+export interface LifeGraphMemorySearchOptions {
+  type?: LifeGraphMemoryType;
+  limit?: number;
+  minScore?: number;
+}
+
+export interface LifeGraphMemorySearchResult extends LifeGraphMemoryEntry {
+  score: number;
+}
+
+export type LifeGraphUpdate = {
+  op: 'append_memory';
+  entry: Omit<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'> &
+    Partial<Pick<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'>>;
+};
+
 export interface GoalPlan {
   id: string;
   title: string;
@@ -258,6 +294,7 @@ export interface LifeGraphDocument {
   researchResults?: LifeGraphResearchResult[];
   weatherSnapshots?: LifeGraphWeatherSnapshot[];
   newsDigests?: LifeGraphNewsDigest[];
+  memory?: LifeGraphMemoryEntry[];
 }
 
 export interface LifeGraphSummary {

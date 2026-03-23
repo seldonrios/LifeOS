@@ -35,6 +35,9 @@
       "path": "./packages/news-module"
     },
     {
+      "path": "./packages/orchestrator"
+    },
+    {
       "path": "./packages/scheduler-module"
     },
     {

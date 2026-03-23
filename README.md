@@ -65,7 +65,7 @@ pnpm lifeos status --json
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
-lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news] [--graph-path <path>] [--verbose]
+lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
@@ -89,6 +89,7 @@ pnpm lifeos voice briefing
 # "Hey LifeOS, give me top tech news today"
 pnpm lifeos voice demo --scenario research
 pnpm lifeos voice demo --scenario weather
+pnpm lifeos voice demo --scenario briefing
 ```
 
 ## ⚙️ Configuration
@@ -140,6 +141,7 @@ Active implementation packages:
 - `@lifeos/notes-module`
 - `@lifeos/weather-module`
 - `@lifeos/news-module`
+- `@lifeos/orchestrator`
 
 Runtime modules:
 
@@ -147,6 +149,7 @@ Runtime modules:
 - `calendar` persists voice-driven events to `calendarEvents`
 - `scheduler` applies overdue reschedule suggestions
 - `research`, `notes`, `weather`, and `news` handle voice-first daily assistant flows
+- `orchestrator` builds contextual memory, proactive suggestions, and daily briefings
 
 ## 🧭 Project Direction
 

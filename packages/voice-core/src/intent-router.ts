@@ -25,6 +25,7 @@ type ClassifiedIntent =
   | 'weather'
   | 'news'
   | 'research'
+  | 'briefing'
   | 'next_actions'
   | 'unknown';
 
@@ -36,7 +37,7 @@ interface IntentClassification {
 export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
 
 {
-  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | next_actions | unknown",
+  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | briefing | next_actions | unknown",
   "payload": {}
 }`;
 
@@ -212,6 +213,7 @@ function normalizeClassifiedIntent(value: unknown): ClassifiedIntent {
     value === 'weather' ||
     value === 'news' ||
     value === 'research' ||
+    value === 'briefing' ||
     value === 'next_actions'
   ) {
     return value;
@@ -405,6 +407,8 @@ export class IntentRouter {
         return this.handleAgentIntent(normalizedText, 'news', classification.payload);
       case 'research':
         return this.handleAgentIntent(normalizedText, 'research', classification.payload);
+      case 'briefing':
+        return this.handleAgentIntent(normalizedText, 'briefing', classification.payload);
       default:
         return this.handleUnknownIntent(normalizedText);
     }
@@ -448,6 +452,9 @@ export class IntentRouter {
     }
     if (lower.includes('news') || lower.includes('headlines')) {
       return 'news';
+    }
+    if (lower.includes('briefing') || lower.includes('good morning')) {
+      return 'briefing';
     }
     if (lower.includes('research')) {
       return 'research';
@@ -511,7 +518,7 @@ export class IntentRouter {
 
   private async handleAgentIntent(
     text: string,
-    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news' | 'note_search',
+    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
     payload: Record<string, unknown>,
   ): Promise<IntentOutcome> {
     if (intent === 'calendar') {
@@ -520,14 +527,17 @@ export class IntentRouter {
 
     const requestedAt = this.now().toISOString();
     const routedPayload = this.buildIntentPayload(intent, text, payload, requestedAt);
-    const topicByIntent: Record<'weather' | 'research' | 'note' | 'news' | 'note_search', string> =
-      {
-        weather: Topics.lifeos.voiceIntentWeather,
-        research: Topics.lifeos.voiceIntentResearch,
-        note: Topics.lifeos.voiceIntentNoteAdd,
-        news: Topics.lifeos.voiceIntentNews,
-        note_search: Topics.lifeos.voiceIntentNoteSearch,
-      };
+    const topicByIntent: Record<
+      'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
+      string
+    > = {
+      weather: Topics.lifeos.voiceIntentWeather,
+      research: Topics.lifeos.voiceIntentResearch,
+      note: Topics.lifeos.voiceIntentNoteAdd,
+      news: Topics.lifeos.voiceIntentNews,
+      note_search: Topics.lifeos.voiceIntentNoteSearch,
+      briefing: Topics.lifeos.voiceIntentBriefing,
+    };
 
     await this.publishSafe(topicByIntent[intent], routedPayload);
     await this.publishSafe(Topics.agent.workRequested, {
@@ -552,7 +562,7 @@ export class IntentRouter {
   }
 
   private intentConfirmation(
-    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search',
+    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
     payload: Record<string, unknown>,
   ): string {
     if (intent === 'weather') {
@@ -570,11 +580,14 @@ export class IntentRouter {
       const query = getString(payload.query) ?? 'that topic';
       return `Searching notes about ${query}.`;
     }
+    if (intent === 'briefing') {
+      return 'Preparing your daily briefing.';
+    }
     return 'Preparing your news digest.';
   }
 
   private buildIntentPayload(
-    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search',
+    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
     text: string,
     payload: Record<string, unknown>,
     requestedAt: string,
@@ -637,6 +650,13 @@ export class IntentRouter {
         limit: 3,
         utterance: text,
         requestedAt,
+      };
+    }
+    if (intent === 'briefing') {
+      return {
+        requestedAt,
+        utterance: text,
+        timeframe: clampText(getString(payload.timeframe) ?? 'today', 40),
       };
     }
     return {

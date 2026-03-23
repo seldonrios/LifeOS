@@ -113,6 +113,11 @@ test('append note/research/weather/news methods persist normalized records', asy
     summary: 'A concise daily briefing.',
     sources: ['https://example.com/rss'],
   });
+  const memory = await client.appendMemoryEntry({
+    type: 'insight',
+    content: 'Board deck draft due tomorrow',
+    relatedTo: ['goal:board'],
+  });
 
   assert.ok(note.id);
   assert.ok(note.createdAt);
@@ -123,6 +128,8 @@ test('append note/research/weather/news methods persist normalized records', asy
   assert.ok(weather.timestamp);
   assert.ok(news.id);
   assert.equal(news.read, false);
+  assert.ok(memory.id);
+  assert.equal(memory.type, 'insight');
 
   const graph = await loadGraph(graphPath);
   assert.equal(graph.notes?.length, 1);
@@ -130,6 +137,7 @@ test('append note/research/weather/news methods persist normalized records', asy
   assert.equal(graph.researchResults?.[0]?.conversationContext?.[0], 'Initial query');
   assert.equal(graph.weatherSnapshots?.length, 1);
   assert.equal(graph.newsDigests?.length, 1);
+  assert.equal(graph.memory?.length, 1);
 });
 
 test('research thread lookup and notes/weather/news helper queries work', async () => {
@@ -176,6 +184,33 @@ test('research thread lookup and notes/weather/news helper queries work', async 
   const latestNews = await client.getLatestNewsDigest('tech');
   assert.equal(latestWeather?.location, 'Boston');
   assert.equal(latestNews?.title, 'Top tech news');
+});
+
+test('searchMemory ranks related entries and applyUpdates appends memory', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendMemoryEntry({
+    type: 'research',
+    content: 'Grok 4 roadmap includes faster multimodal planning.',
+    relatedTo: ['research:grok4'],
+  });
+  await client.applyUpdates([
+    {
+      op: 'append_memory',
+      entry: {
+        type: 'insight',
+        content: 'Tomorrow meeting needs Grok preparation notes.',
+        relatedTo: ['calendar:meeting'],
+      },
+    },
+  ]);
+
+  const matches = await client.searchMemory('grok meeting prep', { limit: 2 });
+  assert.equal(matches.length, 2);
+  assert.ok((matches[0]?.score ?? Number.NEGATIVE_INFINITY) >= (matches[1]?.score ?? 0));
+  assert.ok(matches.every((entry) => Number.isFinite(entry.score)));
 });
 
 test('query supports plans/tasks with filters and limits', async () => {

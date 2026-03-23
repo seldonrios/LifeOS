@@ -37,6 +37,7 @@ import {
 import { calendarModule } from '@lifeos/calendar-module';
 import { newsModule } from '@lifeos/news-module';
 import { notesModule } from '@lifeos/notes-module';
+import { orchestratorModule } from '@lifeos/orchestrator';
 import { researchModule } from '@lifeos/research-module';
 import { reminderModule } from '@lifeos/reminder-module';
 import { schedulerModule } from '@lifeos/scheduler-module';
@@ -65,6 +66,7 @@ const VOICE_DEMO_SCENARIOS = {
   note: 'Hey LifeOS, note that the team prefers async updates',
   weather: 'Hey LifeOS, what is the weather in London this weekend?',
   news: 'Hey LifeOS, give me top tech news today',
+  briefing: 'Hey LifeOS, give me my daily briefing',
 } as const;
 
 interface GoalCommandOptions {
@@ -533,6 +535,7 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       notesModule,
       weatherModule,
       newsModule,
+      orchestratorModule,
     ]
   );
 }
@@ -1700,7 +1703,7 @@ function buildProgram(
     .option('--text <text>', 'Demo utterance when mode=demo (overrides --scenario)', '')
     .option(
       '--scenario <scenario>',
-      'Demo scenario: task | calendar | research | note | weather | news',
+      'Demo scenario: task | calendar | research | note | weather | news | briefing',
       'task',
     )
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
@@ -1835,6 +1838,7 @@ async function main(): Promise<void> {
         notesModule,
         weatherModule,
         newsModule,
+        orchestratorModule,
       ]);
     } catch {
       await runtimeLoader.close();

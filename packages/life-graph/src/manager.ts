@@ -48,6 +48,7 @@ function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
     researchResults: [],
     weatherSnapshots: [],
     newsDigests: [],
+    memory: [],
     updatedAt: now.toISOString(),
   };
 }
@@ -192,6 +193,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       researchResults: [],
       weatherSnapshots: [],
       newsDigests: [],
+      memory: [],
     };
   }
 
@@ -206,6 +208,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       researchResults: [],
       weatherSnapshots: [],
       newsDigests: [],
+      memory: [],
     };
   }
 
@@ -271,6 +274,7 @@ export class LifeGraphManager {
       researchResults: graph.researchResults ?? [],
       weatherSnapshots: graph.weatherSnapshots ?? [],
       newsDigests: graph.newsDigests ?? [],
+      memory: graph.memory ?? [],
     };
 
     await this.save(nextGraph, graphPath);

@@ -233,6 +233,29 @@ test('news intent publishes dedicated news topic', async () => {
   ]);
 });
 
+test('briefing intent publishes dedicated briefing topic', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => ({
+      intent: 'briefing',
+      payload: {},
+    }),
+  });
+
+  const outcome = await router.handleCommand('give me my daily briefing');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentBriefing,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
+});
+
 test('note search intent publishes dedicated note search topic', async () => {
   const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const router = new IntentRouter({
