@@ -65,7 +65,7 @@ pnpm lifeos status --json
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
-lifeos voice [start|demo|consent|calendar] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news] [--graph-path <path>] [--verbose]
+lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
@@ -80,6 +80,7 @@ Voice-first examples:
 ```text
 pnpm lifeos voice consent
 pnpm lifeos voice start
+pnpm lifeos voice briefing
 # "Hey LifeOS, schedule team meeting tomorrow at 3pm"
 # "Hey LifeOS, add a task to finish the report by Friday"
 # "Hey LifeOS, research quantum computing breakthroughs this year"

@@ -43,6 +43,7 @@ import { schedulerModule } from '@lifeos/scheduler-module';
 import { weatherModule } from '@lifeos/weather-module';
 import {
   MissingMicrophoneConsentError,
+  TextToSpeech,
   UnsupportedVoicePlatformError,
   consent,
   createVoiceCore,
@@ -120,7 +121,7 @@ interface ModulesCommandOptions {
 }
 
 interface VoiceCommandOptions {
-  mode: 'start' | 'demo' | 'consent' | 'calendar';
+  mode: 'start' | 'demo' | 'consent' | 'calendar' | 'briefing';
   text: string;
   scenario?: keyof typeof VOICE_DEMO_SCENARIOS;
   graphPath: string;
@@ -145,6 +146,10 @@ interface VoiceRuntimeController {
   runDemo(text: string): Promise<IntentOutcome | null>;
   close(): Promise<void>;
   getWakePhrase(): string;
+}
+
+interface SpeechOutput {
+  speak(text: string): Promise<void>;
 }
 
 type RuntimeEventHandler = (event: BaseEvent<unknown>) => Promise<void>;
@@ -250,6 +255,7 @@ export interface RunCliDependencies {
   }) => Promise<TickResult>;
   createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
   grantVoiceConsent?: () => Promise<void>;
+  createTextToSpeech?: () => SpeechOutput;
   createVoiceCore?: (options: VoiceCoreOptions) => VoiceRuntimeController;
   createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
   moduleLoader?: ModuleLoader;
@@ -466,7 +472,13 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
 }
 
 function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null {
-  if (action === 'start' || action === 'demo' || action === 'consent' || action === 'calendar') {
+  if (
+    action === 'start' ||
+    action === 'demo' ||
+    action === 'consent' ||
+    action === 'calendar' ||
+    action === 'briefing'
+  ) {
     return action;
   }
 
@@ -1073,6 +1085,105 @@ export async function runDemoCommand(
   return 0;
 }
 
+function parseTimestamp(value: string | undefined): number {
+  if (!value) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.POSITIVE_INFINITY;
+}
+
+function truncateText(value: string, maxChars: number): string {
+  const normalized = value.trim().replace(/\s+/g, ' ');
+  if (normalized.length <= maxChars) {
+    return normalized;
+  }
+  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
+function toDateLabel(value: string | undefined): string {
+  if (!value) {
+    return 'unscheduled';
+  }
+  const parsed = Date.parse(value);
+  if (!Number.isFinite(parsed)) {
+    return value;
+  }
+  return new Date(parsed).toISOString().slice(0, 10);
+}
+
+async function buildVoiceBriefingSummary(client: LifeGraphClient, now: Date): Promise<string> {
+  const graph = await client.loadGraph();
+  const nowMs = now.getTime();
+  const dayAheadMs = nowMs + 24 * 60 * 60 * 1000;
+
+  const openTasks = graph.plans
+    .flatMap((plan) => plan.tasks)
+    .filter((task) => task.status !== 'done');
+  const nextTask = [...openTasks].sort(
+    (left, right) => parseTimestamp(left.dueDate) - parseTimestamp(right.dueDate),
+  )[0];
+
+  const upcomingEvents = (graph.calendarEvents ?? [])
+    .filter((event) => {
+      const startMs = Date.parse(event.start);
+      return Number.isFinite(startMs) && startMs >= nowMs && startMs <= dayAheadMs;
+    })
+    .sort((left, right) => Date.parse(left.start) - Date.parse(right.start));
+
+  const latestResearch = [...(graph.researchResults ?? [])].sort(
+    (left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt),
+  )[0];
+  const latestWeather = await client.getLatestWeatherSnapshot();
+  const latestNews = await client.getLatestNewsDigest();
+
+  const sections: string[] = ['Here is your LifeOS briefing.'];
+  if (openTasks.length === 0) {
+    sections.push('You have no open tasks.');
+  } else if (nextTask) {
+    sections.push(
+      `You have ${openTasks.length} open task${openTasks.length === 1 ? '' : 's'}. Next: ${truncateText(
+        nextTask.title,
+        80,
+      )} due ${toDateLabel(nextTask.dueDate)}.`,
+    );
+  }
+
+  if (upcomingEvents.length === 0) {
+    sections.push('No calendar events in the next 24 hours.');
+  } else {
+    const event = upcomingEvents[0];
+    if (event) {
+      sections.push(
+        `${upcomingEvents.length} event${upcomingEvents.length === 1 ? '' : 's'} coming up. Next: ${truncateText(
+          event.title,
+          80,
+        )} at ${event.start}.`,
+      );
+    }
+  }
+
+  if (latestWeather?.forecast) {
+    sections.push(`Weather: ${truncateText(latestWeather.forecast, 180)}`);
+  } else {
+    sections.push('Weather: no recent forecast cached.');
+  }
+
+  if (latestNews?.summary) {
+    sections.push(`News: ${truncateText(latestNews.summary, 180)}`);
+  } else {
+    sections.push('News: no digest cached yet.');
+  }
+
+  if (latestResearch?.summary) {
+    sections.push(
+      `Recent research on ${truncateText(latestResearch.query, 50)}: ${truncateText(latestResearch.summary, 150)}`,
+    );
+  }
+
+  return sections.join(' ');
+}
+
 export async function runVoiceCommand(
   options: VoiceCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -1099,6 +1210,29 @@ export async function runVoiceCommand(
 
     if (options.mode === 'calendar') {
       writeStdout(chalk.blue('Voice calendar mode active.\n'));
+      return 0;
+    }
+
+    if (options.mode === 'briefing') {
+      const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+      const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+      const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+      const briefing = await buildVoiceBriefingSummary(
+        client,
+        dependencies.now ? dependencies.now() : new Date(),
+      );
+      const tts = dependencies.createTextToSpeech
+        ? dependencies.createTextToSpeech()
+        : new TextToSpeech();
+      try {
+        await tts.speak(briefing);
+      } catch (error: unknown) {
+        writeStderr(
+          `${chalk.yellow(`[warn] Voice briefing speech degraded: ${normalizeErrorMessage(error)}`)}\n`,
+        );
+      }
+      writeStdout(chalk.blue('Voice briefing generated.\n'));
+      writeStdout(`LifeOS Briefing: ${briefing}\n`);
       return 0;
     }
 
@@ -1561,8 +1695,8 @@ function buildProgram(
 
   program
     .command('voice')
-    .description('Manage voice runtime: start, demo, consent, or calendar')
-    .argument('[mode]', 'start | demo | consent | calendar', 'start')
+    .description('Manage voice runtime: start, demo, consent, calendar, or briefing')
+    .argument('[mode]', 'start | demo | consent | calendar | briefing', 'start')
     .option('--text <text>', 'Demo utterance when mode=demo (overrides --scenario)', '')
     .option(
       '--scenario <scenario>',
@@ -1576,7 +1710,7 @@ function buildProgram(
       if (!normalizedMode) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start, demo, consent, or calendar.\n`,
+          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start, demo, consent, calendar, or briefing.\n`,
         );
         return;
       }

@@ -11,7 +11,12 @@ interface CapturedSubscription {
   handler: (event: BaseEvent<unknown>) => Promise<void>;
 }
 
-function createContextMock(options: { publishThrows?: boolean } = {}) {
+function createContextMock(
+  options: {
+    publishThrows?: boolean;
+    initialResearchResults?: Array<Record<string, unknown>>;
+  } = {},
+) {
   const subscriptions: CapturedSubscription[] = [];
   const published: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const logs: string[] = [];
@@ -67,6 +72,14 @@ function createContextMock(options: { publishThrows?: boolean } = {}) {
               ? entry.conversationContext
               : [],
             sources: Array.isArray(entry.sources) ? entry.sources : [],
+          };
+        },
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: '2026-03-23T00:00:00.000Z',
+            plans: [],
+            researchResults: options.initialResearchResults ?? [],
           };
         },
       }) as never,
@@ -327,4 +340,43 @@ test('research module degrades publish failures without dropping spoken feedback
   assert.equal(appendCalls.length, 1);
   assert.equal(tts.spoken.length, 1);
   assert.match(logs.join('\n'), /publish degraded/i);
+});
+
+test('research follow-up resolves latest persisted thread when runtime memory is empty', async () => {
+  const persistedThreadId = '57f8e2cc-9c56-4ed6-b52a-7d44d4436a58';
+  const { context, subscriptions, appendCalls } = createContextMock({
+    initialResearchResults: [
+      {
+        id: 'research_persisted',
+        threadId: persistedThreadId,
+        query: 'grok roadmap',
+        summary: 'Persisted summary',
+        savedAt: '2026-03-23T12:00:00.000Z',
+      },
+    ],
+  });
+  const module = createResearchModule({
+    fetchFn: mockFetchWithSummary('Expanded summary'),
+    tts: mockTts(),
+  });
+  await module.init(context);
+
+  const handler = subscriptions.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentResearch,
+  )?.handler;
+  assert.ok(handler);
+
+  await handler?.({
+    id: 'evt_voice_6',
+    type: Topics.lifeos.voiceIntentResearch,
+    timestamp: '2026-03-23T13:20:00.000Z',
+    source: 'voice-core',
+    version: '0.1.0',
+    data: {
+      query: 'what about the timeline?',
+    },
+  });
+
+  assert.equal(appendCalls.length, 1);
+  assert.equal(appendCalls[0]?.threadId, persistedThreadId);
 });

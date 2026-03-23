@@ -277,6 +277,27 @@ test('research follow-up phrases fall back to research intent when classifier fa
   ]);
 });
 
+test('research follow-up variant "what about" falls back to research intent', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('what about the grok timeline');
+  assert.equal(outcome.handled, true);
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentResearch,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
+});
+
 test('classifier failures fall back to heuristic task parsing', async () => {
   const createNodeCalls: Array<Record<string, unknown>> = [];
   const router = new IntentRouter({

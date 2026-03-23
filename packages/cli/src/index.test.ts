@@ -811,6 +811,91 @@ test('voice calendar mode prints activation message', async () => {
   assert.match(stdout.join(''), /Voice calendar mode active/);
 });
 
+test('voice briefing speaks and prints a daily summary', async () => {
+  const stdout: string[] = [];
+  const spoken: string[] = [];
+
+  const exitCode = await runCli(['voice', 'briefing'], {
+    now: () => new Date('2026-03-23T08:00:00.000Z'),
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: '2026-03-23T08:00:00.000Z',
+            plans: [
+              {
+                id: 'goal_1',
+                title: 'Board prep',
+                description: 'Prepare board notes',
+                deadline: null,
+                createdAt: '2026-03-23T07:00:00.000Z',
+                tasks: [
+                  {
+                    id: 'task_1',
+                    title: 'Draft deck',
+                    status: 'todo',
+                    priority: 4,
+                    dueDate: '2026-03-24',
+                  },
+                ],
+              },
+            ],
+            calendarEvents: [
+              {
+                id: 'evt_1',
+                title: 'Team sync',
+                start: '2026-03-23T12:00:00.000Z',
+                end: '2026-03-23T12:30:00.000Z',
+                status: 'confirmed',
+              },
+            ],
+            researchResults: [
+              {
+                id: 'research_1',
+                threadId: 'thread_1',
+                query: 'quantum error correction',
+                summary: 'Progress improved this quarter.',
+                savedAt: '2026-03-23T07:30:00.000Z',
+              },
+            ],
+          };
+        },
+        async getLatestWeatherSnapshot() {
+          return {
+            id: 'weather_1',
+            location: 'Boston',
+            forecast: 'Boston: clear skies with light wind.',
+            timestamp: '2026-03-23T07:00:00.000Z',
+          };
+        },
+        async getLatestNewsDigest() {
+          return {
+            id: 'news_1',
+            title: 'Top tech news',
+            summary: 'AI chip demand remains elevated.',
+            sources: ['https://example.com/news'],
+            read: false,
+          };
+        },
+      }) as never,
+    createTextToSpeech: () => ({
+      async speak(text: string) {
+        spoken.push(text);
+      },
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(spoken.length, 1);
+  assert.match(spoken[0] ?? '', /Here is your LifeOS briefing/i);
+  assert.match(spoken[0] ?? '', /Weather:/i);
+  assert.match(stdout.join(''), /Voice briefing generated/);
+});
+
 test('voice start surfaces consent guidance when permission is missing', async () => {
   const stderr: string[] = [];
   let closed = 0;

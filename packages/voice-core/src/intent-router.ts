@@ -171,7 +171,9 @@ function extractSinceDaysFromText(text: string): number | null {
 }
 
 function isResearchFollowUpPhrase(text: string): boolean {
-  return /^(tell me more|expand(?: on)?|continue|go deeper|what else)\b/i.test(text.trim());
+  return /^(tell me more|expand(?: on)?|continue|go deeper|what else|what about|elaborate(?: on)?)\b/i.test(
+    text.trim(),
+  );
 }
 
 function deriveNoteTitle(content: string): string {

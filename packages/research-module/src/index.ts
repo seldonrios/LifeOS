@@ -37,7 +37,7 @@ const MAX_QUERY_CHARS = 400;
 const MAX_SUMMARY_CHARS = 4000;
 const MAX_CONTEXT_ITEMS = 8;
 const FOLLOW_UP_PATTERN =
-  /^(tell me more|expand(?: on)?|go deeper|more details|continue|what else)\b/i;
+  /^(tell me more|expand(?: on)?|go deeper|more details|continue|what else|what about|elaborate(?: on)?)\b/i;
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const DEFAULT_RESEARCH_MODEL = 'llama3.1:8b';
 const DEFAULT_TIMEOUT_MS = 12_000;
@@ -111,6 +111,30 @@ function normalizeThreadId(value: unknown): string | null {
     return null;
   }
   return threadId;
+}
+
+function parseTimestamp(value: string | undefined): number {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+async function resolveLatestThreadIdFromGraph(
+  client: LifeGraphClient,
+  context: ModuleRuntimeContext,
+): Promise<string | null> {
+  try {
+    const graph = await client.loadGraph();
+    const latest = [...(graph.researchResults ?? [])].sort(
+      (left, right) => parseTimestamp(right.savedAt) - parseTimestamp(left.savedAt),
+    )[0];
+    return latest?.threadId ?? null;
+  } catch (error: unknown) {
+    context.log(`[Research] latest-thread lookup degraded: ${normalizeErrorMessage(error)}`);
+    return null;
+  }
 }
 
 async function summarizeResearchWithPrompt(
@@ -261,8 +285,10 @@ export function createResearchModule(options: ResearchModuleOptions = {}): LifeO
 
     const client = createClient(context);
     const nowIso = now().toISOString();
-    const requestedThreadId =
-      normalizeThreadId(payload.threadId) ?? (isFollowUpQuery(query) ? latestThreadId : null);
+    let requestedThreadId = normalizeThreadId(payload.threadId);
+    if (!requestedThreadId && isFollowUpQuery(query)) {
+      requestedThreadId = latestThreadId ?? (await resolveLatestThreadIdFromGraph(client, context));
+    }
     let previous = null;
     if (requestedThreadId) {
       try {
