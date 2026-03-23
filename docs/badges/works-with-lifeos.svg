@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60">
+  <rect width="200" height="60" rx="8" fill="#0ea5e9" />
+  <text x="20" y="38" fill="white" font-family="sans-serif" font-size="18" font-weight="700">Works with</text>
+  <text x="20" y="38" fill="#ffffff" font-family="sans-serif" font-size="18" font-weight="700" opacity="0.9">LifeOS</text>
+</svg>

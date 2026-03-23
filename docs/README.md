@@ -13,7 +13,7 @@ Current executable MVP targets are:
 - `@lifeos/life-graph`
 - `@lifeos/event-bus`
 - `@lifeos/module-loader`
-- Runtime modules: `@lifeos/reminder-module`, `@lifeos/calendar-module`, `@lifeos/scheduler-module`, `@lifeos/research-module`, `@lifeos/notes-module`, `@lifeos/weather-module`, `@lifeos/news-module`, `@lifeos/orchestrator`
+- Runtime modules: `@lifeos/reminder-module`, `@lifeos/calendar-module`, `@lifeos/scheduler-module`, `@lifeos/research-module`, `@lifeos/notes-module`, `@lifeos/weather-module`, `@lifeos/news-module`, `@lifeos/personality`, `@lifeos/orchestrator`, `@lifeos/sync-core`
 
 ## Recommended Reading Order
 
@@ -78,3 +78,6 @@ Current executable MVP targets are:
 - [Glossary](community/glossary.md)
 - [Phase 1 MVP North Star Issue Draft](community/phase-1-mvp-north-star-issue.md)
 - [v0.1.0 Launch Thread Draft](community/v0.1.0-launch-thread.md)
+- [v0.2.0 Ecosystem North Star Issue Draft](community/v0.2.0-ecosystem-north-star-issue.md)
+- [v0.2.0 Launch Thread Draft](community/v0.2.0-launch-thread.md)
+- [v0.2.0 Release Notes Draft](community/v0.2.0-release-notes.md)

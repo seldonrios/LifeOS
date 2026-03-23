@@ -1,6 +1,7 @@
 {
   "name": "lifeos-monorepo",
   "private": true,
+  "version": "0.2.0",
   "packageManager": "pnpm@9.15.4",
   "engines": {
     "node": ">=20"

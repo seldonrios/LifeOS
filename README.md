@@ -190,6 +190,12 @@ Runtime modules:
 - `sync-core` mirrors life-event deltas across paired devices (local-first)
 - `orchestrator` builds contextual memory, proactive suggestions, and daily briefings
 
+## Works with LifeOS
+
+Modules that follow the official spec get this badge:
+
+![Works with LifeOS](https://github.com/seldonrios/LifeOS/blob/main/docs/badges/works-with-lifeos.svg)
+
 ## 🧭 Project Direction
 
 LifeOS is currently **docs-first + working CLI MVP**.
@@ -216,13 +222,15 @@ Start here:
 - [Phase 1 Landing Page](docs/phase-1/README.md)
 - [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md)
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
-- [Contributing Guide](docs/CONTRIBUTING.md)
+- [Contributing Guide](CONTRIBUTING.md)
 - [Contributor Map](docs/community/contributor-map.md)
 
 Community launch docs:
 
 - [Phase 1 MVP North Star Issue Draft](docs/community/phase-1-mvp-north-star-issue.md)
 - [v0.1.0 Launch Thread Draft](docs/community/v0.1.0-launch-thread.md)
+- [v0.2.0 Ecosystem North Star Issue Draft](docs/community/v0.2.0-ecosystem-north-star-issue.md)
+- [v0.2.0 Launch Thread Draft](docs/community/v0.2.0-launch-thread.md)
 
 ## 📄 License
 
