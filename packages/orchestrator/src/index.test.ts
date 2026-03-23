@@ -219,6 +219,84 @@ test('orchestrator re-evaluates when sync delta is received', async () => {
   assert.ok(suggestion);
 });
 
+test('orchestrator speaks sync conflict notices when preference is enabled', async () => {
+  const { context, subscriptions, published } = createContextMock();
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    personality: {
+      async loadProfile() {
+        return {
+          communicationStyle: 'concise and direct',
+          priorities: ['health'],
+          quirks: [],
+          preferences: {
+            sync_conflict_voice_alerts: 'true',
+          },
+        };
+      },
+      async updatePreference() {
+        return null;
+      },
+    },
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+
+  await module.init(context);
+  const handler = getHandler(subscriptions, 'lifeos.>');
+  assert.ok(handler);
+
+  await handler?.({
+    id: 'evt_sync_conflict',
+    type: Topics.lifeos.syncConflictDetected,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'sync-core',
+    version: '0.1.0',
+    data: {
+      conflictCount: 2,
+      deviceId: 'device-a',
+      conflicts: [
+        {
+          collection: 'notes',
+          id: 'note_1',
+          reason: 'incoming_older',
+        },
+      ],
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
+  assert.match(sink.spoken[0] ?? '', /sync conflict/i);
+  assert.ok(published.some((entry) => entry.topic === Topics.lifeos.orchestratorSuggestion));
+});
+
+test('orchestrator keeps sync conflict notices silent by default', async () => {
+  const { context, subscriptions } = createContextMock();
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+
+  await module.init(context);
+  const handler = getHandler(subscriptions, 'lifeos.>');
+  assert.ok(handler);
+
+  await handler?.({
+    id: 'evt_sync_conflict_silent',
+    type: Topics.lifeos.syncConflictDetected,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'sync-core',
+    version: '0.1.0',
+    data: {
+      conflictCount: 1,
+      deviceId: 'device-b',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 0);
+});
+
 test('orchestrator handles explicit briefing intent and speaks summary', async () => {
   const { context, subscriptions, published } = createContextMock();
   const sink = mockTtsSink();

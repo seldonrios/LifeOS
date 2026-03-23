@@ -21,7 +21,11 @@ const MAX_BRIEFING_SECONDS = 90;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const PREFERENCE_KEY_ALIASES: Record<
   string,
-  'communication_style' | 'priorities' | 'quirks' | 'briefing_max_seconds'
+  | 'communication_style'
+  | 'priorities'
+  | 'quirks'
+  | 'briefing_max_seconds'
+  | 'sync_conflict_voice_alerts'
 > = {
   communication_style: 'communication_style',
   communicationstyle: 'communication_style',
@@ -30,6 +34,11 @@ const PREFERENCE_KEY_ALIASES: Record<
   briefing_style: 'communication_style',
   briefing_max_seconds: 'briefing_max_seconds',
   briefing_seconds: 'briefing_max_seconds',
+  sync_conflict_voice_alerts: 'sync_conflict_voice_alerts',
+  sync_conflict_alerts: 'sync_conflict_voice_alerts',
+  conflict_alerts: 'sync_conflict_voice_alerts',
+  sync_alerts: 'sync_conflict_voice_alerts',
+  sync_conflicts: 'sync_conflict_voice_alerts',
   priority: 'priorities',
   priorities: 'priorities',
   quirk: 'quirks',
@@ -199,6 +208,28 @@ function extractSinceDaysFromText(text: string): number | null {
 }
 
 function extractPreferenceFromText(text: string): { key: string; value: string } | null {
+  const syncConflictDisable =
+    /\b(?:disable|turn off|mute|stop|dont|don't|do not)\b[\s\w]{0,40}\b(?:sync )?conflict alerts?\b/i.test(
+      text,
+    );
+  if (syncConflictDisable) {
+    return {
+      key: 'sync_conflict_voice_alerts',
+      value: 'false',
+    };
+  }
+
+  const syncConflictEnable =
+    /\b(?:enable|turn on|alert me|notify me)\b[\s\w]{0,40}\b(?:sync )?conflict alerts?\b/i.test(
+      text,
+    );
+  if (syncConflictEnable) {
+    return {
+      key: 'sync_conflict_voice_alerts',
+      value: 'true',
+    };
+  }
+
   const briefingSecondsMatch = text.match(
     /\b(?:keep\s+)?briefings?\s+(?:under|below|<=?|at most)\s*(\d{1,3})\s*seconds?\b/i,
   )?.[1];
@@ -238,7 +269,13 @@ function extractPreferenceFromText(text: string): { key: string; value: string }
 
 function normalizePreferenceKey(
   raw: string | null,
-): 'communication_style' | 'priorities' | 'quirks' | 'briefing_max_seconds' | null {
+):
+  | 'communication_style'
+  | 'priorities'
+  | 'quirks'
+  | 'briefing_max_seconds'
+  | 'sync_conflict_voice_alerts'
+  | null {
   if (!raw) {
     return null;
   }
@@ -567,7 +604,8 @@ export class IntentRouter {
       lower.includes('i prefer') ||
       lower.includes('remember i') ||
       lower.includes('remember that i') ||
-      lower.includes('prioritize')
+      lower.includes('prioritize') ||
+      lower.includes('sync conflict alert')
     ) {
       return 'preference_set';
     }
@@ -746,6 +784,11 @@ export class IntentRouter {
       responseText = 'Understood. I will keep responses concise.';
     } else if (key === 'briefing_max_seconds') {
       responseText = `Understood. I will keep briefings under ${normalizedValue} seconds.`;
+    } else if (key === 'sync_conflict_voice_alerts') {
+      responseText =
+        normalizedValue === 'false'
+          ? 'Understood. I will keep sync conflict alerts silent.'
+          : 'Understood. I will announce sync conflict alerts.';
     }
     return {
       handled: true,

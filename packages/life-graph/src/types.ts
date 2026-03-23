@@ -167,7 +167,7 @@ export interface LifeGraphClient {
     threadId: string,
     options?: LifeGraphMemoryThreadOptions,
   ): Promise<LifeGraphMemoryEntry[]>;
-  mergeDelta(deltaPayload: unknown): Promise<void>;
+  mergeDelta(deltaPayload: unknown): Promise<LifeGraphMergeDeltaResult>;
   applyUpdates(updates: LifeGraphUpdate[]): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
@@ -275,6 +275,26 @@ export interface LifeGraphMemorySearchResult extends LifeGraphMemoryEntry {
 export interface LifeGraphMemoryThreadOptions {
   limit?: number;
   sinceDays?: number;
+}
+
+export interface LifeGraphMergeConflict {
+  collection:
+    | 'plans'
+    | 'calendarEvents'
+    | 'notes'
+    | 'researchResults'
+    | 'weatherSnapshots'
+    | 'newsDigests'
+    | 'memory';
+  id: string;
+  reason: 'incoming_older' | 'incoming_invalid';
+  existingTimestamp?: string;
+  incomingTimestamp?: string;
+}
+
+export interface LifeGraphMergeDeltaResult {
+  merged: boolean;
+  conflicts: LifeGraphMergeConflict[];
 }
 
 export type LifeGraphUpdate = {

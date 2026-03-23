@@ -54,7 +54,7 @@ test('sync engine broadcasts delta and replays to remote device once', async () 
     deviceName: 'Laptop',
     client: {
       async mergeDelta() {
-        return;
+        return { merged: true, conflicts: [] };
       },
     },
     shouldBroadcast: (event) => event.source === 'device-a',
@@ -65,7 +65,7 @@ test('sync engine broadcasts delta and replays to remote device once', async () 
     deviceName: 'Phone',
     client: {
       async mergeDelta() {
-        return;
+        return { merged: true, conflicts: [] };
       },
     },
     shouldBroadcast: (event) => event.source === 'device-b',
@@ -114,7 +114,7 @@ test('sync engine ignores own delta payloads', async () => {
     deviceName: 'Tablet',
     client: {
       async mergeDelta() {
-        return;
+        return { merged: true, conflicts: [] };
       },
     },
   });
@@ -151,6 +151,7 @@ test('sync engine calls mergeDelta when receiving remote delta', async () => {
     client: {
       async mergeDelta(deltaPayload: unknown) {
         mergeCalls.push(deltaPayload);
+        return { merged: true, conflicts: [] };
       },
     },
   });
@@ -168,6 +169,64 @@ test('sync engine calls mergeDelta when receiving remote delta', async () => {
   assert.equal(accepted, true);
   assert.equal(mergeCalls.length, 1);
   assert.equal(engine.getStats().deltasReceived, 1);
+
+  await engine.close();
+  await eventBus.close();
+});
+
+test('sync engine publishes sync conflict audit event when merge reports conflicts', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-conflict',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const conflictEvents: BaseEvent<Record<string, unknown>>[] = [];
+  await eventBus.subscribe<Record<string, unknown>>(
+    Topics.lifeos.syncConflictDetected,
+    async (event) => {
+      conflictEvents.push(event as BaseEvent<Record<string, unknown>>);
+    },
+  );
+
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-local',
+    deviceName: 'Laptop',
+    client: {
+      async mergeDelta() {
+        return {
+          merged: true,
+          conflicts: [
+            {
+              collection: 'notes',
+              id: 'note_older',
+              reason: 'incoming_older',
+            },
+          ],
+        };
+      },
+    },
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-remote-conflict',
+    deviceId: 'device-remote',
+    deviceName: 'Phone',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(
+      Topics.lifeos.noteAdded,
+      { id: 'note_older', title: 'x' },
+      'device-remote',
+    ),
+  });
+
+  assert.equal(accepted, true);
+  assert.equal(conflictEvents.length, 1);
+  assert.equal(conflictEvents[0]?.type, Topics.lifeos.syncConflictDetected);
+  assert.equal(conflictEvents[0]?.data.conflictCount, 1);
 
   await engine.close();
   await eventBus.close();
