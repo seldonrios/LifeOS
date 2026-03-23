@@ -9,6 +9,7 @@ import type {
   GoalPlan,
   LifeGraphNewsDigest,
   LifeGraphNote,
+  LifeGraphNoteSearchOptions,
   LifeGraphClient,
   LifeGraphResearchResult,
   LifeGraphReviewInsights,
@@ -94,12 +95,15 @@ const MAX_NOTE_TAGS = 20;
 const MAX_NOTE_TAG_CHARS = 40;
 const MAX_RESEARCH_QUERY_CHARS = 400;
 const MAX_RESEARCH_SUMMARY_CHARS = 8000;
+const MAX_RESEARCH_CONTEXT_ITEMS = 8;
+const MAX_RESEARCH_CONTEXT_CHARS = 500;
 const MAX_WEATHER_LOCATION_CHARS = 120;
 const MAX_WEATHER_FORECAST_CHARS = 1000;
 const MAX_NEWS_TITLE_CHARS = 220;
 const MAX_NEWS_SUMMARY_CHARS = 5000;
 const MAX_NEWS_SOURCES = 20;
 const MAX_NEWS_SOURCE_CHARS = 240;
+const MAX_NOTE_SEARCH_RESULTS = 50;
 
 function getString(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -179,6 +183,17 @@ function parsePlanId(params: QueryParams): string | null {
   return getString(params?.planId);
 }
 
+function parsePositiveInteger(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  const normalized = Math.trunc(value);
+  if (normalized <= 0) {
+    return null;
+  }
+  return normalized;
+}
+
 function normalizeQuery(query: string): string {
   const normalized = query.trim().toLowerCase();
   if (normalized.length === 0) {
@@ -253,20 +268,27 @@ function normalizeNoteInput(
 
 function normalizeResearchInput(
   result:
-    | (Omit<LifeGraphResearchResult, 'id' | 'savedAt'> &
-        Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt'>>)
+    | (Omit<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'> &
+        Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'>>)
     | LifeGraphResearchResult,
   nowIso: string,
 ): LifeGraphResearchResult {
   const sources = normalizeStringArray(result.sources, MAX_NEWS_SOURCES, MAX_NEWS_SOURCE_CHARS);
+  const conversationContext = normalizeStringArray(
+    result.conversationContext,
+    MAX_RESEARCH_CONTEXT_ITEMS,
+    MAX_RESEARCH_CONTEXT_CHARS,
+  );
   return {
     id: getString(result.id) ?? randomUUID(),
+    threadId: getString(result.threadId) ?? randomUUID(),
     query: normalizeStringField(result.query, 'General research', MAX_RESEARCH_QUERY_CHARS),
     summary: normalizeStringField(
       result.summary,
       'No summary available.',
       MAX_RESEARCH_SUMMARY_CHARS,
     ),
+    ...(conversationContext.length > 0 ? { conversationContext } : {}),
     ...(sources.length > 0 ? { sources } : {}),
     savedAt: normalizeIsoTimestamp(result.savedAt, nowIso),
   };
@@ -304,6 +326,35 @@ function normalizeNewsInput(
     sources: sources.length > 0 ? sources : ['local-cache'],
     read: typeof digest.read === 'boolean' ? digest.read : false,
   };
+}
+
+function parseIsoOrZero(value: string | undefined): number {
+  if (!value) {
+    return 0;
+  }
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toTopicQuery(topic: string | undefined): string | null {
+  const value = getString(topic);
+  return value ? value.toLowerCase() : null;
+}
+
+function toNoteQueryTokens(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function noteMatchesQuery(note: LifeGraphNote, queryTokens: string[]): boolean {
+  if (queryTokens.length === 0) {
+    return true;
+  }
+  const haystack = [note.title, note.content, ...(note.tags ?? [])].join(' ').toLowerCase();
+  return queryTokens.every((token) => haystack.includes(token));
 }
 
 function normalizeLabel(label: string): string {
@@ -567,6 +618,22 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       return normalized;
     },
 
+    async saveResearchResult(result) {
+      return this.appendResearchResult(result);
+    },
+
+    async getResearchThread(threadId) {
+      const normalizedThreadId = getString(threadId);
+      if (!normalizedThreadId) {
+        return null;
+      }
+      const graph = await manager.load(resolvedGraphPath);
+      const matches = (graph.researchResults ?? [])
+        .filter((entry) => entry.threadId === normalizedThreadId)
+        .sort((left, right) => parseIsoOrZero(right.savedAt) - parseIsoOrZero(left.savedAt));
+      return matches[0] ?? null;
+    },
+
     async appendWeatherSnapshot(snapshot) {
       const nowIso = new Date().toISOString();
       const graph = await manager.load(resolvedGraphPath);
@@ -589,6 +656,17 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       return normalized;
     },
 
+    async getLatestWeatherSnapshot(location) {
+      const graph = await manager.load(resolvedGraphPath);
+      const locationQuery = toTopicQuery(location);
+      const matches = (graph.weatherSnapshots ?? [])
+        .filter((entry) =>
+          locationQuery ? entry.location.toLowerCase().includes(locationQuery) : true,
+        )
+        .sort((left, right) => parseIsoOrZero(right.timestamp) - parseIsoOrZero(left.timestamp));
+      return matches[0] ?? null;
+    },
+
     async appendNewsDigest(digest) {
       const nowIso = new Date().toISOString();
       const graph = await manager.load(resolvedGraphPath);
@@ -607,6 +685,38 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         resolvedGraphPath,
       );
       return normalized;
+    },
+
+    async getLatestNewsDigest(topic) {
+      const graph = await manager.load(resolvedGraphPath);
+      const topicQuery = toTopicQuery(topic);
+      const matches = [...(graph.newsDigests ?? [])]
+        .reverse()
+        .filter((entry) =>
+          topicQuery ? `${entry.title} ${entry.summary}`.toLowerCase().includes(topicQuery) : true,
+        );
+      return matches[0] ?? null;
+    },
+
+    async searchNotes(query, options: LifeGraphNoteSearchOptions = {}) {
+      const normalizedQuery = getString(query);
+      if (!normalizedQuery) {
+        return [];
+      }
+      const graph = await manager.load(resolvedGraphPath);
+      const tokens = toNoteQueryTokens(normalizedQuery);
+      const sinceDays = parsePositiveInteger(options.sinceDays) ?? 0;
+      const limit =
+        Math.min(parsePositiveInteger(options.limit) ?? 10, MAX_NOTE_SEARCH_RESULTS) ||
+        MAX_NOTE_SEARCH_RESULTS;
+      const thresholdMs =
+        sinceDays > 0 ? Date.now() - sinceDays * 24 * 60 * 60 * 1000 : Number.NEGATIVE_INFINITY;
+
+      return (graph.notes ?? [])
+        .filter((note) => parseIsoOrZero(note.createdAt) >= thresholdMs)
+        .filter((note) => noteMatchesQuery(note, tokens))
+        .sort((left, right) => parseIsoOrZero(right.createdAt) - parseIsoOrZero(left.createdAt))
+        .slice(0, limit);
     },
 
     async query<T = unknown>(query: string, params?: Record<string, unknown>): Promise<T[]> {

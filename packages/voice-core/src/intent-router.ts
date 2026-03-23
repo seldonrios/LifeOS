@@ -20,6 +20,7 @@ type ClassifiedIntent =
   | 'task_add'
   | 'calendar_add'
   | 'note_add'
+  | 'note_search'
   | 'question_time'
   | 'weather'
   | 'news'
@@ -35,7 +36,7 @@ interface IntentClassification {
 export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
 
 {
-  "intent": "task_add | calendar_add | note_add | question_time | weather | news | research | next_actions | unknown",
+  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | next_actions | unknown",
   "payload": {}
 }`;
 
@@ -147,6 +148,32 @@ function extractNoteContent(text: string): string {
   return clampText(stripped || text, MAX_NOTE_CONTENT_CHARS);
 }
 
+function extractNoteSearchQuery(text: string): string {
+  const stripped = text.replace(
+    /^(hey life(?:\s?os)?[,\s]*)?(what did i note about|find notes? about|search notes? for)\s+/i,
+    '',
+  );
+  return clampText(stripped || text, MAX_NOTE_CONTENT_CHARS);
+}
+
+function extractSinceDaysFromText(text: string): number | null {
+  const lower = text.toLowerCase();
+  if (lower.includes('last week')) {
+    return 7;
+  }
+  if (lower.includes('yesterday')) {
+    return 1;
+  }
+  if (lower.includes('last month')) {
+    return 30;
+  }
+  return null;
+}
+
+function isResearchFollowUpPhrase(text: string): boolean {
+  return /^(tell me more|expand(?: on)?|continue|go deeper|what else)\b/i.test(text.trim());
+}
+
 function deriveNoteTitle(content: string): string {
   return clampText(
     content.split(/\s+/g).slice(0, 7).join(' ') || 'Voice note',
@@ -178,6 +205,7 @@ function normalizeClassifiedIntent(value: unknown): ClassifiedIntent {
     value === 'task_add' ||
     value === 'calendar_add' ||
     value === 'note_add' ||
+    value === 'note_search' ||
     value === 'question_time' ||
     value === 'weather' ||
     value === 'news' ||
@@ -367,6 +395,8 @@ export class IntentRouter {
         return this.handleAgentIntent(normalizedText, 'calendar', classification.payload);
       case 'note_add':
         return this.handleAgentIntent(normalizedText, 'note', classification.payload);
+      case 'note_search':
+        return this.handleAgentIntent(normalizedText, 'note_search', classification.payload);
       case 'weather':
         return this.handleAgentIntent(normalizedText, 'weather', classification.payload);
       case 'news':
@@ -401,6 +431,13 @@ export class IntentRouter {
     if (lower.includes('calendar') || lower.includes('schedule')) {
       return 'calendar_add';
     }
+    if (
+      lower.includes('what did i note about') ||
+      lower.includes('find note about') ||
+      lower.includes('search notes for')
+    ) {
+      return 'note_search';
+    }
     if (lower.startsWith('note ') || lower.includes('note that')) {
       return 'note_add';
     }
@@ -411,6 +448,9 @@ export class IntentRouter {
       return 'news';
     }
     if (lower.includes('research')) {
+      return 'research';
+    }
+    if (isResearchFollowUpPhrase(text)) {
       return 'research';
     }
     return 'unknown';
@@ -469,7 +509,7 @@ export class IntentRouter {
 
   private async handleAgentIntent(
     text: string,
-    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news',
+    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news' | 'note_search',
     payload: Record<string, unknown>,
   ): Promise<IntentOutcome> {
     if (intent === 'calendar') {
@@ -478,12 +518,14 @@ export class IntentRouter {
 
     const requestedAt = this.now().toISOString();
     const routedPayload = this.buildIntentPayload(intent, text, payload, requestedAt);
-    const topicByIntent: Record<'weather' | 'research' | 'note' | 'news', string> = {
-      weather: Topics.lifeos.voiceIntentWeather,
-      research: Topics.lifeos.voiceIntentResearch,
-      note: Topics.lifeos.voiceIntentNoteAdd,
-      news: Topics.lifeos.voiceIntentNews,
-    };
+    const topicByIntent: Record<'weather' | 'research' | 'note' | 'news' | 'note_search', string> =
+      {
+        weather: Topics.lifeos.voiceIntentWeather,
+        research: Topics.lifeos.voiceIntentResearch,
+        note: Topics.lifeos.voiceIntentNoteAdd,
+        news: Topics.lifeos.voiceIntentNews,
+        note_search: Topics.lifeos.voiceIntentNoteSearch,
+      };
 
     await this.publishSafe(topicByIntent[intent], routedPayload);
     await this.publishSafe(Topics.agent.workRequested, {
@@ -508,7 +550,7 @@ export class IntentRouter {
   }
 
   private intentConfirmation(
-    intent: 'weather' | 'research' | 'note' | 'news',
+    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search',
     payload: Record<string, unknown>,
   ): string {
     if (intent === 'weather') {
@@ -522,11 +564,15 @@ export class IntentRouter {
     if (intent === 'note') {
       return 'Noted. I will save that.';
     }
+    if (intent === 'note_search') {
+      const query = getString(payload.query) ?? 'that topic';
+      return `Searching notes about ${query}.`;
+    }
     return 'Preparing your news digest.';
   }
 
   private buildIntentPayload(
-    intent: 'weather' | 'research' | 'note' | 'news',
+    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search',
     text: string,
     payload: Record<string, unknown>,
     requestedAt: string,
@@ -542,7 +588,7 @@ export class IntentRouter {
       };
     }
     if (intent === 'research') {
-      return {
+      const researchPayload: Record<string, unknown> = {
         query: clampText(
           getString(payload.query) ?? getString(payload.topic) ?? extractResearchQuery(text),
           MAX_DESCRIPTION_CHARS,
@@ -550,6 +596,11 @@ export class IntentRouter {
         utterance: text,
         requestedAt,
       };
+      const threadId = getString(payload.threadId);
+      if (threadId) {
+        researchPayload.threadId = threadId;
+      }
+      return researchPayload;
     }
     if (intent === 'note') {
       const content = clampText(
@@ -565,6 +616,23 @@ export class IntentRouter {
         ),
         content,
         tags: tags.slice(0, MAX_NOTE_TAGS),
+        utterance: text,
+        requestedAt,
+      };
+    }
+    if (intent === 'note_search') {
+      const query = clampText(
+        getString(payload.query) ?? extractNoteSearchQuery(text),
+        MAX_NOTE_CONTENT_CHARS,
+      );
+      const sinceDaysFromPayload =
+        typeof payload.sinceDays === 'number' && Number.isFinite(payload.sinceDays)
+          ? Math.max(1, Math.trunc(payload.sinceDays))
+          : null;
+      return {
+        query,
+        sinceDays: sinceDaysFromPayload ?? extractSinceDaysFromText(text) ?? 30,
+        limit: 3,
         utterance: text,
         requestedAt,
       };

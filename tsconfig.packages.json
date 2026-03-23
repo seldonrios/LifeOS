@@ -17,6 +17,9 @@
       "path": "./packages/module-loader"
     },
     {
+      "path": "./packages/module-cache"
+    },
+    {
       "path": "./packages/calendar-module"
     },
     {

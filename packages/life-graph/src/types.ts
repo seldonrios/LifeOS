@@ -136,17 +136,25 @@ export interface LifeGraphClient {
       Partial<Pick<LifeGraphNote, 'id' | 'createdAt'>>,
   ): Promise<LifeGraphNote>;
   appendResearchResult(
-    result: Omit<LifeGraphResearchResult, 'id' | 'savedAt'> &
-      Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt'>>,
+    result: Omit<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'> &
+      Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'>>,
   ): Promise<LifeGraphResearchResult>;
+  saveResearchResult(
+    result: Omit<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'> &
+      Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'>>,
+  ): Promise<LifeGraphResearchResult>;
+  getResearchThread(threadId: string): Promise<LifeGraphResearchResult | null>;
   appendWeatherSnapshot(
     snapshot: Omit<LifeGraphWeatherSnapshot, 'id' | 'timestamp'> &
       Partial<Pick<LifeGraphWeatherSnapshot, 'id' | 'timestamp'>>,
   ): Promise<LifeGraphWeatherSnapshot>;
+  getLatestWeatherSnapshot(location?: string): Promise<LifeGraphWeatherSnapshot | null>;
   appendNewsDigest(
     digest: Omit<LifeGraphNewsDigest, 'id' | 'read'> &
       Partial<Pick<LifeGraphNewsDigest, 'id' | 'read'>>,
   ): Promise<LifeGraphNewsDigest>;
+  getLatestNewsDigest(topic?: string): Promise<LifeGraphNewsDigest | null>;
+  searchNotes(query: string, options?: LifeGraphNoteSearchOptions): Promise<LifeGraphNote[]>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
@@ -194,8 +202,10 @@ export interface LifeGraphNote {
 
 export interface LifeGraphResearchResult {
   id: string;
+  threadId: string;
   query: string;
   summary: string;
+  conversationContext?: string[];
   sources?: string[];
   savedAt: string;
 }
@@ -213,6 +223,11 @@ export interface LifeGraphNewsDigest {
   summary: string;
   sources: string[];
   read: boolean;
+}
+
+export interface LifeGraphNoteSearchOptions {
+  sinceDays?: number;
+  limit?: number;
 }
 
 export interface GoalPlan {

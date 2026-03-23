@@ -1,6 +1,8 @@
+import { CacheManager } from '@lifeos/module-cache';
 import { Topics, type BaseEvent } from '@lifeos/event-bus';
 import type { LifeGraphClient } from '@lifeos/life-graph';
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import { TextToSpeech } from '@lifeos/voice-core';
 
 interface VoiceNewsPayload {
   topic?: unknown;
@@ -23,14 +25,26 @@ interface OllamaChatResponse {
 interface Headline {
   title: string;
   link: string;
-  source: string;
+}
+
+interface NewsCacheEntry {
+  title: string;
+  summary: string;
+  sources: string[];
+}
+
+interface SpeechOutput {
+  speak(text: string): Promise<void>;
 }
 
 export interface NewsModuleOptions {
   fetchFn?: typeof fetch;
   now?: () => Date;
+  cache?: CacheManager<NewsCacheEntry>;
+  tts?: SpeechOutput;
 }
 
+const NEWS_CACHE_TTL_MS = 12 * 60 * 60 * 1000;
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const DEFAULT_NEWS_MODEL = 'llama3.1:8b';
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -73,6 +87,10 @@ function clampText(value: string, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
+function cacheKey(topic: string): string {
+  return `news:${topic.toLowerCase()}`;
+}
+
 function decodeXml(value: string): string {
   return value
     .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
@@ -98,7 +116,7 @@ function extractTag(itemXml: string, tag: string): string | null {
   return stripTags(match[1]);
 }
 
-function extractHeadlines(xml: string, sourceFeed: string): Headline[] {
+function extractHeadlines(xml: string): Headline[] {
   const items = xml.match(/<item[\s\S]*?<\/item>/gi) ?? [];
   return items
     .map((itemXml) => {
@@ -110,7 +128,6 @@ function extractHeadlines(xml: string, sourceFeed: string): Headline[] {
       return {
         title: clampText(title, MAX_TITLE_CHARS),
         link,
-        source: sourceFeed,
       };
     })
     .filter((entry): entry is Headline => entry !== null);
@@ -157,6 +174,30 @@ function resolveTopic(payload: VoiceNewsPayload): string {
   return 'top';
 }
 
+async function speakFeedback(
+  tts: SpeechOutput,
+  text: string,
+  context: ModuleRuntimeContext,
+): Promise<void> {
+  try {
+    await tts.speak(text);
+  } catch (error: unknown) {
+    context.log(`[News] TTS degraded: ${normalizeErrorMessage(error)}`);
+  }
+}
+
+async function publishSafe(
+  context: ModuleRuntimeContext,
+  topic: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await context.publish(topic, data, 'news-module');
+  } catch (error: unknown) {
+    context.log(`[News] publish degraded (${topic}): ${normalizeErrorMessage(error)}`);
+  }
+}
+
 async function fetchFeedXml(
   url: string,
   context: ModuleRuntimeContext,
@@ -190,7 +231,7 @@ async function collectHeadlines(
   for (const feed of feeds) {
     try {
       const xml = await fetchFeedXml(feed, context, fetchFn);
-      const headlines = extractHeadlines(xml, feed);
+      const headlines = extractHeadlines(xml);
       for (const entry of headlines) {
         aggregated.push(entry);
         if (aggregated.length >= MAX_HEADLINES) {
@@ -281,53 +322,6 @@ async function summarizeHeadlines(
   }
 }
 
-async function handleNews(
-  payload: VoiceNewsPayload,
-  context: ModuleRuntimeContext,
-  fetchFn: typeof fetch,
-  now: () => Date,
-): Promise<void> {
-  const topic = resolveTopic(payload);
-  let summary = '';
-  let sources: string[] = [];
-  let degraded = false;
-
-  try {
-    const headlines = await collectHeadlines(context, fetchFn);
-    summary = await summarizeHeadlines(topic, headlines, context, fetchFn);
-    sources = headlines.map((entry) => entry.link).slice(0, MAX_SOURCE_LINKS);
-  } catch (error: unknown) {
-    degraded = true;
-    context.log(`[News] fetch degraded: ${normalizeErrorMessage(error)}`);
-    summary = clampText(
-      `News fetch is temporarily unavailable. Ask again shortly for a ${topic} update.`,
-      MAX_SUMMARY_CHARS,
-    );
-    sources = ['local-fallback'];
-  }
-
-  const client = createClient(context);
-  const saved = await client.appendNewsDigest({
-    title: clampText(`Top ${topic} news`, MAX_TITLE_CHARS),
-    summary,
-    sources,
-    read: false,
-  });
-
-  await context.publish(
-    Topics.lifeos.newsDigestReady,
-    {
-      id: saved.id,
-      title: saved.title,
-      summary: saved.summary,
-      sourceCount: saved.sources.length,
-      createdAt: now().toISOString(),
-      degraded,
-    },
-    'news-module',
-  );
-}
-
 function toVoicePayload(event: BaseEvent<Record<string, unknown>>): VoiceNewsPayload {
   return {
     topic: event.data.topic,
@@ -353,9 +347,111 @@ function toAgentPayload(event: BaseEvent<AgentWorkPayload>): VoiceNewsPayload | 
   };
 }
 
+async function loadFallbackDigest(
+  client: LifeGraphClient,
+  cache: CacheManager<NewsCacheEntry>,
+  topic: string,
+  context: ModuleRuntimeContext,
+): Promise<NewsCacheEntry | null> {
+  const cached = cache.get(cacheKey(topic));
+  if (cached) {
+    return cached;
+  }
+
+  const queryCandidates: Array<string | undefined> = [topic, undefined];
+  for (const candidate of queryCandidates) {
+    try {
+      const latest = await client.getLatestNewsDigest(candidate);
+      if (!latest) {
+        continue;
+      }
+      const fallback = {
+        title: latest.title,
+        summary: latest.summary,
+        sources: latest.sources,
+      };
+      cache.set(cacheKey(topic), fallback, NEWS_CACHE_TTL_MS);
+      return fallback;
+    } catch (error: unknown) {
+      context.log(
+        `[News] fallback digest lookup degraded (${candidate ?? 'latest'}): ${normalizeErrorMessage(error)}`,
+      );
+    }
+  }
+
+  return null;
+}
+
 export function createNewsModule(options: NewsModuleOptions = {}): LifeOSModule {
   const fetchFn = options.fetchFn ?? fetch;
   const now = options.now ?? (() => new Date());
+  const cache = options.cache ?? new CacheManager<NewsCacheEntry>();
+  const tts = options.tts ?? new TextToSpeech();
+
+  async function handleNews(
+    payload: VoiceNewsPayload,
+    context: ModuleRuntimeContext,
+  ): Promise<void> {
+    const topic = resolveTopic(payload);
+    const client = createClient(context);
+
+    try {
+      const headlines = await collectHeadlines(context, fetchFn);
+      const summary = await summarizeHeadlines(topic, headlines, context, fetchFn);
+      const sources = headlines.map((entry) => entry.link).slice(0, MAX_SOURCE_LINKS);
+      const title = clampText(`Top ${topic} news`, MAX_TITLE_CHARS);
+      const saved = await client.appendNewsDigest({
+        title,
+        summary,
+        sources,
+        read: false,
+      });
+      cache.set(
+        cacheKey(topic),
+        { title: saved.title, summary: saved.summary, sources: saved.sources },
+        NEWS_CACHE_TTL_MS,
+      );
+      await publishSafe(context, Topics.lifeos.newsDigestReady, {
+        id: saved.id,
+        title: saved.title,
+        summary: saved.summary,
+        sourceCount: saved.sources.length,
+        createdAt: now().toISOString(),
+        degraded: false,
+      });
+      await speakFeedback(tts, `Done. ${saved.summary}`, context);
+      return;
+    } catch (error: unknown) {
+      context.log(`[News] fetch degraded: ${normalizeErrorMessage(error)}`);
+    }
+
+    const fallback = await loadFallbackDigest(client, cache, topic, context);
+    if (!fallback) {
+      const summary = `No internet. I do not have a cached ${topic} digest yet.`;
+      await publishSafe(context, Topics.lifeos.newsDigestReady, {
+        title: `Top ${topic} news`,
+        summary,
+        sourceCount: 0,
+        createdAt: now().toISOString(),
+        degraded: true,
+      });
+      await speakFeedback(tts, `Done. ${summary}`, context);
+      return;
+    }
+
+    await publishSafe(context, Topics.lifeos.newsDigestReady, {
+      title: fallback.title,
+      summary: fallback.summary,
+      sourceCount: fallback.sources.length,
+      createdAt: now().toISOString(),
+      degraded: true,
+    });
+    await speakFeedback(
+      tts,
+      `Done. No internet. Here's the last summary I have: ${fallback.summary}`,
+      context,
+    );
+  }
 
   return {
     id: 'news',
@@ -364,7 +460,7 @@ export function createNewsModule(options: NewsModuleOptions = {}): LifeOSModule 
         Topics.lifeos.voiceIntentNews,
         async (event) => {
           try {
-            await handleNews(toVoicePayload(event), context, fetchFn, now);
+            await handleNews(toVoicePayload(event), context);
           } catch (error: unknown) {
             context.log(`[News] voice intent degraded: ${normalizeErrorMessage(error)}`);
           }
@@ -377,7 +473,7 @@ export function createNewsModule(options: NewsModuleOptions = {}): LifeOSModule 
           return;
         }
         try {
-          await handleNews(payload, context, fetchFn, now);
+          await handleNews(payload, context);
         } catch (error: unknown) {
           context.log(`[News] agent work degraded: ${normalizeErrorMessage(error)}`);
         }

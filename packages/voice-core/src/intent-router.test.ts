@@ -233,6 +233,50 @@ test('news intent publishes dedicated news topic', async () => {
   ]);
 });
 
+test('note search intent publishes dedicated note search topic', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'note_search',
+      payload: { query: 'team updates', sinceDays: 7 },
+    }),
+  });
+
+  const outcome = await router.handleCommand('what did I note about team updates last week');
+  assert.equal(outcome.handled, true);
+  const searchEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentNoteSearch,
+  );
+  assert.ok(searchEvent);
+  assert.equal(searchEvent?.data.query, 'team updates');
+  assert.equal(searchEvent?.data.sinceDays, 7);
+});
+
+test('research follow-up phrases fall back to research intent when classifier fails', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('tell me more');
+  assert.equal(outcome.handled, true);
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentResearch,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
+});
+
 test('classifier failures fall back to heuristic task parsing', async () => {
   const createNodeCalls: Array<Record<string, unknown>> = [];
   const router = new IntentRouter({

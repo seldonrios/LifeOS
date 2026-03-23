@@ -206,6 +206,8 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
+  packages/module-cache: {}
+
   packages/module-loader:
     dependencies:
       '@lifeos/event-bus':
@@ -223,9 +225,15 @@ importers:
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
+      '@lifeos/module-cache':
+        specifier: workspace:*
+        version: link:../module-cache
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../voice-core
 
   packages/notes-module:
     dependencies:
@@ -238,6 +246,9 @@ importers:
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../voice-core
 
   packages/observability: {}
 
@@ -285,6 +296,9 @@ importers:
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../voice-core
 
   packages/scheduler-module:
     dependencies:
@@ -375,9 +389,15 @@ importers:
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
+      '@lifeos/module-cache':
+        specifier: workspace:*
+        version: link:../module-cache
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../voice-core
 
 packages:
 

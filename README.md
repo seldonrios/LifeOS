@@ -87,6 +87,7 @@ pnpm lifeos voice start
 # "Hey LifeOS, what's the weather in London this weekend?"
 # "Hey LifeOS, give me top tech news today"
 pnpm lifeos voice demo --scenario research
+pnpm lifeos voice demo --scenario weather
 ```
 
 ## ⚙️ Configuration

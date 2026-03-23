@@ -1,6 +1,8 @@
+import { CacheManager } from '@lifeos/module-cache';
 import { Topics, type BaseEvent } from '@lifeos/event-bus';
 import type { LifeGraphClient } from '@lifeos/life-graph';
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import { TextToSpeech } from '@lifeos/voice-core';
 
 interface VoiceWeatherPayload {
   location?: unknown;
@@ -36,15 +38,27 @@ interface ForecastResponse {
     temperature_2m_min?: number[];
     weather_code?: number[];
     weathercode?: number[];
-    time?: string[];
   };
+}
+
+interface WeatherCacheEntry {
+  location: string;
+  forecast: string;
+  timestamp: string;
+}
+
+interface SpeechOutput {
+  speak(text: string): Promise<void>;
 }
 
 export interface WeatherModuleOptions {
   fetchFn?: typeof fetch;
   now?: () => Date;
+  cache?: CacheManager<WeatherCacheEntry>;
+  tts?: SpeechOutput;
 }
 
+const WEATHER_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const DEFAULT_TIMEOUT_MS = 10_000;
 const MAX_LOCATION_CHARS = 120;
 const MAX_FORECAST_CHARS = 1000;
@@ -122,6 +136,34 @@ function resolveLocation(payload: VoiceWeatherPayload): string {
   return 'current';
 }
 
+function cacheKey(location: string): string {
+  return `weather:${location.toLowerCase()}`;
+}
+
+async function speakFeedback(
+  tts: SpeechOutput,
+  text: string,
+  context: ModuleRuntimeContext,
+): Promise<void> {
+  try {
+    await tts.speak(text);
+  } catch (error: unknown) {
+    context.log(`[Weather] TTS degraded: ${normalizeErrorMessage(error)}`);
+  }
+}
+
+async function publishSafe(
+  context: ModuleRuntimeContext,
+  topic: string,
+  data: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await context.publish(topic, data, 'weather-module');
+  } catch (error: unknown) {
+    context.log(`[Weather] publish degraded (${topic}): ${normalizeErrorMessage(error)}`);
+  }
+}
+
 async function fetchJson<T>(
   url: string,
   context: ModuleRuntimeContext,
@@ -192,54 +234,16 @@ function toForecastSummary(locationLabel: string, forecast: ForecastResponse): s
   const dailyCode = toDailyCode(forecast.daily);
 
   const nowPart = Number.isFinite(currentTemp)
-    ? `Currently ${Math.round(currentTemp as number)}°C and ${weatherCodeLabel(currentCode)}`
-    : `Current conditions are ${weatherCodeLabel(currentCode)}`;
+    ? `currently ${Math.round(currentTemp as number)} deg C and ${weatherCodeLabel(currentCode)}`
+    : `current conditions are ${weatherCodeLabel(currentCode)}`;
   const windPart = Number.isFinite(windSpeed)
     ? `, wind ${Math.round(windSpeed as number)} km/h`
     : '';
   const dailyPart =
     Number.isFinite(min) && Number.isFinite(max)
-      ? ` Next day ${Math.round(min as number)}° to ${Math.round(max as number)}° with ${weatherCodeLabel(dailyCode)}.`
+      ? ` Next day ${Math.round(min as number)} to ${Math.round(max as number)} deg C with ${weatherCodeLabel(dailyCode)}.`
       : '.';
   return clampText(`${locationLabel}: ${nowPart}${windPart}.${dailyPart}`, MAX_FORECAST_CHARS);
-}
-
-async function captureWeather(
-  payload: VoiceWeatherPayload,
-  context: ModuleRuntimeContext,
-  fetchFn: typeof fetch,
-  now: () => Date,
-): Promise<void> {
-  const location = resolveLocation(payload);
-  const coords = await resolveCoordinates(location, context, fetchFn);
-  const forecastUrl =
-    'https://api.open-meteo.com/v1/forecast' +
-    `?latitude=${coords.latitude}` +
-    `&longitude=${coords.longitude}` +
-    '&current=temperature_2m,weather_code,wind_speed_10m' +
-    '&daily=temperature_2m_max,temperature_2m_min,weather_code' +
-    '&forecast_days=2&timezone=auto';
-  const forecast = await fetchJson<ForecastResponse>(forecastUrl, context, fetchFn);
-  const summary = toForecastSummary(coords.label, forecast);
-
-  const client = createClient(context);
-  const saved = await client.appendWeatherSnapshot({
-    location: coords.label,
-    forecast: summary,
-    timestamp: now().toISOString(),
-  });
-
-  await context.publish(
-    Topics.lifeos.weatherSnapshotCaptured,
-    {
-      id: saved.id,
-      location: saved.location,
-      forecast: saved.forecast,
-      timestamp: saved.timestamp,
-    },
-    'weather-module',
-  );
-  context.log(`[Weather] Captured forecast for ${saved.location}`);
 }
 
 function toVoicePayload(event: BaseEvent<Record<string, unknown>>): VoiceWeatherPayload {
@@ -265,44 +269,115 @@ function toAgentPayload(event: BaseEvent<AgentWorkPayload>): VoiceWeatherPayload
   };
 }
 
-async function handlePayload(
-  payload: VoiceWeatherPayload,
+async function loadFallbackWeather(
+  client: LifeGraphClient,
+  cache: CacheManager<WeatherCacheEntry>,
+  location: string,
   context: ModuleRuntimeContext,
-  fetchFn: typeof fetch,
-  now: () => Date,
-): Promise<void> {
-  try {
-    await captureWeather(payload, context, fetchFn, now);
-  } catch (error: unknown) {
-    context.log(`[Weather] live fetch degraded: ${normalizeErrorMessage(error)}`);
-    const location = resolveLocation(payload);
-    const forecast = clampText(
-      `Weather lookup is temporarily unavailable for ${location}.`,
-      MAX_FORECAST_CHARS,
-    );
-    const client = createClient(context);
-    const saved = await client.appendWeatherSnapshot({
-      location,
-      forecast,
-      timestamp: now().toISOString(),
-    });
-    await context.publish(
-      Topics.lifeos.weatherSnapshotCaptured,
-      {
-        id: saved.id,
-        location: saved.location,
-        forecast: saved.forecast,
-        timestamp: saved.timestamp,
-        degraded: true,
-      },
-      'weather-module',
-    );
+): Promise<WeatherCacheEntry | null> {
+  const cached = cache.get(cacheKey(location));
+  if (cached) {
+    return cached;
   }
+
+  const queryCandidates: Array<string | undefined> = [location, undefined];
+  for (const candidate of queryCandidates) {
+    try {
+      const latest = await client.getLatestWeatherSnapshot(candidate);
+      if (!latest) {
+        continue;
+      }
+      const fallback = {
+        location: latest.location,
+        forecast: latest.forecast,
+        timestamp: latest.timestamp,
+      };
+      cache.set(cacheKey(latest.location), fallback, WEATHER_CACHE_TTL_MS);
+      if (candidate && cacheKey(candidate) !== cacheKey(latest.location)) {
+        cache.set(cacheKey(candidate), fallback, WEATHER_CACHE_TTL_MS);
+      }
+      return fallback;
+    } catch (error: unknown) {
+      context.log(
+        `[Weather] fallback snapshot lookup degraded (${candidate ?? 'latest'}): ${normalizeErrorMessage(error)}`,
+      );
+    }
+  }
+
+  return null;
 }
 
 export function createWeatherModule(options: WeatherModuleOptions = {}): LifeOSModule {
   const fetchFn = options.fetchFn ?? fetch;
   const now = options.now ?? (() => new Date());
+  const cache = options.cache ?? new CacheManager<WeatherCacheEntry>();
+  const tts = options.tts ?? new TextToSpeech();
+
+  async function handlePayload(
+    payload: VoiceWeatherPayload,
+    context: ModuleRuntimeContext,
+  ): Promise<void> {
+    const location = resolveLocation(payload);
+    const client = createClient(context);
+    try {
+      const coords = await resolveCoordinates(location, context, fetchFn);
+      const forecastUrl =
+        'https://api.open-meteo.com/v1/forecast' +
+        `?latitude=${coords.latitude}` +
+        `&longitude=${coords.longitude}` +
+        '&current=temperature_2m,weather_code,wind_speed_10m' +
+        '&daily=temperature_2m_max,temperature_2m_min,weather_code' +
+        '&forecast_days=2&timezone=auto';
+      const forecast = await fetchJson<ForecastResponse>(forecastUrl, context, fetchFn);
+      const summary = toForecastSummary(coords.label, forecast);
+
+      const saved = await client.appendWeatherSnapshot({
+        location: coords.label,
+        forecast: summary,
+        timestamp: now().toISOString(),
+      });
+      cache.set(cacheKey(saved.location), saved, WEATHER_CACHE_TTL_MS);
+      if (cacheKey(location) !== cacheKey(saved.location)) {
+        cache.set(cacheKey(location), saved, WEATHER_CACHE_TTL_MS);
+      }
+      await publishSafe(context, Topics.lifeos.weatherSnapshotCaptured, {
+        id: saved.id,
+        location: saved.location,
+        forecast: saved.forecast,
+        timestamp: saved.timestamp,
+      });
+      await speakFeedback(tts, `Done. Forecast for ${saved.location}: ${saved.forecast}`, context);
+      context.log(`[Weather] Captured forecast for ${saved.location}`);
+      return;
+    } catch (error: unknown) {
+      context.log(`[Weather] live fetch degraded: ${normalizeErrorMessage(error)}`);
+    }
+
+    const fallback = await loadFallbackWeather(client, cache, location, context);
+    if (!fallback) {
+      const message = `Offline mode. No cached forecast is available for ${location}.`;
+      await publishSafe(context, Topics.lifeos.weatherSnapshotCaptured, {
+        location,
+        forecast: message,
+        timestamp: now().toISOString(),
+        degraded: true,
+      });
+      await speakFeedback(tts, `Done. ${message}`, context);
+      return;
+    }
+
+    await publishSafe(context, Topics.lifeos.weatherSnapshotCaptured, {
+      location: fallback.location,
+      forecast: fallback.forecast,
+      timestamp: fallback.timestamp,
+      degraded: true,
+    });
+    await speakFeedback(
+      tts,
+      `Done. Offline mode. Last known forecast: ${fallback.forecast}`,
+      context,
+    );
+  }
 
   return {
     id: 'weather',
@@ -310,7 +385,11 @@ export function createWeatherModule(options: WeatherModuleOptions = {}): LifeOSM
       await context.subscribe<Record<string, unknown>>(
         Topics.lifeos.voiceIntentWeather,
         async (event) => {
-          await handlePayload(toVoicePayload(event), context, fetchFn, now);
+          try {
+            await handlePayload(toVoicePayload(event), context);
+          } catch (error: unknown) {
+            context.log(`[Weather] voice intent degraded: ${normalizeErrorMessage(error)}`);
+          }
         },
       );
       await context.subscribe<AgentWorkPayload>(Topics.agent.workRequested, async (event) => {
@@ -318,7 +397,11 @@ export function createWeatherModule(options: WeatherModuleOptions = {}): LifeOSM
         if (!payload) {
           return;
         }
-        await handlePayload(payload, context, fetchFn, now);
+        try {
+          await handlePayload(payload, context);
+        } catch (error: unknown) {
+          context.log(`[Weather] agent work degraded: ${normalizeErrorMessage(error)}`);
+        }
       });
     },
   };

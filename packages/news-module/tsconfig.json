@@ -14,7 +14,13 @@
       "path": "../life-graph"
     },
     {
+      "path": "../module-cache"
+    },
+    {
       "path": "../module-loader"
+    },
+    {
+      "path": "../voice-core"
     }
   ]
 }

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
 import type { GoalPlan, LifeGraphDocument, LifeGraphTask } from './types';
@@ -49,8 +50,13 @@ export const NoteSchema = z
 export const ResearchResultSchema = z
   .object({
     id: z.string().uuid(),
+    threadId: z
+      .string()
+      .uuid()
+      .default(() => randomUUID()),
     query: z.string().trim().min(1),
     summary: z.string().trim().min(1),
+    conversationContext: z.array(z.string().trim().min(1)).default([]),
     sources: z.array(z.string().trim().min(1)).optional(),
     savedAt: IsoDateTimeSchema,
   })

@@ -102,6 +102,7 @@ test('append note/research/weather/news methods persist normalized records', asy
     query: 'quantum computing breakthroughs',
     summary: 'Recent progress includes improved error correction schemes.',
     sources: ['local-notes'],
+    conversationContext: ['Initial query'],
   });
   const weather = await client.appendWeatherSnapshot({
     location: 'Boston',
@@ -116,6 +117,7 @@ test('append note/research/weather/news methods persist normalized records', asy
   assert.ok(note.id);
   assert.ok(note.createdAt);
   assert.ok(research.id);
+  assert.ok(research.threadId);
   assert.ok(research.savedAt);
   assert.ok(weather.id);
   assert.ok(weather.timestamp);
@@ -125,8 +127,55 @@ test('append note/research/weather/news methods persist normalized records', asy
   const graph = await loadGraph(graphPath);
   assert.equal(graph.notes?.length, 1);
   assert.equal(graph.researchResults?.length, 1);
+  assert.equal(graph.researchResults?.[0]?.conversationContext?.[0], 'Initial query');
   assert.equal(graph.weatherSnapshots?.length, 1);
   assert.equal(graph.newsDigests?.length, 1);
+});
+
+test('research thread lookup and notes/weather/news helper queries work', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  const threadId = '3f6d4a15-1175-4dda-a56a-3cafb63c4f53';
+  await client.saveResearchResult({
+    threadId,
+    query: 'quantum update',
+    summary: 'First summary',
+    conversationContext: ['q1'],
+  });
+  await client.saveResearchResult({
+    threadId,
+    query: 'tell me more',
+    summary: 'Second summary',
+    conversationContext: ['q1', 'q2'],
+  });
+  const latestThread = await client.getResearchThread(threadId);
+  assert.equal(latestThread?.summary, 'Second summary');
+
+  await client.appendNote({
+    title: 'Team note',
+    content: 'Team prefers async updates on Fridays',
+    tags: ['team', 'process'],
+    voiceTriggered: true,
+  });
+  const matchingNotes = await client.searchNotes('team async', { sinceDays: 7, limit: 5 });
+  assert.equal(matchingNotes.length, 1);
+
+  await client.appendWeatherSnapshot({
+    location: 'Boston',
+    forecast: 'Cool and cloudy',
+  });
+  await client.appendNewsDigest({
+    title: 'Top tech news',
+    summary: 'Headline summary',
+    sources: ['https://example.com/1'],
+  });
+
+  const latestWeather = await client.getLatestWeatherSnapshot('boston');
+  const latestNews = await client.getLatestNewsDigest('tech');
+  assert.equal(latestWeather?.location, 'Boston');
+  assert.equal(latestNews?.title, 'Top tech news');
 });
 
 test('query supports plans/tasks with filters and limits', async () => {
