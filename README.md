@@ -1,5 +1,11 @@
 # LifeOS
 
+![LifeOS v0.1 Demo](https://i.imgur.com/rRsLzWg.gif)
+
+**LifeOS** — Sovereign Personal AI Node  
+
+Your life. Your compute. Your rules.
+
 > Join us in growing decentralized AI for life improvements.
 >
 > **LifeOS** is a docs-first, open-source vision for a personal AI operating system built around **user sovereignty**, **local-first intelligence**, **modular capabilities**, and **privacy-preserving collaboration**.
@@ -95,6 +101,7 @@ Environment overrides:
 - `LIFEOS_NATS_URL` sets the event bus endpoint (default `nats://127.0.0.1:4222`)
 
 If NATS is unavailable, LifeOS now falls back to an in-memory event bus so modules still react locally.
+
 
 Optional Docker shortcut for local Ollama + NATS:
 
