@@ -16,6 +16,22 @@ export const LifeGraphTaskSchema = z
     status: z.enum(['todo', 'in-progress', 'done']).default('todo'),
     priority: z.number().int().min(1).max(5).default(3),
     dueDate: DateOnlySchema.optional(),
+    voiceTriggered: z.boolean().optional(),
+    suggestedReschedule: IsoDateTimeSchema.optional(),
+  })
+  .strict();
+
+export const EnhancedTaskSchema = LifeGraphTaskSchema;
+
+export const CalendarEventSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1),
+    start: IsoDateTimeSchema,
+    end: IsoDateTimeSchema,
+    attendees: z.array(z.string().trim().min(1)).optional(),
+    location: z.string().trim().min(1).optional(),
+    status: z.enum(['confirmed', 'tentative', 'cancelled']).default('confirmed'),
   })
   .strict();
 
@@ -35,8 +51,11 @@ export const LifeGraphDocumentSchema = z
     version: z.literal(LIFE_GRAPH_VERSION),
     updatedAt: IsoDateTimeSchema,
     plans: z.array(GoalPlanSchema),
+    calendarEvents: z.array(CalendarEventSchema).default([]),
   })
   .strict();
+
+export const LifeGraphSchema = LifeGraphDocumentSchema;
 
 export const LegacyGoalPlanRecordSchema = z
   .object({

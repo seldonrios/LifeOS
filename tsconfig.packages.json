@@ -17,6 +17,12 @@
       "path": "./packages/module-loader"
     },
     {
+      "path": "./packages/calendar-module"
+    },
+    {
+      "path": "./packages/scheduler-module"
+    },
+    {
       "path": "./packages/reminder-module"
     },
     {

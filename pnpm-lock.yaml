@@ -78,6 +78,18 @@ importers:
         specifier: workspace:*
         version: link:../security
 
+  packages/calendar-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+
   packages/capability-registry:
     dependencies:
       '@lifeos/event-bus':
@@ -89,6 +101,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@lifeos/calendar-module':
+        specifier: workspace:*
+        version: link:../calendar-module
       '@lifeos/event-bus':
         specifier: workspace:*
         version: link:../event-bus
@@ -104,6 +119,9 @@ importers:
       '@lifeos/reminder-module':
         specifier: workspace:*
         version: link:../reminder-module
+      '@lifeos/scheduler-module':
+        specifier: workspace:*
+        version: link:../scheduler-module
       '@lifeos/voice-core':
         specifier: workspace:*
         version: link:../voice-core
@@ -209,6 +227,18 @@ importers:
         version: link:../life-graph
 
   packages/reminder-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+
+  packages/scheduler-module:
     dependencies:
       '@lifeos/event-bus':
         specifier: workspace:*

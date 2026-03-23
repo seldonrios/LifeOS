@@ -43,6 +43,7 @@ function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
   return {
     version: LIFE_GRAPH_VERSION,
     plans: [],
+    calendarEvents: [],
     updatedAt: now.toISOString(),
   };
 }
@@ -83,6 +84,23 @@ function toDateOnlyOrUndefined(value: unknown): string | undefined {
   return /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : undefined;
 }
 
+function toIsoDateTimeOrUndefined(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+
+  return parsed.toISOString();
+}
+
+function toBooleanOrUndefined(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
@@ -107,6 +125,14 @@ function normalizeTaskArray(plan: GoalPlanSource): LifeGraphTask[] {
 
     if (dueDate) {
       normalizedTask.dueDate = dueDate;
+    }
+    const voiceTriggered = toBooleanOrUndefined(taskData.voiceTriggered);
+    if (voiceTriggered !== undefined) {
+      normalizedTask.voiceTriggered = voiceTriggered;
+    }
+    const suggestedReschedule = toIsoDateTimeOrUndefined(taskData.suggestedReschedule);
+    if (suggestedReschedule) {
+      normalizedTask.suggestedReschedule = suggestedReschedule;
     }
 
     return normalizedTask;
@@ -157,6 +183,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       version: LIFE_GRAPH_VERSION,
       updatedAt: versionedGoals.data.updatedAt,
       plans: migrateLegacyGoals(versionedGoals.data.goals),
+      calendarEvents: [],
     };
   }
 
@@ -166,6 +193,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       version: LIFE_GRAPH_VERSION,
       updatedAt: now.toISOString(),
       plans: migrateLegacyGoals(legacyGoals.data.goals),
+      calendarEvents: [],
     };
   }
 
@@ -226,6 +254,7 @@ export class LifeGraphManager {
       ...graph,
       updatedAt: nowIso,
       plans: [...graph.plans, normalizedPlan],
+      calendarEvents: graph.calendarEvents ?? [],
     };
 
     await this.save(nextGraph, graphPath);

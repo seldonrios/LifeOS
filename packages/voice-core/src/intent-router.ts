@@ -6,6 +6,11 @@ import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph'
 const MAX_TASK_TITLE_CHARS = 160;
 const MAX_COMMAND_TEXT_CHARS = 600;
 const MAX_DESCRIPTION_CHARS = 1200;
+const MAX_CALENDAR_TITLE_CHARS = 200;
+const MAX_LOCATION_CHARS = 200;
+const MAX_ATTENDEES = 20;
+const MAX_ATTENDEE_CHARS = 120;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type ClassifiedIntent =
   | 'task_add'
@@ -76,6 +81,46 @@ function getString(value: unknown): string | null {
 
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function getStringArray(value: unknown): string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+
+  const normalized = value
+    .map((entry) => getString(entry))
+    .filter((entry): entry is string => entry !== null);
+  return normalized.length > 0 ? normalized.slice(0, MAX_ATTENDEES) : null;
+}
+
+function parseDateTime(value: unknown): Date | null {
+  const candidate = getString(value);
+  if (!candidate) {
+    return null;
+  }
+
+  const parsed = new Date(candidate);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return parsed;
+}
+
+function normalizeCalendarStatus(value: unknown): 'confirmed' | 'tentative' | 'cancelled' {
+  if (value === 'tentative' || value === 'cancelled') {
+    return value;
+  }
+  return 'confirmed';
+}
+
+function normalizeDueDate(value: unknown): string | null {
+  const candidate = getString(value);
+  if (!candidate) {
+    return null;
+  }
+  return DATE_ONLY_PATTERN.test(candidate) ? candidate : null;
 }
 
 function extractTaskTitle(text: string): string | null {
@@ -339,8 +384,9 @@ export class IntentRouter {
       extractTaskTitle(text) ??
       sentenceCase(text);
     const taskTitle = clampText(taskTitleRaw, MAX_TASK_TITLE_CHARS) || 'Untitled task';
+    const dueDate = normalizeDueDate(payload.dueDate) ?? normalizeDueDate(payload.date);
 
-    return this.handleTaskIntent(text, taskTitle);
+    return this.handleTaskIntent(text, taskTitle, dueDate);
   }
 
   private async handleNextActionsIntent(text: string): Promise<IntentOutcome> {
@@ -383,6 +429,10 @@ export class IntentRouter {
     intent: 'calendar' | 'weather' | 'research',
     payload: Record<string, unknown>,
   ): Promise<IntentOutcome> {
+    if (intent === 'calendar') {
+      return this.handleCalendarIntent(text, payload);
+    }
+
     await this.publishSafe(Topics.agent.workRequested, {
       utterance: text,
       intent,
@@ -404,6 +454,64 @@ export class IntentRouter {
     };
   }
 
+  private async handleCalendarIntent(
+    text: string,
+    payload: Record<string, unknown>,
+  ): Promise<IntentOutcome> {
+    const now = this.now();
+    const start = parseDateTime(payload.start) ?? new Date(now.getTime() + 60 * 60 * 1000);
+    const requestedEnd = parseDateTime(payload.end);
+    const end =
+      requestedEnd && requestedEnd.getTime() > start.getTime()
+        ? requestedEnd
+        : new Date(start.getTime() + 60 * 60 * 1000);
+    const title =
+      clampText(
+        getString(payload.title) ?? getString(payload.name) ?? sentenceCase(text),
+        MAX_CALENDAR_TITLE_CHARS,
+      ) || 'Calendar event';
+    const calendarPayload: Record<string, unknown> = {
+      id: getString(payload.id) ?? randomUUID(),
+      title,
+      start: start.toISOString(),
+      end: end.toISOString(),
+      status: normalizeCalendarStatus(payload.status),
+      requestedAt: now.toISOString(),
+      utterance: text,
+    };
+    const attendees = getStringArray(payload.attendees)?.map((item) =>
+      clampText(item, MAX_ATTENDEE_CHARS),
+    );
+    if (attendees) {
+      calendarPayload.attendees = attendees;
+    }
+    const location = getString(payload.location);
+    if (location) {
+      calendarPayload.location = clampText(location, MAX_LOCATION_CHARS);
+    }
+
+    await this.publishSafe(Topics.lifeos.voiceIntentCalendarAdd, calendarPayload);
+    await this.publishSafe(Topics.agent.workRequested, {
+      utterance: text,
+      intent: 'calendar',
+      payload: calendarPayload,
+      requestedAt: now.toISOString(),
+      origin: 'voice-core',
+    });
+    const responseText = `Added "${title}" to your calendar.`;
+    await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+      action: 'agent_work_requested',
+      text,
+      responseText,
+      intent: 'calendar',
+    });
+    return {
+      handled: true,
+      action: 'agent_work_requested',
+      responseText,
+    };
+  }
+
   private async handleUnknownIntent(text: string): Promise<IntentOutcome> {
     await this.publishSafe(Topics.lifeos.voiceCommandUnhandled, {
       text,
@@ -416,26 +524,34 @@ export class IntentRouter {
     };
   }
 
-  private async handleTaskIntent(text: string, taskTitle: string): Promise<IntentOutcome> {
+  private async handleTaskIntent(
+    text: string,
+    taskTitle: string,
+    dueDate?: string | null,
+  ): Promise<IntentOutcome> {
     const createdAt = this.now().toISOString();
     const planId = `goal_${randomUUID()}`;
     const taskId = `task_${randomUUID()}`;
     const planTitle = `Voice task: ${clampText(taskTitle, MAX_TASK_TITLE_CHARS) || 'Untitled task'}`;
     const trimmedCommand = clampText(text, MAX_DESCRIPTION_CHARS);
 
+    const task: Record<string, unknown> = {
+      id: taskId,
+      title: clampText(taskTitle, MAX_TASK_TITLE_CHARS) || 'Untitled task',
+      status: 'todo',
+      priority: 4,
+      voiceTriggered: true,
+    };
+    if (dueDate) {
+      task.dueDate = dueDate;
+    }
+
     await this.client.createNode('plan', {
       id: planId,
       createdAt,
       title: planTitle,
       description: `Created from voice command: "${trimmedCommand}"`,
-      tasks: [
-        {
-          id: taskId,
-          title: clampText(taskTitle, MAX_TASK_TITLE_CHARS) || 'Untitled task',
-          status: 'todo',
-          priority: 4,
-        },
-      ],
+      tasks: [task],
     });
 
     await this.publishSafe(Topics.plan.created, {
@@ -456,6 +572,14 @@ export class IntentRouter {
       text,
       planId,
       taskId,
+    });
+    await this.publishSafe(Topics.lifeos.voiceIntentTaskAdd, {
+      utterance: text,
+      taskTitle,
+      planId,
+      taskId,
+      requestedAt: createdAt,
+      ...(dueDate ? { dueDate } : {}),
     });
 
     return {

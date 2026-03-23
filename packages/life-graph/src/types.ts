@@ -153,6 +153,18 @@ export interface LifeGraphTask {
   status: 'todo' | 'in-progress' | 'done';
   priority: number;
   dueDate?: string;
+  voiceTriggered?: boolean;
+  suggestedReschedule?: string;
+}
+
+export interface LifeGraphCalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  attendees?: string[];
+  location?: string;
+  status: 'confirmed' | 'tentative' | 'cancelled';
 }
 
 export interface GoalPlan {
@@ -178,6 +190,7 @@ export interface LifeGraphDocument {
   version: '0.1.0';
   updatedAt: string;
   plans: GoalPlan[];
+  calendarEvents?: LifeGraphCalendarEvent[];
 }
 
 export interface LifeGraphSummary {

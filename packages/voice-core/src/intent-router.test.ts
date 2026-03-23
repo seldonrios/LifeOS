@@ -32,9 +32,37 @@ test('task intent creates a plan and emits task-scheduled events', async () => {
   assert.equal(outcome.action, 'task_added');
   assert.equal(createNodeCalls.length, 1);
   assert.match(String(createNodeCalls[0]?.title), /Voice task:/);
+  const firstTask = (
+    createNodeCalls[0]?.tasks as Array<{ voiceTriggered?: boolean }> | undefined
+  )?.[0];
+  assert.equal(firstTask?.voiceTriggered, true);
   assert.equal(publishCalls[0]?.topic, Topics.plan.created);
   assert.equal(publishCalls[1]?.topic, Topics.task.scheduled);
   assert.equal(publishCalls[2]?.topic, Topics.lifeos.voiceCommandProcessed);
+  assert.equal(publishCalls[3]?.topic, Topics.lifeos.voiceIntentTaskAdd);
+});
+
+test('task intent forwards dueDate to scheduler intent payload', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {
+      async createNode() {
+        return 'goal_1';
+      },
+    } as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'task_add',
+      payload: { title: 'Finish taxes', dueDate: '2026-04-15' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('add a task to finish taxes by 2026-04-15');
+  assert.equal(outcome.handled, true);
+  const taskIntent = publishCalls.find((entry) => entry.topic === Topics.lifeos.voiceIntentTaskAdd);
+  assert.equal(taskIntent?.data.dueDate, '2026-04-15');
 });
 
 test('next-actions intent returns the top next action', async () => {
@@ -121,7 +149,11 @@ test('calendar-style intent publishes agent work request', async () => {
   const outcome = await router.handleCommand('check my calendar for tomorrow');
   assert.equal(outcome.handled, true);
   assert.equal(outcome.action, 'agent_work_requested');
-  assert.deepEqual(publishCalls, [Topics.agent.workRequested, Topics.lifeos.voiceCommandProcessed]);
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentCalendarAdd,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
 });
 
 test('classifier failures fall back to heuristic task parsing', async () => {

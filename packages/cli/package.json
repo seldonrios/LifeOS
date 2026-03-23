@@ -20,11 +20,13 @@
     "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts"
   },
   "dependencies": {
+    "@lifeos/calendar-module": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/module-loader": "workspace:*",
     "@lifeos/reminder-module": "workspace:*",
+    "@lifeos/scheduler-module": "workspace:*",
     "@lifeos/voice-core": "workspace:*",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",

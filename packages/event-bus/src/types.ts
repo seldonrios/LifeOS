@@ -80,5 +80,9 @@ export const Topics = {
     voiceCommandReceived: 'lifeos.voice.command.received',
     voiceCommandProcessed: 'lifeos.voice.command.processed',
     voiceCommandUnhandled: 'lifeos.voice.command.unhandled',
+    voiceIntentCalendarAdd: 'lifeos.voice.intent.calendar.add',
+    voiceIntentTaskAdd: 'lifeos.voice.intent.task.add',
+    calendarEventAdded: 'lifeos.calendar.event.added',
+    taskRescheduleSuggested: 'lifeos.task.reschedule.suggested',
   },
 } as const;

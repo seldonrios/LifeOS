@@ -735,6 +735,19 @@ test('voice consent grants persistent microphone permission', async () => {
   assert.match(stdout.join(''), /Microphone access granted permanently/);
 });
 
+test('voice calendar mode prints activation message', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['voice', 'calendar'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Voice calendar mode active/);
+});
+
 test('voice start surfaces consent guidance when permission is missing', async () => {
   const stderr: string[] = [];
   let closed = 0;

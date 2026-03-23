@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { randomUUID } from 'node:crypto';
+
 import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
@@ -33,7 +34,9 @@ import {
   type InterpretGoalStage,
   type TickResult,
 } from '@lifeos/goal-engine';
+import { calendarModule } from '@lifeos/calendar-module';
 import { reminderModule } from '@lifeos/reminder-module';
+import { schedulerModule } from '@lifeos/scheduler-module';
 import {
   MissingMicrophoneConsentError,
   UnsupportedVoicePlatformError,
@@ -105,7 +108,7 @@ interface ModulesCommandOptions {
 }
 
 interface VoiceCommandOptions {
-  mode: 'start' | 'demo' | 'consent';
+  mode: 'start' | 'demo' | 'consent' | 'calendar';
   text: string;
   graphPath: string;
   verbose: boolean;
@@ -444,7 +447,7 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
 }
 
 function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null {
-  if (action === 'start' || action === 'demo' || action === 'consent') {
+  if (action === 'start' || action === 'demo' || action === 'consent' || action === 'calendar') {
     return action;
   }
 
@@ -469,7 +472,7 @@ function extractGraphPathArg(args: string[]): string | undefined {
 }
 
 function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[] {
-  return dependencies.defaultModules ?? [reminderModule];
+  return dependencies.defaultModules ?? [reminderModule, calendarModule, schedulerModule];
 }
 
 function buildClientOptions(
@@ -1043,6 +1046,11 @@ export async function runVoiceCommand(
       return 0;
     }
 
+    if (options.mode === 'calendar') {
+      writeStdout(chalk.blue('Voice calendar mode active.\n'));
+      return 0;
+    }
+
     voice = createVoiceRuntime(options, dependencies, env, verboseLog, writeStdout);
 
     if (options.mode === 'demo') {
@@ -1428,8 +1436,8 @@ function buildProgram(
 
   program
     .command('voice')
-    .description('Manage voice runtime: start, demo, or consent')
-    .argument('[mode]', 'start | demo | consent', 'start')
+    .description('Manage voice runtime: start, demo, consent, or calendar')
+    .argument('[mode]', 'start | demo | consent | calendar', 'start')
     .option('--text <text>', 'Demo utterance when mode=demo', 'Hey LifeOS, add a task to buy milk')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
@@ -1554,7 +1562,7 @@ async function main(): Promise<void> {
     runtimeLoader = createModuleLoader(loaderOptions);
 
     try {
-      await runtimeLoader.loadMany([reminderModule]);
+      await runtimeLoader.loadMany([reminderModule, calendarModule, schedulerModule]);
     } catch {
       await runtimeLoader.close();
       runtimeLoader = null;

@@ -60,6 +60,33 @@ test('createNode(plan) persists and is visible through loadGraph', async () => {
   assert.equal(graph.plans[0]?.tasks.length, 1);
 });
 
+test('createNode(plan) preserves optional task metadata fields', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.createNode('plan', {
+    title: 'Voice Task Plan',
+    description: 'Created from voice',
+    tasks: [
+      {
+        id: 'task_meta_1',
+        title: 'Finish taxes',
+        status: 'todo',
+        priority: 4,
+        dueDate: '2026-04-15',
+        voiceTriggered: true,
+        suggestedReschedule: '2026-04-16T09:00:00.000Z',
+      },
+    ],
+  });
+
+  const graph = await loadGraph(graphPath);
+  const task = graph.plans[0]?.tasks[0];
+  assert.equal(task?.voiceTriggered, true);
+  assert.equal(task?.suggestedReschedule, '2026-04-16T09:00:00.000Z');
+});
+
 test('query supports plans/tasks with filters and limits', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');
