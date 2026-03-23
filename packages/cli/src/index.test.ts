@@ -716,12 +716,44 @@ test('voice demo runs the voice core against a simulated utterance', async () =>
   assert.match(output, /Added a task to buy milk/);
 });
 
-test('voice start shows active message and waits for signal', async () => {
+test('voice start requires explicit mic-on flag', async () => {
+  const stderr: string[] = [];
+  let factoryCalls = 0;
+
+  const exitCode = await runCli(['voice', 'start'], {
+    createVoiceCore: () => {
+      factoryCalls += 1;
+      return {
+        async start() {
+          return;
+        },
+        async runDemo() {
+          return null;
+        },
+        async close() {
+          return;
+        },
+        getWakePhrase() {
+          return 'Hey LifeOS';
+        },
+      };
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(factoryCalls, 0);
+  assert.match(stderr.join(''), /Re-run with --mic-on/);
+});
+
+test('voice start shows active message and waits for signal when mic-on is set', async () => {
   const stdout: string[] = [];
   let started = 0;
   let closed = 0;
 
-  const exitCode = await runCli(['voice'], {
+  const exitCode = await runCli(['voice', 'start', '--mic-on'], {
     createVoiceCore: () => ({
       async start() {
         started += 1;

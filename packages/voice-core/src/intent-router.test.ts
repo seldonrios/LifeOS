@@ -68,3 +68,36 @@ test('unknown intent publishes unhandled event', async () => {
   assert.equal(outcome.action, 'unhandled');
   assert.deepEqual(publishCalls, [Topics.lifeos.voiceCommandUnhandled]);
 });
+
+test('time intent responds with current timestamp', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    now: () => new Date('2026-03-23T13:45:00.000Z'),
+  });
+
+  const outcome = await router.handleCommand('Hey LifeOS what time is it');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'time_reported');
+  assert.match(outcome.responseText, /2026-03-23T13:45:00.000Z/);
+  assert.equal(publishCalls[0]?.topic, Topics.lifeos.voiceCommandProcessed);
+});
+
+test('calendar-style intent publishes agent work request', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    now: () => new Date('2026-03-23T13:45:00.000Z'),
+  });
+
+  const outcome = await router.handleCommand('check my calendar for tomorrow');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(publishCalls, [Topics.agent.workRequested, Topics.lifeos.voiceCommandProcessed]);
+});

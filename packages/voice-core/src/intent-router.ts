@@ -5,7 +5,7 @@ import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph'
 
 export interface IntentOutcome {
   handled: boolean;
-  action: 'task_added' | 'next_actions' | 'unhandled';
+  action: 'task_added' | 'next_actions' | 'time_reported' | 'agent_work_requested' | 'unhandled';
   responseText: string;
   planId?: string;
   taskId?: string;
@@ -107,6 +107,71 @@ export class IntentRouter {
       return {
         handled: true,
         action: 'next_actions',
+        responseText,
+      };
+    }
+
+    if (
+      lower.includes('what time is it') ||
+      lower.includes("what's the time") ||
+      lower === 'time' ||
+      lower.includes('current time')
+    ) {
+      const timeIso = this.now().toISOString();
+      const responseText = `Current local time snapshot: ${timeIso}.`;
+      await this.publish(
+        Topics.lifeos.voiceCommandProcessed,
+        {
+          action: 'time_reported',
+          text,
+          responseText,
+          at: timeIso,
+        },
+        'voice-core',
+      );
+      return {
+        handled: true,
+        action: 'time_reported',
+        responseText,
+      };
+    }
+
+    if (
+      lower.includes('calendar') ||
+      lower.includes('schedule') ||
+      lower.includes('note') ||
+      lower.includes('research')
+    ) {
+      const inferredIntent =
+        lower.includes('calendar') || lower.includes('schedule')
+          ? 'calendar'
+          : lower.includes('note')
+            ? 'notes'
+            : 'research';
+      await this.publish(
+        Topics.agent.workRequested,
+        {
+          utterance: text,
+          intent: inferredIntent,
+          requestedAt: this.now().toISOString(),
+          origin: 'voice-core',
+        },
+        'voice-core',
+      );
+      const responseText = `Queued that for the ${inferredIntent} flow.`;
+      await this.publish(
+        Topics.lifeos.voiceCommandProcessed,
+        {
+          action: 'agent_work_requested',
+          text,
+          responseText,
+          intent: inferredIntent,
+        },
+        'voice-core',
+      );
+      return {
+        handled: true,
+        action: 'agent_work_requested',
         responseText,
       };
     }

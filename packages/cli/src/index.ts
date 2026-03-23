@@ -103,6 +103,7 @@ interface ModulesCommandOptions {
 interface VoiceCommandOptions {
   mode: 'start' | 'demo';
   text: string;
+  micOn: boolean;
   graphPath: string;
   verbose: boolean;
 }
@@ -987,6 +988,16 @@ export async function runVoiceCommand(
 
   let voice: VoiceRuntimeController | null = null;
   try {
+    if (options.mode === 'start' && options.micOn !== true) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Microphone capture is disabled. Re-run with --mic-on.\n`,
+      );
+      writeStderr(
+        `${chalk.yellow('Quick fix:\n  pnpm lifeos voice start --mic-on\n  or use `pnpm lifeos voice demo` for a text-only cycle')}\n`,
+      );
+      return 1;
+    }
+
     voice = createVoiceRuntime(options, dependencies, env, verboseLog);
 
     if (options.mode === 'demo') {
@@ -1357,6 +1368,7 @@ function buildProgram(
     .command('voice')
     .description('Start local voice mode or run the offline voice demo')
     .argument('[mode]', 'start | demo', 'start')
+    .option('--mic-on', 'Enable live microphone capture for start mode')
     .option('--text <text>', 'Demo utterance when mode=demo', 'Hey LifeOS, add a task to buy milk')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
@@ -1374,6 +1386,7 @@ function buildProgram(
         {
           mode: normalizedMode,
           text: commandOptions.text,
+          micOn: Boolean(commandOptions.micOn),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },
