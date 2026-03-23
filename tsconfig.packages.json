@@ -18,6 +18,9 @@
     },
     {
       "path": "./packages/reminder-module"
+    },
+    {
+      "path": "./packages/voice-core"
     }
   ]
 }

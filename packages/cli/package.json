@@ -25,6 +25,7 @@
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/module-loader": "workspace:*",
     "@lifeos/reminder-module": "workspace:*",
+    "@lifeos/voice-core": "workspace:*",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",

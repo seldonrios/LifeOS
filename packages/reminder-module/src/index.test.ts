@@ -15,6 +15,7 @@ function createContextMock() {
   const subscriptions: CapturedSubscription[] = [];
   const published: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const createNodeCalls: Array<Record<string, unknown>> = [];
+  const logs: string[] = [];
 
   const context: ModuleRuntimeContext = {
     env: {},
@@ -59,8 +60,8 @@ function createContextMock() {
         data,
       };
     },
-    log: () => {
-      return;
+    log: (message: string) => {
+      logs.push(message);
     },
   };
 
@@ -69,17 +70,50 @@ function createContextMock() {
     subscriptions,
     published,
     createNodeCalls,
+    logs,
   };
 }
 
-test('reminder module subscribes to task complete and overdue tick topics', async () => {
+test('reminder module subscribes to task scheduled, task complete, and overdue tick topics', async () => {
   const { context, subscriptions } = createContextMock();
   const module = createReminderModule();
 
   await module.init(context);
 
   const topics = subscriptions.map((entry) => entry.topic);
-  assert.deepEqual(topics.sort(), [Topics.lifeos.taskCompleted, Topics.lifeos.tickOverdue].sort());
+  assert.deepEqual(
+    topics.sort(),
+    [Topics.task.scheduled, Topics.lifeos.taskCompleted, Topics.lifeos.tickOverdue].sort(),
+  );
+});
+
+test('reminder module logs when a task is scheduled', async () => {
+  const { context, subscriptions, logs } = createContextMock();
+  const module = createReminderModule();
+  await module.init(context);
+
+  const scheduledHandler = subscriptions.find(
+    (entry) => entry.topic === Topics.task.scheduled,
+  )?.handler;
+
+  assert.ok(scheduledHandler);
+  await scheduledHandler?.({
+    id: 'task_evt_1',
+    type: Topics.task.scheduled,
+    timestamp: '2026-03-22T00:00:00.000Z',
+    source: 'voice-core',
+    version: '0.1.0',
+    data: {
+      taskId: 'task_buy_milk',
+      planId: 'goal_voice_1',
+      title: 'Buy milk',
+      scheduledAt: '2026-03-22T00:00:00.000Z',
+      origin: 'voice',
+    },
+  });
+
+  assert.equal(logs.length, 1);
+  assert.match(logs[0] ?? '', /Tracking scheduled task/);
 });
 
 test('reminder module creates follow-up plan and emits reminder event on overdue tick', async () => {

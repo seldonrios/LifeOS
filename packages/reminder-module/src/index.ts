@@ -22,6 +22,14 @@ interface TickOverduePayload {
   tickedAt: string;
 }
 
+interface TaskScheduledPayload {
+  taskId: string;
+  planId: string;
+  title: string;
+  scheduledAt: string;
+  origin?: string;
+}
+
 function buildFollowUpTasks(overdueTasks: TickOverduePayload['overdueTasks']): LifeGraphTask[] {
   return overdueTasks.slice(0, 3).map((task, index) => ({
     id: `reminder_task_${Date.now()}_${index}`,
@@ -36,6 +44,15 @@ async function handleTaskCompleted(
   context: ModuleRuntimeContext,
 ): Promise<void> {
   context.log(`[Reminder] Task completed: ${event.data.title}`);
+}
+
+async function handleTaskScheduled(
+  event: BaseEvent<TaskScheduledPayload>,
+  context: ModuleRuntimeContext,
+): Promise<void> {
+  context.log(
+    `[Reminder] Tracking scheduled task ${event.data.taskId}: ${event.data.title} (${event.data.origin ?? 'unknown'})`,
+  );
 }
 
 async function handleTickOverdue(
@@ -85,6 +102,10 @@ export function createReminderModule(): LifeOSModule {
   return {
     id: 'reminder',
     async init(context: ModuleRuntimeContext): Promise<void> {
+      await context.subscribe<TaskScheduledPayload>(Topics.task.scheduled, async (event) => {
+        await handleTaskScheduled(event, context);
+      });
+
       await context.subscribe<TaskCompletedPayload>(Topics.lifeos.taskCompleted, async (event) => {
         await handleTaskCompleted(event, context);
       });

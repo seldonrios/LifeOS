@@ -34,6 +34,12 @@ import {
   type TickResult,
 } from '@lifeos/goal-engine';
 import { reminderModule } from '@lifeos/reminder-module';
+import {
+  UnsupportedVoicePlatformError,
+  createVoiceCore,
+  type IntentOutcome,
+  type VoiceCoreOptions,
+} from '@lifeos/voice-core';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
@@ -94,11 +100,25 @@ interface ModulesCommandOptions {
   moduleId?: string;
 }
 
+interface VoiceCommandOptions {
+  mode: 'start' | 'demo';
+  text: string;
+  graphPath: string;
+  verbose: boolean;
+}
+
 interface SpinnerLike {
   start(): SpinnerLike;
   succeed(text?: string): SpinnerLike;
   fail(text?: string): SpinnerLike;
   stop(): SpinnerLike;
+}
+
+interface VoiceRuntimeController {
+  start(): Promise<void>;
+  runDemo(text: string): Promise<IntentOutcome | null>;
+  close(): Promise<void>;
+  getWakePhrase(): string;
 }
 
 type RuntimeEventHandler = (event: BaseEvent<unknown>) => Promise<void>;
@@ -203,6 +223,7 @@ export interface RunCliDependencies {
     logger?: (message: string) => void;
   }) => Promise<TickResult>;
   createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
+  createVoiceCore?: (options: VoiceCoreOptions) => VoiceRuntimeController;
   createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
   moduleLoader?: ModuleLoader;
   defaultModules?: LifeOSModule[];
@@ -234,11 +255,19 @@ function createDefaultSpinner(text: string): SpinnerLike {
 }
 
 function createCliEvent<T extends Record<string, unknown>>(type: string, data: T): BaseEvent<T> {
+  return createRuntimeEvent(type, data, 'lifeos-cli');
+}
+
+function createRuntimeEvent<T extends Record<string, unknown>>(
+  type: string,
+  data: T,
+  source: string,
+): BaseEvent<T> {
   return {
     id: randomUUID(),
     type,
     timestamp: new Date().toISOString(),
-    source: 'lifeos-cli',
+    source,
     version: '0.1.0',
     data,
   };
@@ -384,6 +413,14 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
   return null;
 }
 
+function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null {
+  if (action === 'start' || action === 'demo') {
+    return action;
+  }
+
+  return null;
+}
+
 function extractGraphPathArg(args: string[]): string | undefined {
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -415,6 +452,54 @@ function buildClientOptions(
     options.graphPath = graphPath;
   }
   return options;
+}
+
+function createVoicePublisher(
+  dependencies: RunCliDependencies,
+  env: NodeJS.ProcessEnv,
+  verboseLog: (line: string) => void,
+): NonNullable<VoiceCoreOptions['publish']> {
+  if (dependencies.moduleLoader) {
+    return async (topic, data, source) => {
+      await dependencies.moduleLoader?.publish(topic, data, source);
+    };
+  }
+
+  return async (topic, data, source = 'voice-core') => {
+    const createBus = createDefaultEventBusClient(dependencies);
+    const eventBus = createBus({
+      env,
+      name: 'lifeos-cli-voice',
+      timeoutMs: 1000,
+      maxReconnectAttempts: 0,
+      logger: (line) => verboseLog(line),
+    });
+
+    try {
+      await eventBus.publish(topic, createRuntimeEvent(topic, data, source));
+    } finally {
+      await eventBus.close();
+    }
+  };
+}
+
+function createVoiceRuntime(
+  options: VoiceCommandOptions,
+  dependencies: RunCliDependencies,
+  env: NodeJS.ProcessEnv,
+  verboseLog: (line: string) => void,
+): VoiceRuntimeController {
+  const factory = dependencies.createVoiceCore ?? createVoiceCore;
+  const voiceOptions: VoiceCoreOptions = {
+    env,
+    graphPath: options.graphPath,
+    publish: createVoicePublisher(dependencies, env, verboseLog),
+    logger: (line) => verboseLog(line),
+  };
+  if (dependencies.now) {
+    voiceOptions.now = dependencies.now;
+  }
+  return factory(voiceOptions);
 }
 
 export async function runGoalCommand(
@@ -884,6 +969,77 @@ export async function runDemoCommand(
   return 0;
 }
 
+export async function runVoiceCommand(
+  options: VoiceCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const waitForSignal = dependencies.waitForSignal ?? waitForSignalDefault;
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  let voice: VoiceRuntimeController | null = null;
+  try {
+    voice = createVoiceRuntime(options, dependencies, env, verboseLog);
+
+    if (options.mode === 'demo') {
+      const outcome = await voice.runDemo(options.text);
+      if (!outcome) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Demo text must include the wake phrase or follow a wake-only prompt.\n`,
+        );
+        return 1;
+      }
+
+      writeStdout(
+        `${boxen(chalk.green('Voice demo complete.'), {
+          padding: 1,
+          borderStyle: 'round',
+          borderColor: 'green',
+        })}\n`,
+      );
+      writeStdout(`Command: ${options.text}\n`);
+      writeStdout(`Action: ${outcome.action}\n`);
+      writeStdout(`LifeOS: ${outcome.responseText}\n`);
+      if (outcome.planId) {
+        writeStdout(`Plan: ${outcome.planId}\n`);
+      }
+      if (outcome.taskId) {
+        writeStdout(`Task: ${outcome.taskId}\n`);
+      }
+      return 0;
+    }
+
+    await voice.start();
+    writeStdout(chalk.blue(`LifeOS Voice Core active. Say "${voice.getWakePhrase()}" anytime.\n`));
+    writeStdout(chalk.gray('Press Ctrl+C to stop.\n'));
+    await waitForSignal();
+    return 0;
+  } catch (error: unknown) {
+    if (error instanceof UnsupportedVoicePlatformError) {
+      writeStderr(`${chalk.red.bold('Error:')} ${error.message}\n`);
+      writeStderr(
+        `${chalk.yellow('Quick fix:\n  use `lifeos voice demo`\n  or run on Windows with a local microphone and speech recognizer installed')}\n`,
+      );
+      return 1;
+    }
+
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  } finally {
+    if (voice) {
+      await voice.close().catch(() => undefined);
+    }
+  }
+}
+
 export async function runEventsListenCommand(
   options: EventsListenCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -1189,6 +1345,35 @@ function buildProgram(
         {
           goal: commandOptions.goal,
           model: commandOptions.model,
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('voice')
+    .description('Start local voice mode or run the offline voice demo')
+    .argument('[mode]', 'start | demo', 'start')
+    .option('--text <text>', 'Demo utterance when mode=demo', 'Hey LifeOS, add a task to buy milk')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (mode: string, commandOptions) => {
+      const normalizedMode = normalizeVoiceMode(mode);
+      if (!normalizedMode) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start or demo.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runVoiceCommand(
+        {
+          mode: normalizedMode,
+          text: commandOptions.text,
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },

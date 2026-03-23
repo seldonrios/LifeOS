@@ -76,5 +76,9 @@ export const Topics = {
     tickOverdue: 'lifeos.tick.overdue',
     taskCompleted: 'lifeos.task.completed',
     reminderFollowupCreated: 'lifeos.reminder.followup.created',
+    voiceWakeDetected: 'lifeos.voice.wake.detected',
+    voiceCommandReceived: 'lifeos.voice.command.received',
+    voiceCommandProcessed: 'lifeos.voice.command.processed',
+    voiceCommandUnhandled: 'lifeos.voice.command.unhandled',
   },
 } as const;

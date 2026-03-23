@@ -1,7 +1,6 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"],
     "rootDir": "./src",
     "outDir": "./dist"
   },
@@ -11,19 +10,7 @@
       "path": "../event-bus"
     },
     {
-      "path": "../goal-engine"
-    },
-    {
       "path": "../life-graph"
-    },
-    {
-      "path": "../module-loader"
-    },
-    {
-      "path": "../reminder-module"
-    },
-    {
-      "path": "../voice-core"
     }
   ]
 }

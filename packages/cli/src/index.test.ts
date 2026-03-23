@@ -677,6 +677,79 @@ test('demo runs goal then tick and prints completion guidance', async () => {
   assert.match(output, /Next: `lifeos status`, `lifeos task list`, `lifeos modules`/);
 });
 
+test('voice demo runs the voice core against a simulated utterance', async () => {
+  const stdout: string[] = [];
+  const voiceCalls: string[] = [];
+
+  const exitCode = await runCli(['voice', 'demo'], {
+    createVoiceCore: () => ({
+      async start() {
+        return;
+      },
+      async runDemo(text: string) {
+        voiceCalls.push(text);
+        return {
+          handled: true,
+          action: 'task_added',
+          responseText: 'Added a task to buy milk.',
+          planId: 'goal_voice_1',
+          taskId: 'task_buy_milk',
+        };
+      },
+      async close() {
+        return;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(voiceCalls, ['Hey LifeOS, add a task to buy milk']);
+  const output = stdout.join('');
+  assert.match(output, /Voice demo complete/);
+  assert.match(output, /task_added/);
+  assert.match(output, /Added a task to buy milk/);
+});
+
+test('voice start shows active message and waits for signal', async () => {
+  const stdout: string[] = [];
+  let started = 0;
+  let closed = 0;
+
+  const exitCode = await runCli(['voice'], {
+    createVoiceCore: () => ({
+      async start() {
+        started += 1;
+      },
+      async runDemo() {
+        return null;
+      },
+      async close() {
+        closed += 1;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+    waitForSignal: async () => {
+      return;
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(started, 1);
+  assert.equal(closed, 1);
+  assert.match(stdout.join(''), /LifeOS Voice Core active/);
+});
+
 test('events listen --json prints event lines and exits on signal', async () => {
   const stdout: string[] = [];
 
