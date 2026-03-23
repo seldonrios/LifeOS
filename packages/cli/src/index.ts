@@ -41,6 +41,7 @@ import { orchestratorModule } from '@lifeos/orchestrator';
 import { researchModule } from '@lifeos/research-module';
 import { reminderModule } from '@lifeos/reminder-module';
 import { schedulerModule } from '@lifeos/scheduler-module';
+import { DeviceRegistry, SyncEngine, syncModule, type PairedDevice } from '@lifeos/sync-core';
 import { weatherModule } from '@lifeos/weather-module';
 import {
   MissingMicrophoneConsentError,
@@ -128,6 +129,13 @@ interface VoiceCommandOptions {
   text: string;
   scenario?: keyof typeof VOICE_DEMO_SCENARIOS;
   graphPath: string;
+  verbose: boolean;
+}
+
+interface SyncCommandOptions {
+  action: 'pair' | 'devices' | 'demo';
+  deviceName?: string;
+  outputJson: boolean;
   verbose: boolean;
 }
 
@@ -502,6 +510,13 @@ function normalizeMemoryAction(action: string): MemoryCommandOptions['action'] |
   return null;
 }
 
+function normalizeSyncAction(action: string): SyncCommandOptions['action'] | null {
+  if (action === 'pair' || action === 'devices' || action === 'demo') {
+    return action;
+  }
+  return null;
+}
+
 function normalizeVoiceScenario(
   scenario: string | undefined,
 ): keyof typeof VOICE_DEMO_SCENARIOS | undefined {
@@ -550,6 +565,7 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       notesModule,
       weatherModule,
       newsModule,
+      syncModule,
       orchestratorModule,
     ]
   );
@@ -1469,6 +1485,166 @@ export async function runMemoryCommand(
   }
 }
 
+function renderPairedDevices(devices: PairedDevice[]): string {
+  if (devices.length === 0) {
+    return 'none';
+  }
+  return devices
+    .map((device) => {
+      const suffix = device.lastSeenAt ? ` last_seen=${device.lastSeenAt}` : '';
+      return `${device.name} (${device.id})${suffix}`;
+    })
+    .join(', ');
+}
+
+export async function runSyncCommand(
+  options: SyncCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const registry = new DeviceRegistry({ env, baseDir: baseCwd });
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    if (options.action === 'pair') {
+      const requestedName = options.deviceName?.trim();
+      if (!requestedName) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Device name is required for "sync pair <device-name>".\n`,
+        );
+        return 1;
+      }
+      const localDeviceId = await registry.getLocalDeviceId();
+      const paired = await registry.pairDevice(requestedName);
+      const payload = {
+        localDeviceId,
+        paired,
+      };
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+      } else {
+        writeStdout(chalk.green(`Paired device: ${paired.name} (${paired.id})\n`));
+      }
+      await publishEventSafely(
+        Topics.lifeos.syncDevicePaired,
+        payload,
+        dependencies,
+        env,
+        verboseLog,
+      );
+      return 0;
+    }
+
+    if (options.action === 'demo') {
+      const eventBus = createLocalRuntimeEventBus();
+      const primaryDeviceId = 'demo-laptop';
+      const secondaryDeviceId = 'demo-phone';
+      const mirroredEvents: BaseEvent<Record<string, unknown>>[] = [];
+
+      await eventBus.subscribe<Record<string, unknown>>(
+        Topics.lifeos.voiceIntentTaskAdd,
+        async (event) => {
+          if (event.metadata?.syncReplayed === true) {
+            mirroredEvents.push(event as BaseEvent<Record<string, unknown>>);
+          }
+        },
+      );
+
+      const primary = new SyncEngine({
+        eventBus,
+        deviceId: primaryDeviceId,
+        deviceName: 'Laptop',
+        shouldBroadcast: (event) => event.source === primaryDeviceId,
+      });
+      const secondary = new SyncEngine({
+        eventBus,
+        deviceId: secondaryDeviceId,
+        deviceName: 'Phone',
+        shouldBroadcast: (event) => event.source === secondaryDeviceId,
+      });
+      await primary.start();
+      await secondary.start();
+
+      const taskEvent = createRuntimeEvent(
+        Topics.lifeos.voiceIntentTaskAdd,
+        {
+          title: 'Buy milk',
+          utterance: 'Hey LifeOS, add a task to buy milk',
+          requestedAt: new Date().toISOString(),
+        },
+        primaryDeviceId,
+      );
+      await eventBus.publish(taskEvent.type, taskEvent);
+      await delay(25);
+
+      const payload = {
+        originDeviceId: primaryDeviceId,
+        mirroredDeviceId: secondaryDeviceId,
+        mirroredEvents: mirroredEvents.length,
+        deltasBroadcast: primary.getStats().deltasBroadcast + secondary.getStats().deltasBroadcast,
+        deltasReplayed: primary.getStats().deltasReplayed + secondary.getStats().deltasReplayed,
+      };
+      await primary.close();
+      await secondary.close();
+      await eventBus.close();
+
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+      } else {
+        writeStdout(chalk.bold('LifeOS Sync Demo\n'));
+        writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+        writeStdout(`Origin: ${payload.originDeviceId}\n`);
+        writeStdout(`Mirrored to: ${payload.mirroredDeviceId}\n`);
+        writeStdout(`Mirrored events: ${payload.mirroredEvents}\n`);
+        writeStdout(chalk.green('Sync demo complete.\n'));
+      }
+      await publishEventSafely(
+        Topics.lifeos.syncDemoCompleted,
+        payload,
+        dependencies,
+        env,
+        verboseLog,
+      );
+      return 0;
+    }
+
+    const localDeviceId = await registry.getLocalDeviceId();
+    const devices = await registry.listDevices();
+    const payload = {
+      localDeviceId,
+      count: devices.length,
+      devices,
+    };
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      writeStdout(chalk.bold('LifeOS Sync Devices\n'));
+      writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+      writeStdout(`Local device: ${localDeviceId}\n`);
+      writeStdout(`Paired devices (${devices.length}): ${renderPairedDevices(devices)}\n`);
+    }
+    await publishEventSafely(
+      Topics.lifeos.syncDevicesListed,
+      payload,
+      dependencies,
+      env,
+      verboseLog,
+    );
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
 export async function runResearchCommand(
   options: ResearchCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -1883,6 +2059,35 @@ function buildProgram(
     });
 
   program
+    .command('sync')
+    .description('Manage local-first sync: pair, devices, or demo')
+    .argument('[action]', 'pair | devices | demo', 'devices')
+    .argument('[deviceName]', 'Device name for pair action')
+    .option('--json', 'Output JSON only')
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (action: string, deviceName: string | undefined, commandOptions) => {
+      const normalizedAction = normalizeSyncAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid sync action "${action}". Use pair, devices, or demo.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runSyncCommand(
+        {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          verbose: Boolean(commandOptions.verbose),
+          ...(deviceName ? { deviceName } : {}),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
     .command('voice')
     .description('Manage voice runtime: start, demo, consent, calendar, or briefing')
     .argument('[mode]', 'start | demo | consent | calendar | briefing', 'start')
@@ -2024,6 +2229,7 @@ async function main(): Promise<void> {
         notesModule,
         weatherModule,
         newsModule,
+        syncModule,
         orchestratorModule,
       ]);
     } catch {

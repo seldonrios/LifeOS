@@ -47,6 +47,9 @@
       "path": "./packages/reminder-module"
     },
     {
+      "path": "./packages/sync-core"
+    },
+    {
       "path": "./packages/voice-core"
     }
   ]

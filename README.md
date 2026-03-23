@@ -65,6 +65,7 @@ pnpm lifeos status --json
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
+lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
@@ -94,6 +95,9 @@ pnpm lifeos voice demo --scenario weather
 pnpm lifeos voice demo --scenario briefing
 pnpm lifeos voice demo --scenario proactive
 pnpm lifeos memory status
+pnpm lifeos sync pair "My Phone"
+pnpm lifeos sync devices
+pnpm lifeos sync demo
 ```
 
 ## ⚙️ Configuration
@@ -147,6 +151,7 @@ Active implementation packages:
 - `@lifeos/news-module`
 - `@lifeos/personality`
 - `@lifeos/orchestrator`
+- `@lifeos/sync-core`
 
 Runtime modules:
 
@@ -154,6 +159,7 @@ Runtime modules:
 - `calendar` persists voice-driven events to `calendarEvents`
 - `scheduler` applies overdue reschedule suggestions
 - `research`, `notes`, `weather`, and `news` handle voice-first daily assistant flows
+- `sync-core` mirrors life-event deltas across paired devices (local-first)
 - `orchestrator` builds contextual memory, proactive suggestions, and daily briefings
 
 ## 🧭 Project Direction

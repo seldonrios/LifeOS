@@ -100,5 +100,9 @@ export const Topics = {
     briefingGenerated: 'lifeos.briefing.generated',
     personalityUpdated: 'lifeos.personality.updated',
     memoryStatusGenerated: 'lifeos.memory.status.generated',
+    syncDelta: 'lifeos.sync.delta',
+    syncDevicePaired: 'lifeos.sync.device.paired',
+    syncDevicesListed: 'lifeos.sync.devices.listed',
+    syncDemoCompleted: 'lifeos.sync.demo.completed',
   },
 } as const;

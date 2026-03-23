@@ -44,6 +44,9 @@
       "path": "../scheduler-module"
     },
     {
+      "path": "../sync-core"
+    },
+    {
       "path": "../voice-core"
     }
   ]

@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import test from 'node:test';
 
 import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
@@ -503,6 +506,53 @@ test('memory status --json emits memory counters', async () => {
   assert.equal(payload.threadCount, 1);
   assert.equal(payload.byType.preference, 1);
   assert.equal(payload.byType.conversation, 1);
+});
+
+test('sync pair and devices commands persist and render paired devices', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-sync-'));
+  const pairStdout: string[] = [];
+  const listStdout: string[] = [];
+
+  const pairExitCode = await runCli(['sync', 'pair', 'Phone'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      pairStdout.push(message);
+    },
+  });
+  assert.equal(pairExitCode, 0);
+  assert.match(pairStdout.join(''), /Paired device: Phone/i);
+
+  const listExitCode = await runCli(['sync', 'devices', '--json'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      listStdout.push(message);
+    },
+  });
+  assert.equal(listExitCode, 0);
+  const listed = JSON.parse(listStdout.join('')) as {
+    localDeviceId: string;
+    count: number;
+    devices: Array<{ name: string }>;
+  };
+  assert.ok(listed.localDeviceId.length > 0);
+  assert.equal(listed.count, 1);
+  assert.equal(listed.devices[0]?.name, 'Phone');
+});
+
+test('sync demo simulates mirrored event replication', async () => {
+  const stdout: string[] = [];
+  const exitCode = await runCli(['sync', 'demo', '--json'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    mirroredEvents: number;
+    deltasBroadcast: number;
+  };
+  assert.equal(payload.mirroredEvents, 1);
+  assert.ok(payload.deltasBroadcast >= 1);
 });
 
 test('review command prints human insights', async () => {

@@ -1,0 +1,122 @@
+import assert from 'node:assert/strict';
+import { setTimeout as delay } from 'node:timers/promises';
+import test from 'node:test';
+
+import { Topics, createEventBusClient, type BaseEvent } from '@lifeos/event-bus';
+
+import { SyncEngine } from './sync-engine';
+
+const fallbackEnv = {
+  LIFEOS_NATS_URL: 'nats://127.0.0.1:1',
+};
+
+function createEvent<T extends Record<string, unknown>>(
+  type: string,
+  data: T,
+  source: string,
+): BaseEvent<T> {
+  return {
+    id: `${source}-${type}-evt`,
+    type,
+    timestamp: '2026-03-23T12:00:00.000Z',
+    source,
+    version: '0.1.0',
+    data,
+  };
+}
+
+test('sync engine broadcasts delta and replays to remote device once', async () => {
+  const eventBusA = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-a',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const eventBusB = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-b',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const replayedEvents: BaseEvent<Record<string, unknown>>[] = [];
+  await eventBusB.subscribe<Record<string, unknown>>(
+    Topics.lifeos.voiceIntentTaskAdd,
+    async (event) => {
+      if (event.metadata?.syncReplayed === true) {
+        replayedEvents.push(event as BaseEvent<Record<string, unknown>>);
+      }
+    },
+  );
+
+  const engineA = new SyncEngine({
+    eventBus: eventBusA,
+    deviceId: 'device-a',
+    deviceName: 'Laptop',
+    shouldBroadcast: (event) => event.source === 'device-a',
+  });
+  const engineB = new SyncEngine({
+    eventBus: eventBusB,
+    deviceId: 'device-b',
+    deviceName: 'Phone',
+    shouldBroadcast: (event) => event.source === 'device-b',
+  });
+
+  await engineA.start();
+  await engineB.start();
+
+  await eventBusA.publish(
+    Topics.lifeos.voiceIntentTaskAdd,
+    createEvent(
+      Topics.lifeos.voiceIntentTaskAdd,
+      {
+        title: 'Buy milk',
+      },
+      'device-a',
+    ),
+  );
+
+  await delay(25);
+
+  assert.equal(replayedEvents.length, 1);
+  const firstReplay = replayedEvents[0];
+  assert.ok(firstReplay);
+  assert.equal(firstReplay.metadata?.syncOriginDeviceId, 'device-a');
+  assert.equal(engineA.getStats().deltasBroadcast, 1);
+  assert.equal(engineB.getStats().deltasReceived, 1);
+  assert.ok(engineB.getKnownDevices().some((entry) => entry.deviceId === 'device-a'));
+
+  await engineA.close();
+  await engineB.close();
+  await eventBusA.close();
+  await eventBusB.close();
+});
+
+test('sync engine ignores own delta payloads', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-self',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-self',
+    deviceName: 'Tablet',
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-self',
+    deviceId: 'device-self',
+    deviceName: 'Tablet',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(Topics.lifeos.noteAdded, { title: 'x' }, 'device-self'),
+  });
+
+  assert.equal(accepted, false);
+  assert.equal(engine.getStats().deltasReceived, 0);
+
+  await engine.close();
+  await eventBus.close();
+});

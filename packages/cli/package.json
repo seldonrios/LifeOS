@@ -31,6 +31,7 @@
     "@lifeos/research-module": "workspace:*",
     "@lifeos/reminder-module": "workspace:*",
     "@lifeos/scheduler-module": "workspace:*",
+    "@lifeos/sync-core": "workspace:*",
     "@lifeos/voice-core": "workspace:*",
     "@lifeos/weather-module": "workspace:*",
     "boxen": "^8.0.1",

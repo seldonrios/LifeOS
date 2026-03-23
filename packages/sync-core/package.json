@@ -1,0 +1,21 @@
+{
+  "name": "@lifeos/sync-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "test": "tsx --test src/device-registry.test.ts src/sync-engine.test.ts"
+  },
+  "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/module-loader": "workspace:*"
+  }
+}
