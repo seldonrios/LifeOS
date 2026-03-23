@@ -1,4 +1,9 @@
 # LifeOS
+![LifeOS v0.1 Demo](https://i.imgur.com/QanyiXk.gif)
+
+**LifeOS** — Sovereign Personal AI Node  
+
+Your life. Your compute. Your rules.
 
 > 🚀 A local-first personal AI node for turning goals into executable plans.
 
