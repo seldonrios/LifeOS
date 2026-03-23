@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
@@ -6,11 +7,15 @@ import { resolveLifeGraphPath } from './path';
 import { getGraphSummary } from './store';
 import type {
   GoalPlan,
+  LifeGraphNewsDigest,
+  LifeGraphNote,
   LifeGraphClient,
+  LifeGraphResearchResult,
   LifeGraphReviewInsights,
   LifeGraphReviewPeriod,
   LifeGraphSummary,
   LifeGraphTask,
+  LifeGraphWeatherSnapshot,
   ModuleSchema,
 } from './types';
 
@@ -79,6 +84,23 @@ interface PlanCreateInput {
   createdAt?: string;
 }
 
+const MAX_NOTES = 4000;
+const MAX_RESEARCH_RESULTS = 1500;
+const MAX_WEATHER_SNAPSHOTS = 500;
+const MAX_NEWS_DIGESTS = 1200;
+const MAX_NOTE_TITLE_CHARS = 200;
+const MAX_NOTE_CONTENT_CHARS = 8000;
+const MAX_NOTE_TAGS = 20;
+const MAX_NOTE_TAG_CHARS = 40;
+const MAX_RESEARCH_QUERY_CHARS = 400;
+const MAX_RESEARCH_SUMMARY_CHARS = 8000;
+const MAX_WEATHER_LOCATION_CHARS = 120;
+const MAX_WEATHER_FORECAST_CHARS = 1000;
+const MAX_NEWS_TITLE_CHARS = 220;
+const MAX_NEWS_SUMMARY_CHARS = 5000;
+const MAX_NEWS_SOURCES = 20;
+const MAX_NEWS_SOURCE_CHARS = 240;
+
 function getString(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
@@ -94,6 +116,41 @@ function getNullableString(value: unknown): string | null {
   }
 
   return getString(value);
+}
+
+function clampText(value: string, maxLength: number): string {
+  return value.trim().slice(0, maxLength);
+}
+
+function normalizeStringField(value: unknown, fallback: string, maxLength: number): string {
+  const candidate = getString(value) ?? fallback;
+  return clampText(candidate, maxLength);
+}
+
+function normalizeStringArray(value: unknown, maxItems: number, maxItemLength: number): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const normalized = value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry) => entry.length > 0)
+    .map((entry) => clampText(entry, maxItemLength));
+  if (normalized.length === 0) {
+    return [];
+  }
+  return normalized.slice(0, maxItems);
+}
+
+function normalizeIsoTimestamp(value: unknown, fallbackIso: string): string {
+  if (typeof value !== 'string') {
+    return fallbackIso;
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return fallbackIso;
+  }
+  return parsed.toISOString();
 }
 
 function getOptionalNumber(value: unknown): number | null {
@@ -178,6 +235,75 @@ function toPlanCreateInput(data: Record<string, unknown>): PlanCreateInput {
   }
 
   return input;
+}
+
+function normalizeNoteInput(
+  note: Omit<LifeGraphNote, 'id' | 'createdAt'> & Partial<Pick<LifeGraphNote, 'id' | 'createdAt'>>,
+  nowIso: string,
+): LifeGraphNote {
+  return {
+    id: getString(note.id) ?? randomUUID(),
+    title: normalizeStringField(note.title, 'Voice note', MAX_NOTE_TITLE_CHARS),
+    content: normalizeStringField(note.content, 'Untitled note', MAX_NOTE_CONTENT_CHARS),
+    tags: normalizeStringArray(note.tags, MAX_NOTE_TAGS, MAX_NOTE_TAG_CHARS),
+    voiceTriggered: typeof note.voiceTriggered === 'boolean' ? note.voiceTriggered : true,
+    createdAt: normalizeIsoTimestamp(note.createdAt, nowIso),
+  };
+}
+
+function normalizeResearchInput(
+  result:
+    | (Omit<LifeGraphResearchResult, 'id' | 'savedAt'> &
+        Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt'>>)
+    | LifeGraphResearchResult,
+  nowIso: string,
+): LifeGraphResearchResult {
+  const sources = normalizeStringArray(result.sources, MAX_NEWS_SOURCES, MAX_NEWS_SOURCE_CHARS);
+  return {
+    id: getString(result.id) ?? randomUUID(),
+    query: normalizeStringField(result.query, 'General research', MAX_RESEARCH_QUERY_CHARS),
+    summary: normalizeStringField(
+      result.summary,
+      'No summary available.',
+      MAX_RESEARCH_SUMMARY_CHARS,
+    ),
+    ...(sources.length > 0 ? { sources } : {}),
+    savedAt: normalizeIsoTimestamp(result.savedAt, nowIso),
+  };
+}
+
+function normalizeWeatherInput(
+  snapshot:
+    | (Omit<LifeGraphWeatherSnapshot, 'id' | 'timestamp'> &
+        Partial<Pick<LifeGraphWeatherSnapshot, 'id' | 'timestamp'>>)
+    | LifeGraphWeatherSnapshot,
+  nowIso: string,
+): LifeGraphWeatherSnapshot {
+  return {
+    id: getString(snapshot.id) ?? randomUUID(),
+    location: normalizeStringField(snapshot.location, 'current', MAX_WEATHER_LOCATION_CHARS),
+    forecast: normalizeStringField(
+      snapshot.forecast,
+      'No forecast available.',
+      MAX_WEATHER_FORECAST_CHARS,
+    ),
+    timestamp: normalizeIsoTimestamp(snapshot.timestamp, nowIso),
+  };
+}
+
+function normalizeNewsInput(
+  digest:
+    | (Omit<LifeGraphNewsDigest, 'id' | 'read'> & Partial<Pick<LifeGraphNewsDigest, 'id' | 'read'>>)
+    | LifeGraphNewsDigest,
+): LifeGraphNewsDigest {
+  const sources = normalizeStringArray(digest.sources, MAX_NEWS_SOURCES, MAX_NEWS_SOURCE_CHARS);
+  return {
+    id: getString(digest.id) ?? randomUUID(),
+    title: normalizeStringField(digest.title, 'News digest', MAX_NEWS_TITLE_CHARS),
+    summary: normalizeStringField(digest.summary, 'No summary available.', MAX_NEWS_SUMMARY_CHARS),
+    sources: sources.length > 0 ? sources : ['local-cache'],
+    read: typeof digest.read === 'boolean' ? digest.read : false,
+  };
 }
 
 function normalizeLabel(label: string): string {
@@ -397,6 +523,90 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
 
     async saveGraph(graph) {
       await manager.save(graph, resolvedGraphPath);
+    },
+
+    async appendNote(note) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeNoteInput(note, nowIso);
+      const notes = [...(graph.notes ?? []), normalized].slice(-MAX_NOTES);
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          notes,
+          calendarEvents: graph.calendarEvents ?? [],
+          researchResults: graph.researchResults ?? [],
+          weatherSnapshots: graph.weatherSnapshots ?? [],
+          newsDigests: graph.newsDigests ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
+    },
+
+    async appendResearchResult(result) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeResearchInput(result, nowIso);
+      const researchResults = [...(graph.researchResults ?? []), normalized].slice(
+        -MAX_RESEARCH_RESULTS,
+      );
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          researchResults,
+          calendarEvents: graph.calendarEvents ?? [],
+          notes: graph.notes ?? [],
+          weatherSnapshots: graph.weatherSnapshots ?? [],
+          newsDigests: graph.newsDigests ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
+    },
+
+    async appendWeatherSnapshot(snapshot) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeWeatherInput(snapshot, nowIso);
+      const weatherSnapshots = [...(graph.weatherSnapshots ?? []), normalized].slice(
+        -MAX_WEATHER_SNAPSHOTS,
+      );
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          weatherSnapshots,
+          calendarEvents: graph.calendarEvents ?? [],
+          notes: graph.notes ?? [],
+          researchResults: graph.researchResults ?? [],
+          newsDigests: graph.newsDigests ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
+    },
+
+    async appendNewsDigest(digest) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeNewsInput(digest);
+      const newsDigests = [...(graph.newsDigests ?? []), normalized].slice(-MAX_NEWS_DIGESTS);
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          newsDigests,
+          calendarEvents: graph.calendarEvents ?? [],
+          notes: graph.notes ?? [],
+          researchResults: graph.researchResults ?? [],
+          weatherSnapshots: graph.weatherSnapshots ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
     },
 
     async query<T = unknown>(query: string, params?: Record<string, unknown>): Promise<T[]> {

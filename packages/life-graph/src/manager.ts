@@ -44,6 +44,10 @@ function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
     version: LIFE_GRAPH_VERSION,
     plans: [],
     calendarEvents: [],
+    notes: [],
+    researchResults: [],
+    weatherSnapshots: [],
+    newsDigests: [],
     updatedAt: now.toISOString(),
   };
 }
@@ -184,6 +188,10 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       updatedAt: versionedGoals.data.updatedAt,
       plans: migrateLegacyGoals(versionedGoals.data.goals),
       calendarEvents: [],
+      notes: [],
+      researchResults: [],
+      weatherSnapshots: [],
+      newsDigests: [],
     };
   }
 
@@ -194,6 +202,10 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       updatedAt: now.toISOString(),
       plans: migrateLegacyGoals(legacyGoals.data.goals),
       calendarEvents: [],
+      notes: [],
+      researchResults: [],
+      weatherSnapshots: [],
+      newsDigests: [],
     };
   }
 
@@ -255,6 +267,10 @@ export class LifeGraphManager {
       updatedAt: nowIso,
       plans: [...graph.plans, normalizedPlan],
       calendarEvents: graph.calendarEvents ?? [],
+      notes: graph.notes ?? [],
+      researchResults: graph.researchResults ?? [],
+      weatherSnapshots: graph.weatherSnapshots ?? [],
+      newsDigests: graph.newsDigests ?? [],
     };
 
     await this.save(nextGraph, graphPath);

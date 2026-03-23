@@ -116,15 +116,27 @@ importers:
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
+      '@lifeos/news-module':
+        specifier: workspace:*
+        version: link:../news-module
+      '@lifeos/notes-module':
+        specifier: workspace:*
+        version: link:../notes-module
       '@lifeos/reminder-module':
         specifier: workspace:*
         version: link:../reminder-module
+      '@lifeos/research-module':
+        specifier: workspace:*
+        version: link:../research-module
       '@lifeos/scheduler-module':
         specifier: workspace:*
         version: link:../scheduler-module
       '@lifeos/voice-core':
         specifier: workspace:*
         version: link:../voice-core
+      '@lifeos/weather-module':
+        specifier: workspace:*
+        version: link:../weather-module
       boxen:
         specifier: ^8.0.1
         version: 8.0.1
@@ -203,6 +215,30 @@ importers:
         specifier: workspace:*
         version: link:../life-graph
 
+  packages/news-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+
+  packages/notes-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+
   packages/observability: {}
 
   packages/policy-engine:
@@ -227,6 +263,18 @@ importers:
         version: link:../life-graph
 
   packages/reminder-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
+
+  packages/research-module:
     dependencies:
       '@lifeos/event-bus':
         specifier: workspace:*
@@ -318,6 +366,18 @@ importers:
       node-record-lpcm16:
         specifier: ^1.0.1
         version: 1.0.1
+
+  packages/weather-module:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
 
 packages:
 

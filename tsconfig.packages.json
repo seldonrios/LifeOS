@@ -20,6 +20,18 @@
       "path": "./packages/calendar-module"
     },
     {
+      "path": "./packages/research-module"
+    },
+    {
+      "path": "./packages/notes-module"
+    },
+    {
+      "path": "./packages/weather-module"
+    },
+    {
+      "path": "./packages/news-module"
+    },
+    {
       "path": "./packages/scheduler-module"
     },
     {

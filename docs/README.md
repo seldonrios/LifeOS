@@ -11,8 +11,9 @@ Current executable MVP targets are:
 - `@lifeos/cli`
 - `@lifeos/goal-engine`
 - `@lifeos/life-graph`
-
-Other packages and services in the repo are currently dormant placeholders for later phases.
+- `@lifeos/event-bus`
+- `@lifeos/module-loader`
+- Runtime modules: `@lifeos/reminder-module`, `@lifeos/calendar-module`, `@lifeos/scheduler-module`, `@lifeos/research-module`, `@lifeos/notes-module`, `@lifeos/weather-module`, `@lifeos/news-module`
 
 ## Recommended Reading Order
 

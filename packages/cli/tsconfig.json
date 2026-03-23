@@ -23,6 +23,18 @@
       "path": "../calendar-module"
     },
     {
+      "path": "../research-module"
+    },
+    {
+      "path": "../notes-module"
+    },
+    {
+      "path": "../weather-module"
+    },
+    {
+      "path": "../news-module"
+    },
+    {
       "path": "../reminder-module"
     },
     {

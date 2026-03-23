@@ -131,6 +131,22 @@ export interface LifeGraphClient {
   ): Promise<void>;
   loadGraph(): Promise<LifeGraphDocument>;
   saveGraph(graph: LifeGraphDocument): Promise<void>;
+  appendNote(
+    note: Omit<LifeGraphNote, 'id' | 'createdAt'> &
+      Partial<Pick<LifeGraphNote, 'id' | 'createdAt'>>,
+  ): Promise<LifeGraphNote>;
+  appendResearchResult(
+    result: Omit<LifeGraphResearchResult, 'id' | 'savedAt'> &
+      Partial<Pick<LifeGraphResearchResult, 'id' | 'savedAt'>>,
+  ): Promise<LifeGraphResearchResult>;
+  appendWeatherSnapshot(
+    snapshot: Omit<LifeGraphWeatherSnapshot, 'id' | 'timestamp'> &
+      Partial<Pick<LifeGraphWeatherSnapshot, 'id' | 'timestamp'>>,
+  ): Promise<LifeGraphWeatherSnapshot>;
+  appendNewsDigest(
+    digest: Omit<LifeGraphNewsDigest, 'id' | 'read'> &
+      Partial<Pick<LifeGraphNewsDigest, 'id' | 'read'>>,
+  ): Promise<LifeGraphNewsDigest>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
@@ -167,6 +183,38 @@ export interface LifeGraphCalendarEvent {
   status: 'confirmed' | 'tentative' | 'cancelled';
 }
 
+export interface LifeGraphNote {
+  id: string;
+  title: string;
+  content: string;
+  tags: string[];
+  voiceTriggered: boolean;
+  createdAt: string;
+}
+
+export interface LifeGraphResearchResult {
+  id: string;
+  query: string;
+  summary: string;
+  sources?: string[];
+  savedAt: string;
+}
+
+export interface LifeGraphWeatherSnapshot {
+  id: string;
+  location: string;
+  forecast: string;
+  timestamp: string;
+}
+
+export interface LifeGraphNewsDigest {
+  id: string;
+  title: string;
+  summary: string;
+  sources: string[];
+  read: boolean;
+}
+
 export interface GoalPlan {
   id: string;
   title: string;
@@ -191,6 +239,10 @@ export interface LifeGraphDocument {
   updatedAt: string;
   plans: GoalPlan[];
   calendarEvents?: LifeGraphCalendarEvent[];
+  notes?: LifeGraphNote[];
+  researchResults?: LifeGraphResearchResult[];
+  weatherSnapshots?: LifeGraphWeatherSnapshot[];
+  newsDigests?: LifeGraphNewsDigest[];
 }
 
 export interface LifeGraphSummary {

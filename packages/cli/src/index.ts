@@ -35,8 +35,12 @@ import {
   type TickResult,
 } from '@lifeos/goal-engine';
 import { calendarModule } from '@lifeos/calendar-module';
+import { newsModule } from '@lifeos/news-module';
+import { notesModule } from '@lifeos/notes-module';
+import { researchModule } from '@lifeos/research-module';
 import { reminderModule } from '@lifeos/reminder-module';
 import { schedulerModule } from '@lifeos/scheduler-module';
+import { weatherModule } from '@lifeos/weather-module';
 import {
   MissingMicrophoneConsentError,
   UnsupportedVoicePlatformError,
@@ -53,6 +57,14 @@ const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
 const DEFAULT_VOICE_PUBLISH_TIMEOUT_MS = 1500;
 const DEFAULT_VOICE_CLOSE_TIMEOUT_MS = 3000;
+const VOICE_DEMO_SCENARIOS = {
+  task: 'Hey LifeOS, add a task to buy milk',
+  calendar: 'Hey LifeOS, schedule dentist appointment next Tuesday at 10am',
+  research: 'Hey LifeOS, research quantum computing breakthroughs this year',
+  note: 'Hey LifeOS, note that the team prefers async updates',
+  weather: 'Hey LifeOS, what is the weather in London this weekend?',
+  news: 'Hey LifeOS, give me top tech news today',
+} as const;
 
 interface GoalCommandOptions {
   outputJson: boolean;
@@ -110,6 +122,13 @@ interface ModulesCommandOptions {
 interface VoiceCommandOptions {
   mode: 'start' | 'demo' | 'consent' | 'calendar';
   text: string;
+  scenario?: keyof typeof VOICE_DEMO_SCENARIOS;
+  graphPath: string;
+  verbose: boolean;
+}
+
+interface ResearchCommandOptions {
+  query: string;
   graphPath: string;
   verbose: boolean;
 }
@@ -454,6 +473,27 @@ function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null 
   return null;
 }
 
+function normalizeVoiceScenario(
+  scenario: string | undefined,
+): keyof typeof VOICE_DEMO_SCENARIOS | undefined {
+  if (!scenario) {
+    return undefined;
+  }
+  if (scenario in VOICE_DEMO_SCENARIOS) {
+    return scenario as keyof typeof VOICE_DEMO_SCENARIOS;
+  }
+  return undefined;
+}
+
+function resolveVoiceDemoText(options: VoiceCommandOptions): string {
+  const trimmed = options.text.trim();
+  if (trimmed.length > 0) {
+    return trimmed;
+  }
+  const scenario = options.scenario ?? 'task';
+  return VOICE_DEMO_SCENARIOS[scenario];
+}
+
 function extractGraphPathArg(args: string[]): string | undefined {
   for (let index = 0; index < args.length; index += 1) {
     const token = args[index];
@@ -472,7 +512,17 @@ function extractGraphPathArg(args: string[]): string | undefined {
 }
 
 function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[] {
-  return dependencies.defaultModules ?? [reminderModule, calendarModule, schedulerModule];
+  return (
+    dependencies.defaultModules ?? [
+      reminderModule,
+      calendarModule,
+      schedulerModule,
+      researchModule,
+      notesModule,
+      weatherModule,
+      newsModule,
+    ]
+  );
 }
 
 function buildClientOptions(
@@ -582,6 +632,7 @@ export async function runGoalCommand(
     }
     writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
   };
+  verboseLog(`graph_path=${options.graphPath}`);
 
   const host = env.OLLAMA_HOST;
   const startedAt = Date.now();
@@ -1054,7 +1105,8 @@ export async function runVoiceCommand(
     voice = createVoiceRuntime(options, dependencies, env, verboseLog, writeStdout);
 
     if (options.mode === 'demo') {
-      const outcome = await voice.runDemo(options.text);
+      const demoText = resolveVoiceDemoText(options);
+      const outcome = await voice.runDemo(demoText);
       if (!outcome) {
         writeStderr(
           `${chalk.red.bold('Error:')} Demo text must include the wake phrase or follow a wake-only prompt.\n`,
@@ -1069,7 +1121,7 @@ export async function runVoiceCommand(
           borderColor: 'green',
         })}\n`,
       );
-      writeStdout(`Command: ${options.text}\n`);
+      writeStdout(`Command: ${demoText}\n`);
       writeStdout(`Action: ${outcome.action}\n`);
       writeStdout(`LifeOS: ${outcome.responseText}\n`);
       if (outcome.planId) {
@@ -1118,6 +1170,61 @@ export async function runVoiceCommand(
         },
       );
     }
+  }
+}
+
+export async function runResearchCommand(
+  options: ResearchCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  const query = options.query.trim();
+  if (!query) {
+    writeStderr(`${chalk.red.bold('Error:')} Research query is required.\n`);
+    return 1;
+  }
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  const payload = {
+    query,
+    utterance: query,
+    requestedAt: new Date().toISOString(),
+    origin: 'lifeos-cli',
+  };
+
+  try {
+    if (dependencies.moduleLoader) {
+      await dependencies.moduleLoader.publish(
+        Topics.lifeos.voiceIntentResearch,
+        payload,
+        'lifeos-cli',
+      );
+      verboseLog('research_published_via=module_loader');
+    } else {
+      const transport = await publishEventSafely(
+        Topics.lifeos.voiceIntentResearch,
+        payload,
+        dependencies,
+        env,
+        verboseLog,
+      );
+      verboseLog(`research_published_via=${transport}`);
+    }
+
+    writeStdout(chalk.green(`Research request queued: ${query}\n`));
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
   }
 }
 
@@ -1435,10 +1542,33 @@ function buildProgram(
     });
 
   program
+    .command('research')
+    .description('Queue a research request for the research module')
+    .argument('<query>', 'Research query')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (query: string, commandOptions) => {
+      const commandExitCode = await runResearchCommand(
+        {
+          query,
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
     .command('voice')
     .description('Manage voice runtime: start, demo, consent, or calendar')
     .argument('[mode]', 'start | demo | consent | calendar', 'start')
-    .option('--text <text>', 'Demo utterance when mode=demo', 'Hey LifeOS, add a task to buy milk')
+    .option('--text <text>', 'Demo utterance when mode=demo (overrides --scenario)', '')
+    .option(
+      '--scenario <scenario>',
+      'Demo scenario: task | calendar | research | note | weather | news',
+      'task',
+    )
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
     .action(async (mode: string, commandOptions) => {
@@ -1446,20 +1576,21 @@ function buildProgram(
       if (!normalizedMode) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start, demo, or consent.\n`,
+          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start, demo, consent, or calendar.\n`,
         );
         return;
       }
 
-      const commandExitCode = await runVoiceCommand(
-        {
-          mode: normalizedMode,
-          text: commandOptions.text,
-          graphPath: commandOptions.graphPath,
-          verbose: Boolean(commandOptions.verbose),
-        },
-        dependencies,
-      );
+      const normalizedScenario = normalizeVoiceScenario(commandOptions.scenario);
+      const voiceOptions: VoiceCommandOptions = {
+        mode: normalizedMode,
+        text: commandOptions.text,
+        graphPath: commandOptions.graphPath,
+        verbose: Boolean(commandOptions.verbose),
+        ...(normalizedScenario ? { scenario: normalizedScenario } : {}),
+      };
+
+      const commandExitCode = await runVoiceCommand(voiceOptions, dependencies);
       setExitCode(commandExitCode);
     });
 
@@ -1562,7 +1693,15 @@ async function main(): Promise<void> {
     runtimeLoader = createModuleLoader(loaderOptions);
 
     try {
-      await runtimeLoader.loadMany([reminderModule, calendarModule, schedulerModule]);
+      await runtimeLoader.loadMany([
+        reminderModule,
+        calendarModule,
+        schedulerModule,
+        researchModule,
+        notesModule,
+        weatherModule,
+        newsModule,
+      ]);
     } catch {
       await runtimeLoader.close();
       runtimeLoader = null;

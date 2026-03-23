@@ -64,7 +64,8 @@ pnpm lifeos status --json
 ```text
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
-lifeos voice [start|demo|consent|calendar] [--text "<utterance>"] [--graph-path <path>] [--verbose]
+lifeos research "<query>" [--graph-path <path>] [--verbose]
+lifeos voice [start|demo|consent|calendar] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
@@ -81,6 +82,11 @@ pnpm lifeos voice consent
 pnpm lifeos voice start
 # "Hey LifeOS, schedule team meeting tomorrow at 3pm"
 # "Hey LifeOS, add a task to finish the report by Friday"
+# "Hey LifeOS, research quantum computing breakthroughs this year"
+# "Hey LifeOS, note that the team prefers async updates"
+# "Hey LifeOS, what's the weather in London this weekend?"
+# "Hey LifeOS, give me top tech news today"
+pnpm lifeos voice demo --scenario research
 ```
 
 ## ⚙️ Configuration
@@ -126,12 +132,19 @@ Active implementation packages:
 - `@lifeos/event-bus`
 - `@lifeos/module-loader`
 - `@lifeos/reminder-module`
+- `@lifeos/calendar-module`
+- `@lifeos/scheduler-module`
+- `@lifeos/research-module`
+- `@lifeos/notes-module`
+- `@lifeos/weather-module`
+- `@lifeos/news-module`
 
-First runtime module:
+Runtime modules:
 
-- `reminder` listens to overdue tick/task events
-- creates follow-up reminder plans automatically
-- emits `lifeos.reminder.followup.created`
+- `reminder` listens to overdue tick/task events and creates follow-up plans
+- `calendar` persists voice-driven events to `calendarEvents`
+- `scheduler` applies overdue reschedule suggestions
+- `research`, `notes`, `weather`, and `news` handle voice-first daily assistant flows
 
 ## 🧭 Project Direction
 

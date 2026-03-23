@@ -717,6 +717,69 @@ test('voice demo runs the voice core against a simulated utterance', async () =>
   assert.match(output, /Added a task to buy milk/);
 });
 
+test('voice demo supports scenario shortcuts', async () => {
+  const voiceCalls: string[] = [];
+
+  const exitCode = await runCli(['voice', 'demo', '--scenario', 'research'], {
+    createVoiceCore: () => ({
+      async start() {
+        return;
+      },
+      async runDemo(text: string) {
+        voiceCalls.push(text);
+        return {
+          handled: true,
+          action: 'agent_work_requested',
+          responseText: 'Researching quantum computing breakthroughs this year.',
+        };
+      },
+      async close() {
+        return;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(voiceCalls, ['Hey LifeOS, research quantum computing breakthroughs this year']);
+});
+
+test('research command publishes research intent event', async () => {
+  const published: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+  const exitCode = await runCli(['research', 'quantum chips'], {
+    moduleLoader: {
+      async loadMany() {
+        return;
+      },
+      async publish(topic: string, data: Record<string, unknown>) {
+        published.push({ topic, data });
+        return {
+          id: 'evt_research_1',
+          type: topic,
+          timestamp: '2026-03-23T00:00:00.000Z',
+          source: 'lifeos-cli',
+          version: '0.1.0',
+          data,
+        };
+      },
+      async close() {
+        return;
+      },
+      getModuleIds() {
+        return ['research'];
+      },
+    } as never,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(published.length, 1);
+  assert.equal(published[0]?.topic, Topics.lifeos.voiceIntentResearch);
+  assert.equal(published[0]?.data.query, 'quantum chips');
+});
+
 test('voice consent grants persistent microphone permission', async () => {
   const stdout: string[] = [];
   let grantCalls = 0;

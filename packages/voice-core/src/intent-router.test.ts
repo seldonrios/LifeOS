@@ -156,6 +156,83 @@ test('calendar-style intent publishes agent work request', async () => {
   ]);
 });
 
+test('research intent publishes dedicated research topic before agent work request', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'research',
+      payload: { query: 'quantum error correction' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('research quantum error correction');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [
+      Topics.lifeos.voiceIntentResearch,
+      Topics.agent.workRequested,
+      Topics.lifeos.voiceCommandProcessed,
+    ],
+  );
+  assert.equal(publishCalls[0]?.data.query, 'quantum error correction');
+});
+
+test('note intent publishes normalized note payload', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'note_add',
+      payload: {
+        content: 'the team prefers async updates',
+        tags: ['team', 'workflow'],
+      },
+    }),
+  });
+
+  const outcome = await router.handleCommand('note that the team prefers async updates');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  const notePayload = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentNoteAdd,
+  )?.data;
+  assert.ok(notePayload);
+  assert.match(String(notePayload?.title), /team prefers async/i);
+  assert.equal(notePayload?.content, 'the team prefers async updates');
+});
+
+test('news intent publishes dedicated news topic', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => ({
+      intent: 'news',
+      payload: { topic: 'tech' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('top tech news');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentNews,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
+});
+
 test('classifier failures fall back to heuristic task parsing', async () => {
   const createNodeCalls: Array<Record<string, unknown>> = [];
   const router = new IntentRouter({

@@ -10,13 +10,19 @@ const MAX_CALENDAR_TITLE_CHARS = 200;
 const MAX_LOCATION_CHARS = 200;
 const MAX_ATTENDEES = 20;
 const MAX_ATTENDEE_CHARS = 120;
+const MAX_NOTE_TITLE_CHARS = 200;
+const MAX_NOTE_CONTENT_CHARS = 2000;
+const MAX_NOTE_TAGS = 20;
+const MAX_NOTE_TAG_CHARS = 40;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 type ClassifiedIntent =
   | 'task_add'
   | 'calendar_add'
+  | 'note_add'
   | 'question_time'
   | 'weather'
+  | 'news'
   | 'research'
   | 'next_actions'
   | 'unknown';
@@ -29,7 +35,7 @@ interface IntentClassification {
 export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
 
 {
-  "intent": "task_add | calendar_add | question_time | weather | research | next_actions | unknown",
+  "intent": "task_add | calendar_add | note_add | question_time | weather | news | research | next_actions | unknown",
   "payload": {}
 }`;
 
@@ -123,6 +129,31 @@ function normalizeDueDate(value: unknown): string | null {
   return DATE_ONLY_PATTERN.test(candidate) ? candidate : null;
 }
 
+function extractLocationFromText(text: string): string | null {
+  const match = text.match(/\b(?:in|for)\s+([a-zA-Z][a-zA-Z\s-]{1,80})/i)?.[1];
+  return match ? clampText(match, MAX_LOCATION_CHARS) : null;
+}
+
+function extractResearchQuery(text: string): string {
+  const stripped = text.replace(
+    /^(hey life(?:\s?os)?[,\s]*)?(research|look up|investigate)\s+/i,
+    '',
+  );
+  return clampText(stripped || text, MAX_DESCRIPTION_CHARS);
+}
+
+function extractNoteContent(text: string): string {
+  const stripped = text.replace(/^(hey life(?:\s?os)?[,\s]*)?(note that|note)\s+/i, '');
+  return clampText(stripped || text, MAX_NOTE_CONTENT_CHARS);
+}
+
+function deriveNoteTitle(content: string): string {
+  return clampText(
+    content.split(/\s+/g).slice(0, 7).join(' ') || 'Voice note',
+    MAX_NOTE_TITLE_CHARS,
+  );
+}
+
 function extractTaskTitle(text: string): string | null {
   const normalized = text.trim();
   const patterns = [
@@ -146,8 +177,10 @@ function normalizeClassifiedIntent(value: unknown): ClassifiedIntent {
   if (
     value === 'task_add' ||
     value === 'calendar_add' ||
+    value === 'note_add' ||
     value === 'question_time' ||
     value === 'weather' ||
+    value === 'news' ||
     value === 'research' ||
     value === 'next_actions'
   ) {
@@ -332,8 +365,12 @@ export class IntentRouter {
         return this.handleTimeIntent(normalizedText);
       case 'calendar_add':
         return this.handleAgentIntent(normalizedText, 'calendar', classification.payload);
+      case 'note_add':
+        return this.handleAgentIntent(normalizedText, 'note', classification.payload);
       case 'weather':
         return this.handleAgentIntent(normalizedText, 'weather', classification.payload);
+      case 'news':
+        return this.handleAgentIntent(normalizedText, 'news', classification.payload);
       case 'research':
         return this.handleAgentIntent(normalizedText, 'research', classification.payload);
       default:
@@ -364,8 +401,14 @@ export class IntentRouter {
     if (lower.includes('calendar') || lower.includes('schedule')) {
       return 'calendar_add';
     }
+    if (lower.startsWith('note ') || lower.includes('note that')) {
+      return 'note_add';
+    }
     if (lower.includes('weather')) {
       return 'weather';
+    }
+    if (lower.includes('news') || lower.includes('headlines')) {
+      return 'news';
     }
     if (lower.includes('research')) {
       return 'research';
@@ -426,21 +469,31 @@ export class IntentRouter {
 
   private async handleAgentIntent(
     text: string,
-    intent: 'calendar' | 'weather' | 'research',
+    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news',
     payload: Record<string, unknown>,
   ): Promise<IntentOutcome> {
     if (intent === 'calendar') {
       return this.handleCalendarIntent(text, payload);
     }
 
+    const requestedAt = this.now().toISOString();
+    const routedPayload = this.buildIntentPayload(intent, text, payload, requestedAt);
+    const topicByIntent: Record<'weather' | 'research' | 'note' | 'news', string> = {
+      weather: Topics.lifeos.voiceIntentWeather,
+      research: Topics.lifeos.voiceIntentResearch,
+      note: Topics.lifeos.voiceIntentNoteAdd,
+      news: Topics.lifeos.voiceIntentNews,
+    };
+
+    await this.publishSafe(topicByIntent[intent], routedPayload);
     await this.publishSafe(Topics.agent.workRequested, {
       utterance: text,
       intent,
-      payload,
-      requestedAt: this.now().toISOString(),
+      payload: routedPayload,
+      requestedAt,
       origin: 'voice-core',
     });
-    const responseText = `Queued that for the ${intent} flow.`;
+    const responseText = this.intentConfirmation(intent, routedPayload);
     await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
       action: 'agent_work_requested',
       text,
@@ -451,6 +504,76 @@ export class IntentRouter {
       handled: true,
       action: 'agent_work_requested',
       responseText,
+    };
+  }
+
+  private intentConfirmation(
+    intent: 'weather' | 'research' | 'note' | 'news',
+    payload: Record<string, unknown>,
+  ): string {
+    if (intent === 'weather') {
+      const location = getString(payload.location) ?? 'your location';
+      return `Checking weather for ${location}.`;
+    }
+    if (intent === 'research') {
+      const query = getString(payload.query) ?? 'that topic';
+      return `Researching ${query}.`;
+    }
+    if (intent === 'note') {
+      return 'Noted. I will save that.';
+    }
+    return 'Preparing your news digest.';
+  }
+
+  private buildIntentPayload(
+    intent: 'weather' | 'research' | 'note' | 'news',
+    text: string,
+    payload: Record<string, unknown>,
+    requestedAt: string,
+  ): Record<string, unknown> {
+    if (intent === 'weather') {
+      return {
+        location: clampText(
+          getString(payload.location) ?? extractLocationFromText(text) ?? 'current',
+          MAX_LOCATION_CHARS,
+        ),
+        utterance: text,
+        requestedAt,
+      };
+    }
+    if (intent === 'research') {
+      return {
+        query: clampText(
+          getString(payload.query) ?? getString(payload.topic) ?? extractResearchQuery(text),
+          MAX_DESCRIPTION_CHARS,
+        ),
+        utterance: text,
+        requestedAt,
+      };
+    }
+    if (intent === 'note') {
+      const content = clampText(
+        getString(payload.content) ?? getString(payload.note) ?? extractNoteContent(text),
+        MAX_NOTE_CONTENT_CHARS,
+      );
+      const tags =
+        getStringArray(payload.tags)?.map((entry) => clampText(entry, MAX_NOTE_TAG_CHARS)) ?? [];
+      return {
+        title: clampText(
+          getString(payload.title) ?? deriveNoteTitle(content),
+          MAX_NOTE_TITLE_CHARS,
+        ),
+        content,
+        tags: tags.slice(0, MAX_NOTE_TAGS),
+        utterance: text,
+        requestedAt,
+      };
+    }
+    return {
+      topic: clampText(getString(payload.topic) ?? getString(payload.query) ?? 'top', 80),
+      query: clampText(getString(payload.query) ?? text, MAX_DESCRIPTION_CHARS),
+      utterance: text,
+      requestedAt,
     };
   }
 

@@ -35,6 +35,46 @@ export const CalendarEventSchema = z
   })
   .strict();
 
+export const NoteSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1),
+    content: z.string().trim().min(1),
+    tags: z.array(z.string().trim().min(1)).default([]),
+    voiceTriggered: z.boolean().default(true),
+    createdAt: IsoDateTimeSchema,
+  })
+  .strict();
+
+export const ResearchResultSchema = z
+  .object({
+    id: z.string().uuid(),
+    query: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    sources: z.array(z.string().trim().min(1)).optional(),
+    savedAt: IsoDateTimeSchema,
+  })
+  .strict();
+
+export const WeatherSnapshotSchema = z
+  .object({
+    id: z.string().uuid(),
+    location: z.string().trim().min(1),
+    forecast: z.string().trim().min(1),
+    timestamp: IsoDateTimeSchema,
+  })
+  .strict();
+
+export const NewsDigestSchema = z
+  .object({
+    id: z.string().uuid(),
+    title: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    sources: z.array(z.string().trim().min(1)),
+    read: z.boolean().default(false),
+  })
+  .strict();
+
 export const GoalPlanSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -52,6 +92,10 @@ export const LifeGraphDocumentSchema = z
     updatedAt: IsoDateTimeSchema,
     plans: z.array(GoalPlanSchema),
     calendarEvents: z.array(CalendarEventSchema).default([]),
+    notes: z.array(NoteSchema).default([]),
+    researchResults: z.array(ResearchResultSchema).default([]),
+    weatherSnapshots: z.array(WeatherSnapshotSchema).default([]),
+    newsDigests: z.array(NewsDigestSchema).default([]),
   })
   .strict();
 

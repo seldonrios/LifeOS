@@ -87,6 +87,48 @@ test('createNode(plan) preserves optional task metadata fields', async () => {
   assert.equal(task?.suggestedReschedule, '2026-04-16T09:00:00.000Z');
 });
 
+test('append note/research/weather/news methods persist normalized records', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  const note = await client.appendNote({
+    title: 'Team preference',
+    content: 'Team prefers async updates.',
+    tags: ['team', 'process'],
+    voiceTriggered: true,
+  });
+  const research = await client.appendResearchResult({
+    query: 'quantum computing breakthroughs',
+    summary: 'Recent progress includes improved error correction schemes.',
+    sources: ['local-notes'],
+  });
+  const weather = await client.appendWeatherSnapshot({
+    location: 'Boston',
+    forecast: 'Saturday: cool, light rain.',
+  });
+  const news = await client.appendNewsDigest({
+    title: 'Top Tech Headlines',
+    summary: 'A concise daily briefing.',
+    sources: ['https://example.com/rss'],
+  });
+
+  assert.ok(note.id);
+  assert.ok(note.createdAt);
+  assert.ok(research.id);
+  assert.ok(research.savedAt);
+  assert.ok(weather.id);
+  assert.ok(weather.timestamp);
+  assert.ok(news.id);
+  assert.equal(news.read, false);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.notes?.length, 1);
+  assert.equal(graph.researchResults?.length, 1);
+  assert.equal(graph.weatherSnapshots?.length, 1);
+  assert.equal(graph.newsDigests?.length, 1);
+});
+
 test('query supports plans/tasks with filters and limits', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');
