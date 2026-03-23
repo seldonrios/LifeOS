@@ -8,6 +8,7 @@ import type {
   LifeGraphReviewInsights,
   LifeGraphSummary,
 } from '@lifeos/life-graph';
+import { MissingMicrophoneConsentError } from '@lifeos/voice-core';
 
 import { runCli } from './index';
 
@@ -716,44 +717,59 @@ test('voice demo runs the voice core against a simulated utterance', async () =>
   assert.match(output, /Added a task to buy milk/);
 });
 
-test('voice start requires explicit mic-on flag', async () => {
+test('voice consent grants persistent microphone permission', async () => {
+  const stdout: string[] = [];
+  let grantCalls = 0;
+
+  const exitCode = await runCli(['voice', 'consent'], {
+    grantVoiceConsent: async () => {
+      grantCalls += 1;
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(grantCalls, 1);
+  assert.match(stdout.join(''), /Microphone access granted permanently/);
+});
+
+test('voice start surfaces consent guidance when permission is missing', async () => {
   const stderr: string[] = [];
-  let factoryCalls = 0;
+  let closed = 0;
 
   const exitCode = await runCli(['voice', 'start'], {
-    createVoiceCore: () => {
-      factoryCalls += 1;
-      return {
-        async start() {
-          return;
-        },
-        async runDemo() {
-          return null;
-        },
-        async close() {
-          return;
-        },
-        getWakePhrase() {
-          return 'Hey LifeOS';
-        },
-      };
-    },
+    createVoiceCore: () => ({
+      async start() {
+        throw new MissingMicrophoneConsentError();
+      },
+      async runDemo() {
+        return null;
+      },
+      async close() {
+        closed += 1;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
     stderr: (message) => {
       stderr.push(message);
     },
   });
 
   assert.equal(exitCode, 1);
-  assert.equal(factoryCalls, 0);
-  assert.match(stderr.join(''), /Re-run with --mic-on/);
+  assert.equal(closed, 1);
+  assert.match(stderr.join(''), /voice consent/);
 });
 
-test('voice start shows active message and waits for signal when mic-on is set', async () => {
+test('voice start shows active message and waits for signal', async () => {
   const stdout: string[] = [];
   let started = 0;
   let closed = 0;
 
-  const exitCode = await runCli(['voice', 'start', '--mic-on'], {
+  const exitCode = await runCli(['voice', 'start'], {
     createVoiceCore: () => ({
       async start() {
         started += 1;
@@ -780,6 +796,72 @@ test('voice start shows active message and waits for signal when mic-on is set',
   assert.equal(started, 1);
   assert.equal(closed, 1);
   assert.match(stdout.join(''), /LifeOS Voice Core active/);
+});
+
+test('voice start does not hang when runtime close times out', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['voice', 'start'], {
+    createVoiceCore: () => ({
+      async start() {
+        return;
+      },
+      async runDemo() {
+        return null;
+      },
+      async close() {
+        await new Promise<void>(() => {
+          return;
+        });
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+    waitForSignal: async () => {
+      return;
+    },
+    voiceCloseTimeoutMs: 10,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(''), /Voice runtime shutdown degraded/i);
+});
+
+test('voice start surfaces voice runtime logs by default', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['voice', 'start'], {
+    createVoiceCore: (options) => ({
+      async start() {
+        options.logger?.('🎤 Listening...');
+        options.logger?.('You said: "buy milk"');
+      },
+      async runDemo() {
+        return null;
+      },
+      async close() {
+        return;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+    waitForSignal: async () => {
+      return;
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /\[voice\] 🎤 Listening\.\.\./);
+  assert.match(output, /\[voice\] You said: "buy milk"/);
 });
 
 test('events listen --json prints event lines and exits on signal', async () => {

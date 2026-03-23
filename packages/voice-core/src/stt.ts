@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { createInterface, type Interface } from 'node:readline';
 
 export interface TranscriptEvent {
@@ -13,6 +16,10 @@ export interface SpeechRecognitionAdapter {
   stop(): Promise<void>;
 }
 
+export interface AudioTranscriptionAdapter {
+  transcribe(audioBuffer: Buffer): Promise<string>;
+}
+
 interface RecognitionLine {
   type?: 'ready' | 'transcript';
   text?: unknown;
@@ -21,6 +28,32 @@ interface RecognitionLine {
 
 function toPowerShellEncodedCommand(script: string): string {
   return Buffer.from(script, 'utf16le').toString('base64');
+}
+
+function toPowerShellLiteral(value: string): string {
+  return value.replace(/'/g, "''");
+}
+
+function pcm16ToWav(audioBuffer: Buffer, sampleRate: number, channels: number): Buffer {
+  const header = Buffer.alloc(44);
+  const byteRate = sampleRate * channels * 2;
+  const blockAlign = channels * 2;
+
+  header.write('RIFF', 0, 'ascii');
+  header.writeUInt32LE(36 + audioBuffer.length, 4);
+  header.write('WAVE', 8, 'ascii');
+  header.write('fmt ', 12, 'ascii');
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(16, 34);
+  header.write('data', 36, 'ascii');
+  header.writeUInt32LE(audioBuffer.length, 40);
+
+  return Buffer.concat([header, audioBuffer]);
 }
 
 function buildContinuousRecognitionScript(locale: string): string {
@@ -67,6 +100,35 @@ try {
 `;
 }
 
+function buildFileTranscriptionScript(locale: string, waveFilePath: string): string {
+  const escapedWavePath = toPowerShellLiteral(waveFilePath);
+  return `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.Speech
+$recognizerInfo = [System.Speech.Recognition.SpeechRecognitionEngine]::InstalledRecognizers() |
+  Where-Object { $_.Culture.Name -eq '${locale}' } |
+  Select-Object -First 1
+if ($null -eq $recognizerInfo) {
+  throw "No installed speech recognizer found for locale ${locale}."
+}
+$engine = New-Object System.Speech.Recognition.SpeechRecognitionEngine($recognizerInfo)
+$grammar = New-Object System.Speech.Recognition.DictationGrammar
+$engine.LoadGrammar($grammar)
+$engine.SetInputToWaveFile('${escapedWavePath}')
+$result = $engine.Recognize()
+if ($null -eq $result -or [string]::IsNullOrWhiteSpace($result.Text)) {
+  [Console]::Out.WriteLine('{"text":"","confidence":0}')
+} else {
+  $payload = @{
+    text = $result.Text
+    confidence = [Math]::Round($result.Confidence, 4)
+  } | ConvertTo-Json -Compress
+  [Console]::Out.WriteLine($payload)
+}
+$engine.Dispose()
+`;
+}
+
 export class UnsupportedVoicePlatformError extends Error {
   constructor(message = 'Continuous local voice capture is currently available only on Windows.') {
     super(message);
@@ -77,20 +139,37 @@ export class UnsupportedVoicePlatformError extends Error {
 export interface SystemSpeechRecognitionAdapterOptions {
   locale?: string;
   powershellPath?: string;
+  sampleRate?: number;
+  channels?: number;
   logger?: (message: string) => void;
+  startupTimeoutMs?: number;
+  transcriptionTimeoutMs?: number;
+  stopTimeoutMs?: number;
 }
 
-export class SystemSpeechRecognitionAdapter implements SpeechRecognitionAdapter {
+export class SystemSpeechRecognitionAdapter
+  implements SpeechRecognitionAdapter, AudioTranscriptionAdapter
+{
   private process: ReturnType<typeof spawn> | null = null;
   private stdout: Interface | null = null;
   private readonly locale: string;
   private readonly powershellPath: string;
+  private readonly sampleRate: number;
+  private readonly channels: number;
   private readonly logger: (message: string) => void;
+  private readonly startupTimeoutMs: number;
+  private readonly transcriptionTimeoutMs: number;
+  private readonly stopTimeoutMs: number;
 
   constructor(options: SystemSpeechRecognitionAdapterOptions = {}) {
     this.locale = options.locale ?? 'en-US';
     this.powershellPath = options.powershellPath ?? 'powershell.exe';
+    this.sampleRate = options.sampleRate ?? 16000;
+    this.channels = options.channels ?? 1;
     this.logger = options.logger ?? (() => undefined);
+    this.startupTimeoutMs = options.startupTimeoutMs ?? 10_000;
+    this.transcriptionTimeoutMs = options.transcriptionTimeoutMs ?? 12_000;
+    this.stopTimeoutMs = options.stopTimeoutMs ?? 2_000;
   }
 
   async start(onTranscript: TranscriptHandler): Promise<void> {
@@ -119,25 +198,55 @@ export class SystemSpeechRecognitionAdapter implements SpeechRecognitionAdapter 
 
     this.process = child;
     this.stdout = createInterface({ input: child.stdout });
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk: string) => {
+      const normalized = chunk.trim();
+      if (normalized) {
+        this.logger(`[voice.stt] ${normalized}`);
+      }
+    });
 
     await new Promise<void>((resolve, reject) => {
       let settled = false;
+      let recognizerReady = false;
+      const timeout = setTimeout(() => {
+        complete(() => {
+          if (child.exitCode === null && child.signalCode === null) {
+            child.kill();
+          }
+          reject(
+            new Error(`Speech recognizer did not become ready within ${this.startupTimeoutMs}ms.`),
+          );
+        });
+      }, this.startupTimeoutMs);
 
       const complete = (callback: () => void): void => {
         if (settled) {
           return;
         }
         settled = true;
+        clearTimeout(timeout);
         callback();
       };
 
       child.once('error', (error) => {
+        if (recognizerReady) {
+          this.logger(`[voice.stt] recognizer process error: ${error.message}`);
+          return;
+        }
         complete(() => reject(error));
       });
 
-      child.once('exit', (code, signal) => {
+      child.on('exit', (code, signal) => {
+        this.process = null;
+        this.stdout?.close();
+        this.stdout = null;
         const reason = signal ? `signal ${signal}` : `code ${code ?? 0}`;
-        complete(() => reject(new Error(`Speech recognizer exited before ready (${reason}).`)));
+        if (!recognizerReady) {
+          complete(() => reject(new Error(`Speech recognizer exited before ready (${reason}).`)));
+          return;
+        }
+        this.logger(`[voice.stt] recognizer stopped (${reason}).`);
       });
 
       this.stdout?.on('line', (line) => {
@@ -150,6 +259,7 @@ export class SystemSpeechRecognitionAdapter implements SpeechRecognitionAdapter 
         }
 
         if (parsed.type === 'ready') {
+          recognizerReady = true;
           complete(resolve);
           return;
         }
@@ -171,14 +281,6 @@ export class SystemSpeechRecognitionAdapter implements SpeechRecognitionAdapter 
         }
       });
     });
-
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
-      const normalized = chunk.trim();
-      if (normalized) {
-        this.logger(`[voice.stt] ${normalized}`);
-      }
-    });
   }
 
   async stop(): Promise<void> {
@@ -195,18 +297,142 @@ export class SystemSpeechRecognitionAdapter implements SpeechRecognitionAdapter 
     }
 
     await new Promise<void>((resolve) => {
-      child.once('exit', () => resolve());
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill('SIGKILL');
+        }
+      }, this.stopTimeoutMs);
+
+      child.once('exit', () => {
+        clearTimeout(timeout);
+        resolve();
+      });
       child.kill();
+    });
+  }
+
+  async transcribe(audioBuffer: Buffer): Promise<string> {
+    if (process.platform !== 'win32') {
+      throw new UnsupportedVoicePlatformError();
+    }
+    if (audioBuffer.length === 0) {
+      return '';
+    }
+
+    const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-stt-'));
+    const wavePath = join(tempDir, 'wake-command.wav');
+    const waveBuffer = pcm16ToWav(audioBuffer, this.sampleRate, this.channels);
+
+    try {
+      await writeFile(wavePath, waveBuffer);
+      const stdout = await this.runPowerShellScript(
+        buildFileTranscriptionScript(this.locale, wavePath),
+        this.transcriptionTimeoutMs,
+      );
+      const lines = stdout
+        .split(/\r?\n/g)
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0);
+      const line =
+        [...lines].reverse().find((entry) => entry.startsWith('{') && entry.endsWith('}')) ??
+        lines[lines.length - 1];
+      if (!line) {
+        return '';
+      }
+
+      try {
+        const parsed = JSON.parse(line) as { text?: unknown };
+        return typeof parsed.text === 'string' ? parsed.text.trim() : '';
+      } catch {
+        this.logger(`[voice.stt] unable to parse transcription payload: ${line}`);
+        return '';
+      }
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  }
+
+  private async runPowerShellScript(script: string, timeoutMs: number): Promise<string> {
+    const encodedScript = toPowerShellEncodedCommand(script);
+    return new Promise<string>((resolve, reject) => {
+      const child = spawn(
+        this.powershellPath,
+        [
+          '-NoProfile',
+          '-NonInteractive',
+          '-ExecutionPolicy',
+          'Bypass',
+          '-EncodedCommand',
+          encodedScript,
+        ],
+        {
+          stdio: ['ignore', 'pipe', 'pipe'],
+        },
+      );
+
+      let stdout = '';
+      let stderr = '';
+      let settled = false;
+      const completeResolve = (value: string): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        resolve(value);
+      };
+      const completeReject = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill();
+        }
+        completeReject(new Error(`STT transcription timed out after ${timeoutMs}ms.`));
+      }, timeoutMs);
+
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
+      child.stdout.on('data', (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.on('data', (chunk: string) => {
+        stderr += chunk;
+      });
+      child.once('error', (error) => {
+        completeReject(error);
+      });
+      child.once('exit', (code, signal) => {
+        if (code === 0) {
+          completeResolve(stdout);
+          return;
+        }
+
+        const reason = signal ? `signal ${signal}` : `code ${code ?? 0}`;
+        const normalizedErr = stderr.trim();
+        completeReject(
+          new Error(
+            normalizedErr.length > 0
+              ? `STT transcription failed (${reason}): ${normalizedErr}`
+              : `STT transcription failed (${reason}).`,
+          ),
+        );
+      });
     });
   }
 }
 
 export interface SpeechToTextOptions {
-  adapter?: SpeechRecognitionAdapter;
+  adapter?: SpeechRecognitionAdapter & AudioTranscriptionAdapter;
 }
 
 export class SpeechToText {
-  private readonly adapter: SpeechRecognitionAdapter;
+  private readonly adapter: SpeechRecognitionAdapter & AudioTranscriptionAdapter;
 
   constructor(options: SpeechToTextOptions = {}) {
     this.adapter = options.adapter ?? new SystemSpeechRecognitionAdapter();
@@ -214,6 +440,10 @@ export class SpeechToText {
 
   async start(onTranscript: TranscriptHandler): Promise<void> {
     await this.adapter.start(onTranscript);
+  }
+
+  async transcribe(audioBuffer: Buffer): Promise<string> {
+    return this.adapter.transcribe(audioBuffer);
   }
 
   async stop(): Promise<void> {

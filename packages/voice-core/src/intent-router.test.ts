@@ -20,6 +20,10 @@ test('task intent creates a plan and emits task-scheduled events', async () => {
       publishCalls.push({ topic, data });
     },
     now: () => new Date('2026-03-22T15:00:00.000Z'),
+    classifyIntent: async () => ({
+      intent: 'task_add',
+      payload: { title: 'Buy milk' },
+    }),
   });
 
   const outcome = await router.handleCommand('add a task to buy milk');
@@ -46,6 +50,10 @@ test('next-actions intent returns the top next action', async () => {
         };
       },
     } as never,
+    classifyIntent: async () => ({
+      intent: 'next_actions',
+      payload: {},
+    }),
   });
 
   const outcome = await router.handleCommand("what's next");
@@ -61,6 +69,10 @@ test('unknown intent publishes unhandled event', async () => {
     publish: async (topic) => {
       publishCalls.push(topic);
     },
+    classifyIntent: async () => ({
+      intent: 'unknown',
+      payload: {},
+    }),
   });
 
   const outcome = await router.handleCommand('open the pod bay doors');
@@ -77,6 +89,10 @@ test('time intent responds with current timestamp', async () => {
       publishCalls.push({ topic, data });
     },
     now: () => new Date('2026-03-23T13:45:00.000Z'),
+    classifyIntent: async () => ({
+      intent: 'question_time',
+      payload: {},
+    }),
   });
 
   const outcome = await router.handleCommand('Hey LifeOS what time is it');
@@ -94,10 +110,106 @@ test('calendar-style intent publishes agent work request', async () => {
       publishCalls.push(topic);
     },
     now: () => new Date('2026-03-23T13:45:00.000Z'),
+    classifyIntent: async () => ({
+      intent: 'calendar_add',
+      payload: {
+        date: '2026-03-24',
+      },
+    }),
   });
 
   const outcome = await router.handleCommand('check my calendar for tomorrow');
   assert.equal(outcome.handled, true);
   assert.equal(outcome.action, 'agent_work_requested');
   assert.deepEqual(publishCalls, [Topics.agent.workRequested, Topics.lifeos.voiceCommandProcessed]);
+});
+
+test('classifier failures fall back to heuristic task parsing', async () => {
+  const createNodeCalls: Array<Record<string, unknown>> = [];
+  const router = new IntentRouter({
+    client: {
+      async createNode(_label: string, data: Record<string, unknown>) {
+        createNodeCalls.push(data);
+        return String(data.id);
+      },
+    } as never,
+    classifyIntent: async () => {
+      throw new Error('local model unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('add a task to buy milk');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'task_added');
+  assert.equal(createNodeCalls.length, 1);
+});
+
+test('event publish failures do not fail task creation', async () => {
+  const createNodeCalls: Array<Record<string, unknown>> = [];
+  const router = new IntentRouter({
+    client: {
+      async createNode(_label: string, data: Record<string, unknown>) {
+        createNodeCalls.push(data);
+        return String(data.id);
+      },
+    } as never,
+    publish: async () => {
+      throw new Error('event bus offline');
+    },
+    classifyIntent: async () => ({
+      intent: 'task_add',
+      payload: { title: 'Buy milk' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('add a task to buy milk');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'task_added');
+  assert.equal(createNodeCalls.length, 1);
+});
+
+test('blank commands short-circuit to unhandled without classifying intent', async () => {
+  let classifyCalls = 0;
+  const router = new IntentRouter({
+    client: {} as never,
+    classifyIntent: async () => {
+      classifyCalls += 1;
+      return {
+        intent: 'task_add',
+        payload: {},
+      };
+    },
+  });
+
+  const outcome = await router.handleCommand('   ');
+  assert.equal(outcome.handled, false);
+  assert.equal(outcome.action, 'unhandled');
+  assert.equal(classifyCalls, 0);
+});
+
+test('task payloads are trimmed to safe title and description lengths', async () => {
+  const createNodeCalls: Array<Record<string, unknown>> = [];
+  const longTitle = 'x'.repeat(400);
+  const router = new IntentRouter({
+    client: {
+      async createNode(_label: string, data: Record<string, unknown>) {
+        createNodeCalls.push(data);
+        return String(data.id);
+      },
+    } as never,
+    classifyIntent: async () => ({
+      intent: 'task_add',
+      payload: { title: longTitle },
+    }),
+  });
+
+  const outcome = await router.handleCommand(`add a task to ${'y'.repeat(3000)}`);
+  assert.equal(outcome.handled, true);
+  assert.equal(createNodeCalls.length, 1);
+
+  const created = createNodeCalls[0] ?? {};
+  const taskList = created.tasks as Array<{ title?: string }>;
+  assert.ok(taskList?.[0]?.title);
+  assert.ok(String(taskList[0].title).length <= 160);
+  assert.ok(String(created.description ?? '').length <= 1300);
 });

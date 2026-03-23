@@ -14,10 +14,11 @@
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
-    "test": "tsx --test src/index.test.ts src/intent-router.test.ts"
+    "test": "tsx --test src/index.test.ts src/intent-router.test.ts src/consent-manager.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
-    "@lifeos/life-graph": "workspace:*"
+    "@lifeos/life-graph": "workspace:*",
+    "node-record-lpcm16": "^1.0.1"
   }
 }

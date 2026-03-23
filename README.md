@@ -64,7 +64,7 @@ pnpm lifeos status --json
 ```text
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
-lifeos voice [start|demo] [--mic-on] [--text "<utterance>"] [--graph-path <path>] [--verbose]
+lifeos voice [start|demo|consent] [--text "<utterance>"] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]

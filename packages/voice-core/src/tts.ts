@@ -25,13 +25,19 @@ export interface SpeechSynthesisAdapter {
 
 export interface PowerShellSpeechSynthesisAdapterOptions {
   powershellPath?: string;
+  timeoutMs?: number;
+  logger?: (message: string) => void;
 }
 
 export class PowerShellSpeechSynthesisAdapter implements SpeechSynthesisAdapter {
   private readonly powershellPath: string;
+  private readonly timeoutMs: number;
+  private readonly logger: (message: string) => void;
 
   constructor(options: PowerShellSpeechSynthesisAdapterOptions = {}) {
     this.powershellPath = options.powershellPath ?? 'powershell.exe';
+    this.timeoutMs = options.timeoutMs ?? 15_000;
+    this.logger = options.logger ?? (() => undefined);
   }
 
   async speak(text: string): Promise<void> {
@@ -57,18 +63,46 @@ export class PowerShellSpeechSynthesisAdapter implements SpeechSynthesisAdapter 
       );
 
       let stderr = '';
+      let settled = false;
+      const completeResolve = (): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        resolve();
+      };
+      const completeReject = (error: Error): void => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        clearTimeout(timeout);
+        reject(error);
+      };
+      const timeout = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode === null) {
+          child.kill();
+        }
+        completeReject(new Error(`Text-to-speech timed out after ${this.timeoutMs}ms.`));
+      }, this.timeoutMs);
+
       child.stderr.setEncoding('utf8');
       child.stderr.on('data', (chunk: string) => {
         stderr += chunk;
       });
-      child.once('error', reject);
+      child.once('error', (error) => {
+        completeReject(error);
+      });
       child.once('exit', (code) => {
         if (code === 0) {
-          resolve();
+          completeResolve();
           return;
         }
 
-        reject(new Error(stderr.trim() || `Text-to-speech exited with code ${code ?? 0}.`));
+        const normalized = stderr.trim() || `Text-to-speech exited with code ${code ?? 0}.`;
+        this.logger(`[voice.tts] ${normalized}`);
+        completeReject(new Error(normalized));
       });
     });
   }
@@ -87,12 +121,15 @@ export interface TextToSpeechOptions {
 
 export class TextToSpeech {
   private readonly adapter: SpeechSynthesisAdapter;
+  private pending: Promise<void> = Promise.resolve();
 
   constructor(options: TextToSpeechOptions = {}) {
     this.adapter = options.adapter ?? new PowerShellSpeechSynthesisAdapter();
   }
 
   async speak(text: string): Promise<void> {
-    await this.adapter.speak(text);
+    const next = this.pending.catch(() => undefined).then(() => this.adapter.speak(text));
+    this.pending = next.catch(() => undefined);
+    await next;
   }
 }

@@ -35,7 +35,9 @@ import {
 } from '@lifeos/goal-engine';
 import { reminderModule } from '@lifeos/reminder-module';
 import {
+  MissingMicrophoneConsentError,
   UnsupportedVoicePlatformError,
+  consent,
   createVoiceCore,
   type IntentOutcome,
   type VoiceCoreOptions,
@@ -46,6 +48,8 @@ import { handleNextActions, handleTaskComplete, handleTaskList } from './task-co
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
+const DEFAULT_VOICE_PUBLISH_TIMEOUT_MS = 1500;
+const DEFAULT_VOICE_CLOSE_TIMEOUT_MS = 3000;
 
 interface GoalCommandOptions {
   outputJson: boolean;
@@ -101,9 +105,8 @@ interface ModulesCommandOptions {
 }
 
 interface VoiceCommandOptions {
-  mode: 'start' | 'demo';
+  mode: 'start' | 'demo' | 'consent';
   text: string;
-  micOn: boolean;
   graphPath: string;
   verbose: boolean;
 }
@@ -224,6 +227,7 @@ export interface RunCliDependencies {
     logger?: (message: string) => void;
   }) => Promise<TickResult>;
   createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
+  grantVoiceConsent?: () => Promise<void>;
   createVoiceCore?: (options: VoiceCoreOptions) => VoiceRuntimeController;
   createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
   moduleLoader?: ModuleLoader;
@@ -233,6 +237,8 @@ export interface RunCliDependencies {
   stderr?: (message: string) => void;
   fileExists?: (path: string) => boolean;
   createSpinner?: (text: string) => SpinnerLike;
+  voicePublishTimeoutMs?: number;
+  voiceCloseTimeoutMs?: number;
 }
 
 interface FriendlyCliError {
@@ -362,6 +368,29 @@ function normalizeErrorMessage(error: unknown): string {
   return 'Unknown error.';
 }
 
+function withTimeout<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  timeoutMessage: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(timeoutMessage));
+    }, timeoutMs);
+
+    operation.then(
+      (value) => {
+        clearTimeout(timeout);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timeout);
+        reject(error);
+      },
+    );
+  });
+}
+
 function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
   const message = normalizeErrorMessage(error);
 
@@ -415,7 +444,7 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
 }
 
 function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null {
-  if (action === 'start' || action === 'demo') {
+  if (action === 'start' || action === 'demo' || action === 'consent') {
     return action;
   }
 
@@ -460,9 +489,18 @@ function createVoicePublisher(
   env: NodeJS.ProcessEnv,
   verboseLog: (line: string) => void,
 ): NonNullable<VoiceCoreOptions['publish']> {
+  const publishTimeoutMs = dependencies.voicePublishTimeoutMs ?? DEFAULT_VOICE_PUBLISH_TIMEOUT_MS;
+
   if (dependencies.moduleLoader) {
     return async (topic, data, source) => {
-      await dependencies.moduleLoader?.publish(topic, data, source);
+      const publishPromise = Promise.resolve(
+        dependencies.moduleLoader?.publish(topic, data, source),
+      ).then(() => undefined);
+      await withTimeout(
+        publishPromise,
+        publishTimeoutMs,
+        `voice publish timeout for topic ${topic}`,
+      );
     };
   }
 
@@ -477,9 +515,17 @@ function createVoicePublisher(
     });
 
     try {
-      await eventBus.publish(topic, createRuntimeEvent(topic, data, source));
+      await withTimeout(
+        eventBus.publish(topic, createRuntimeEvent(topic, data, source)),
+        publishTimeoutMs,
+        `voice publish timeout for topic ${topic}`,
+      );
     } finally {
-      await eventBus.close();
+      await withTimeout(eventBus.close(), publishTimeoutMs, 'voice event bus close timeout').catch(
+        (error: unknown) => {
+          verboseLog(`voice_event_bus_close_degraded reason=${normalizeErrorMessage(error)}`);
+        },
+      );
     }
   };
 }
@@ -489,13 +535,16 @@ function createVoiceRuntime(
   dependencies: RunCliDependencies,
   env: NodeJS.ProcessEnv,
   verboseLog: (line: string) => void,
+  writeStdout: (message: string) => void,
 ): VoiceRuntimeController {
   const factory = dependencies.createVoiceCore ?? createVoiceCore;
   const voiceOptions: VoiceCoreOptions = {
     env,
     graphPath: options.graphPath,
     publish: createVoicePublisher(dependencies, env, verboseLog),
-    logger: (line) => verboseLog(line),
+    logger: (line) => {
+      writeStdout(`${chalk.cyan(`[voice] ${line}`)}\n`);
+    },
   };
   if (dependencies.now) {
     voiceOptions.now = dependencies.now;
@@ -988,17 +1037,13 @@ export async function runVoiceCommand(
 
   let voice: VoiceRuntimeController | null = null;
   try {
-    if (options.mode === 'start' && options.micOn !== true) {
-      writeStderr(
-        `${chalk.red.bold('Error:')} Microphone capture is disabled. Re-run with --mic-on.\n`,
-      );
-      writeStderr(
-        `${chalk.yellow('Quick fix:\n  pnpm lifeos voice start --mic-on\n  or use `pnpm lifeos voice demo` for a text-only cycle')}\n`,
-      );
-      return 1;
+    if (options.mode === 'consent') {
+      await (dependencies.grantVoiceConsent ?? consent.grantConsent.bind(consent))();
+      writeStdout(chalk.green('Microphone access granted permanently.\n'));
+      return 0;
     }
 
-    voice = createVoiceRuntime(options, dependencies, env, verboseLog);
+    voice = createVoiceRuntime(options, dependencies, env, verboseLog, writeStdout);
 
     if (options.mode === 'demo') {
       const outcome = await voice.runDemo(options.text);
@@ -1034,6 +1079,14 @@ export async function runVoiceCommand(
     await waitForSignal();
     return 0;
   } catch (error: unknown) {
+    if (error instanceof MissingMicrophoneConsentError) {
+      writeStderr(`${chalk.red.bold('Error:')} ${error.message}\n`);
+      writeStderr(
+        `${chalk.yellow('Quick fix:\n  pnpm lifeos voice consent\n  then run `pnpm lifeos voice start`')}\n`,
+      );
+      return 1;
+    }
+
     if (error instanceof UnsupportedVoicePlatformError) {
       writeStderr(`${chalk.red.bold('Error:')} ${error.message}\n`);
       writeStderr(
@@ -1046,7 +1099,16 @@ export async function runVoiceCommand(
     return 1;
   } finally {
     if (voice) {
-      await voice.close().catch(() => undefined);
+      const closeTimeoutMs = dependencies.voiceCloseTimeoutMs ?? DEFAULT_VOICE_CLOSE_TIMEOUT_MS;
+      await withTimeout(voice.close(), closeTimeoutMs, 'voice runtime shutdown timeout').catch(
+        (error: unknown) => {
+          writeStderr(
+            `${chalk.yellow(
+              `[warn] Voice runtime shutdown degraded: ${normalizeErrorMessage(error)}`,
+            )}\n`,
+          );
+        },
+      );
     }
   }
 }
@@ -1366,9 +1428,8 @@ function buildProgram(
 
   program
     .command('voice')
-    .description('Start local voice mode or run the offline voice demo')
-    .argument('[mode]', 'start | demo', 'start')
-    .option('--mic-on', 'Enable live microphone capture for start mode')
+    .description('Manage voice runtime: start, demo, or consent')
+    .argument('[mode]', 'start | demo | consent', 'start')
     .option('--text <text>', 'Demo utterance when mode=demo', 'Hey LifeOS, add a task to buy milk')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
@@ -1377,7 +1438,7 @@ function buildProgram(
       if (!normalizedMode) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start or demo.\n`,
+          `${chalk.red.bold('Error:')} Invalid voice mode "${mode}". Use start, demo, or consent.\n`,
         );
         return;
       }
@@ -1386,7 +1447,6 @@ function buildProgram(
         {
           mode: normalizedMode,
           text: commandOptions.text,
-          micOn: Boolean(commandOptions.micOn),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },
