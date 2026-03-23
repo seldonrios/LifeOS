@@ -10,6 +10,7 @@ import {
   UnsupportedQueryError,
   createLifeGraphClient,
 } from './client';
+import { createDeterministicEmbedding } from './memory';
 import { loadGraph } from './store';
 import type { ModuleSchema } from './types';
 
@@ -235,7 +236,7 @@ test('mergeDelta performs last-write-wins merge for plans and notes', async () =
     voiceTriggered: true,
   });
 
-  await client.mergeDelta({
+  const mergeResult = await client.mergeDelta({
     plans: [
       {
         id: 'goal_merge_1',
@@ -266,6 +267,9 @@ test('mergeDelta performs last-write-wins merge for plans and notes', async () =
     ],
   });
 
+  assert.equal(mergeResult.merged, true);
+  assert.equal(mergeResult.conflicts.length, 0);
+
   const graph = await loadGraph(graphPath);
   assert.equal(graph.plans.length, 2);
   const mergedPlan = graph.plans.find((entry) => entry.id === 'goal_merge_1');
@@ -275,6 +279,74 @@ test('mergeDelta performs last-write-wins merge for plans and notes', async () =
     (entry) => entry.id === '7bfe792c-8054-441f-87fd-95f9f3f5f8bd',
   );
   assert.equal(mergedNote?.content, 'New content from remote');
+});
+
+test('mergeDelta reports conflicts for older records and keeps local value', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendNote({
+    id: 'f63f5d2f-b666-4956-a3c1-8e3124b6fcb9',
+    title: 'Fresh note',
+    content: 'Keep this content',
+    tags: ['sync'],
+    createdAt: '2026-03-23T08:00:00.000Z',
+    voiceTriggered: true,
+  });
+
+  const mergeResult = await client.mergeDelta({
+    notes: [
+      {
+        id: 'f63f5d2f-b666-4956-a3c1-8e3124b6fcb9',
+        title: 'Fresh note',
+        content: 'Older remote content',
+        tags: ['sync', 'remote'],
+        createdAt: '2026-03-22T08:00:00.000Z',
+        voiceTriggered: true,
+      },
+    ],
+  });
+
+  assert.equal(mergeResult.conflicts.length, 1);
+  assert.equal(mergeResult.conflicts[0]?.collection, 'notes');
+  assert.equal(mergeResult.conflicts[0]?.reason, 'incoming_older');
+  const graph = await loadGraph(graphPath);
+  const note = graph.notes?.find((entry) => entry.id === 'f63f5d2f-b666-4956-a3c1-8e3124b6fcb9');
+  assert.equal(note?.content, 'Keep this content');
+});
+
+test('mergeDelta recomputes memory embeddings locally while preserving thread metadata', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  const memoryId = 'b7df3f7a-147f-45f1-aef0-cb4ef7118a2d';
+  const threadId = '02b11c41-78e7-497a-89b3-14bc34ec4b4f';
+  const content = 'Follow up on Grok 4 prep notes before tomorrow meeting.';
+  const expectedEmbedding = createDeterministicEmbedding(content);
+
+  await client.mergeDelta({
+    memory: [
+      {
+        id: memoryId,
+        type: 'conversation',
+        content,
+        embedding: Array.from({ length: 384 }, () => 0.25),
+        timestamp: '2026-03-23T10:00:00.000Z',
+        relatedTo: ['lifeos.voice.intent.research'],
+        threadId,
+        role: 'user',
+      },
+    ],
+  });
+
+  const graph = await loadGraph(graphPath);
+  const merged = graph.memory?.find((entry) => entry.id === memoryId);
+  assert.ok(merged);
+  assert.equal(merged?.threadId, threadId);
+  assert.equal(merged?.role, 'user');
+  assert.deepEqual(merged?.embedding.slice(0, 8), expectedEmbedding.slice(0, 8));
 });
 
 test('memory thread retrieval keeps role and preference metadata with date filtering', async () => {

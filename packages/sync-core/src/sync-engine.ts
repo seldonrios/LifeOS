@@ -185,7 +185,7 @@ export class SyncEngine {
       if (typed.type === Topics.lifeos.syncDelta) {
         const delta = toSyncDelta(typed.data);
         if (!delta) {
-          this.logger('[SyncEngine] Ignoring malformed sync delta.');
+          this.logger('[SyncEngine] ignoring malformed sync delta');
           return;
         }
         await this.handleIncomingDelta(delta);
@@ -250,10 +250,12 @@ export class SyncEngine {
       return false;
     }
 
-    this.logger(`🔄 Syncing delta from ${delta.deviceId}`);
+    this.logger(`[SyncEngine] syncing delta from ${delta.deviceId}`);
 
     try {
-      await this.client.mergeDelta(delta.payload);
+      const mergeResult = await this.client.mergeDelta(delta.payload);
+      const mergeConflicts =
+        mergeResult && Array.isArray(mergeResult.conflicts) ? mergeResult.conflicts : [];
       this.seenDeltaIds.add(delta.deltaId);
       trimSet(this.seenDeltaIds, MAX_TRACKED_DELTAS);
       this.devices.set(delta.deviceId, {
@@ -262,7 +264,31 @@ export class SyncEngine {
         lastSyncTimestamp: delta.timestamp,
       });
       this.stats.deltasReceived += 1;
-      this.logger('✅ Delta merged successfully');
+      this.logger('[SyncEngine] delta merged successfully');
+
+      if (mergeConflicts.length > 0) {
+        this.logger(
+          `[SyncEngine] merge conflicts detected (${mergeConflicts.length}) for delta ${delta.deltaId}`,
+        );
+        await this.eventBus.publish(Topics.lifeos.syncConflictDetected, {
+          id: randomUUID(),
+          type: Topics.lifeos.syncConflictDetected,
+          timestamp: this.now().toISOString(),
+          source: 'sync-core',
+          version: SYNC_VERSION,
+          data: {
+            deltaId: delta.deltaId,
+            deviceId: delta.deviceId,
+            deviceName: delta.deviceName,
+            conflictCount: mergeConflicts.length,
+            conflicts: mergeConflicts,
+          },
+          metadata: {
+            syncReplayed: true,
+            syncOriginDeviceId: delta.deviceId,
+          },
+        });
+      }
 
       await this.onIncomingDelta(delta);
 
@@ -279,7 +305,7 @@ export class SyncEngine {
       this.stats.deltasReplayed += 1;
       return true;
     } catch (error: unknown) {
-      this.logger(`❌ Failed to merge delta: ${String(error)}`);
+      this.logger(`[SyncEngine] failed to merge delta: ${String(error)}`);
       return false;
     }
   }

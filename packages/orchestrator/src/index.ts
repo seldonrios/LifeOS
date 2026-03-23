@@ -100,6 +100,20 @@ function parsePositiveInt(value: string | undefined): number | null {
   return parsed;
 }
 
+function parseBooleanPreference(value: string | undefined): boolean {
+  if (!value) {
+    return false;
+  }
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized === '1' ||
+    normalized === 'true' ||
+    normalized === 'yes' ||
+    normalized === 'on' ||
+    normalized === 'enabled'
+  );
+}
+
 function resolveBriefingMaxChars(profile: PersonalityProfile, shortBriefing: boolean): number {
   const preferenceSeconds = parsePositiveInt(profile.preferences.briefing_max_seconds);
   if (preferenceSeconds) {
@@ -630,6 +644,44 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
 
       await context.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
         if (event.type === Topics.lifeos.syncDelta) {
+          return;
+        }
+
+        if (event.type === Topics.lifeos.syncConflictDetected) {
+          const countFromData =
+            typeof event.data.conflictCount === 'number' &&
+            Number.isFinite(event.data.conflictCount)
+              ? Math.max(0, Math.trunc(event.data.conflictCount))
+              : Array.isArray(event.data.conflicts)
+                ? event.data.conflicts.length
+                : 0;
+          try {
+            await memory.remember({
+              type: 'insight',
+              content: `Sync conflict audit: ${countFromData} conflicts from ${event.data.deviceId ?? 'unknown-device'}.`,
+              relatedTo: [event.type],
+            });
+          } catch (error: unknown) {
+            context.log(
+              `[Orchestrator] sync conflict memory degraded: ${normalizeErrorMessage(error)}`,
+            );
+          }
+
+          if (countFromData <= 0) {
+            return;
+          }
+          const profile = await getProfile();
+          const speakConflicts = parseBooleanPreference(
+            profile.preferences.sync_conflict_voice_alerts,
+          );
+          if (!speakConflicts) {
+            return;
+          }
+          const message =
+            countFromData === 1
+              ? 'Sync conflict detected on one item. I kept the newest version.'
+              : `Sync conflict detected on ${countFromData} items. I kept the newest versions.`;
+          await emitSuggestion(message, event.type, now(), 'decision');
           return;
         }
 

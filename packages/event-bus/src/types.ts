@@ -101,6 +101,7 @@ export const Topics = {
     personalityUpdated: 'lifeos.personality.updated',
     memoryStatusGenerated: 'lifeos.memory.status.generated',
     syncDelta: 'lifeos.sync.delta',
+    syncConflictDetected: 'lifeos.sync.conflict.detected',
     syncDevicePaired: 'lifeos.sync.device.paired',
     syncDevicesListed: 'lifeos.sync.devices.listed',
     syncDemoCompleted: 'lifeos.sync.demo.completed',

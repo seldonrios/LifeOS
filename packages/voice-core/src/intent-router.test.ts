@@ -365,6 +365,53 @@ test('preference intent clamps briefing max seconds into safe bounds', async () 
   assert.equal(preferenceEvent?.data.value, '10');
 });
 
+test('preference key aliases normalize sync conflict alerts preference', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_set',
+      payload: { key: 'sync_conflict_alerts', value: 'true' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('enable sync conflict alerts');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  assert.match(outcome.responseText, /sync conflict alerts/i);
+
+  const preferenceEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentPreferenceSet,
+  );
+  assert.equal(preferenceEvent?.data.key, 'sync_conflict_voice_alerts');
+  assert.equal(preferenceEvent?.data.value, 'true');
+});
+
+test('preference parsing supports natural sync conflict alert commands', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('alert me about sync conflict alerts');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  const preferenceEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentPreferenceSet,
+  );
+  assert.equal(preferenceEvent?.data.key, 'sync_conflict_voice_alerts');
+  assert.equal(preferenceEvent?.data.value, 'true');
+});
+
 test('note search intent publishes dedicated note search topic', async () => {
   const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const router = new IntentRouter({

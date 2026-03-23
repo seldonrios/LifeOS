@@ -9,6 +9,8 @@ import { parseGoalPlan } from './schema';
 import { getGraphSummary } from './store';
 import type {
   GoalPlan,
+  LifeGraphMergeConflict,
+  LifeGraphMergeDeltaResult,
   LifeGraphMemoryEntry,
   LifeGraphMemorySearchOptions,
   LifeGraphMemorySearchResult,
@@ -428,6 +430,9 @@ function normalizeMemoryInput(
         Partial<Pick<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'>>)
     | LifeGraphMemoryEntry,
   nowIso: string,
+  options: {
+    forceLocalEmbedding?: boolean;
+  } = {},
 ): LifeGraphMemoryEntry {
   const type =
     entry.type === 'conversation' ||
@@ -440,9 +445,9 @@ function normalizeMemoryInput(
   const content = normalizeStringField(entry.content, 'Untitled memory', MAX_MEMORY_CONTENT_CHARS);
   const relatedTo = normalizeStringArray(entry.relatedTo, MAX_MEMORY_RELATED, 120);
   const seedEmbedding =
-    Array.isArray(entry.embedding) && entry.embedding.length > 0
-      ? normalizeEmbedding(entry.embedding)
-      : createDeterministicEmbedding(content);
+    options.forceLocalEmbedding || !Array.isArray(entry.embedding) || entry.embedding.length === 0
+      ? createDeterministicEmbedding(content)
+      : normalizeEmbedding(entry.embedding);
 
   const threadId = toUuidOrUndefined(entry.threadId);
   const summaryOfThreadId = toUuidOrUndefined(entry.summaryOfThreadId);
@@ -490,9 +495,15 @@ function toArrayOfRecords(value: unknown): Record<string, unknown>[] {
 function mergeByIdLastWriteWins<T extends { id: string }>(
   existingItems: T[],
   incomingItems: T[],
+  collection: LifeGraphMergeConflict['collection'],
   getTimestamp: (item: T) => number,
-): T[] {
+  getTimestampIso?: (item: T) => string | undefined,
+): {
+  items: T[];
+  conflicts: LifeGraphMergeConflict[];
+} {
   const byId = new Map<string, T>();
+  const conflicts: LifeGraphMergeConflict[] = [];
   for (const item of existingItems) {
     const id = item.id.trim();
     if (!id) {
@@ -504,6 +515,11 @@ function mergeByIdLastWriteWins<T extends { id: string }>(
   for (const incoming of incomingItems) {
     const id = incoming.id.trim();
     if (!id) {
+      conflicts.push({
+        collection,
+        id: 'unknown',
+        reason: 'incoming_invalid',
+      });
       continue;
     }
     const existing = byId.get(id);
@@ -515,10 +531,23 @@ function mergeByIdLastWriteWins<T extends { id: string }>(
     const existingTs = getTimestamp(existing);
     if (incomingTs >= existingTs) {
       byId.set(id, incoming);
+    } else {
+      const existingTimestamp = getTimestampIso?.(existing);
+      const incomingTimestamp = getTimestampIso?.(incoming);
+      conflicts.push({
+        collection,
+        id,
+        reason: 'incoming_older',
+        ...(existingTimestamp ? { existingTimestamp } : {}),
+        ...(incomingTimestamp ? { incomingTimestamp } : {}),
+      });
     }
   }
 
-  return Array.from(byId.values());
+  return {
+    items: Array.from(byId.values()),
+    conflicts,
+  };
 }
 
 function toTopicQuery(topic: string | undefined): string | null {
@@ -973,10 +1002,11 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         .slice(-limit);
     },
 
-    async mergeDelta(deltaPayload) {
+    async mergeDelta(deltaPayload): Promise<LifeGraphMergeDeltaResult> {
       const nowIso = new Date().toISOString();
       const graph = await manager.load(resolvedGraphPath);
       const payload = isRecord(deltaPayload) ? deltaPayload : {};
+      const conflicts: LifeGraphMergeConflict[] = [];
 
       let plans = [...graph.plans];
       let calendarEvents = [...(graph.calendarEvents ?? [])];
@@ -986,60 +1016,102 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       let newsDigests = [...(graph.newsDigests ?? [])];
       let memory = [...(graph.memory ?? [])];
 
-      const incomingPlans = toArrayOfRecords(payload.goals ?? payload.plans)
-        .map((entry) => {
-          try {
-            return parseGoalPlan(entry);
-          } catch {
-            return null;
-          }
-        })
-        .filter((entry): entry is GoalPlan => Boolean(entry));
-      plans = mergeByIdLastWriteWins(plans, incomingPlans, (item) =>
-        parseIsoOrZero(item.createdAt),
+      const incomingPlanRecords = toArrayOfRecords(payload.goals ?? payload.plans);
+      const incomingPlans: GoalPlan[] = [];
+      for (const entry of incomingPlanRecords) {
+        try {
+          incomingPlans.push(parseGoalPlan(entry));
+        } catch {
+          conflicts.push({
+            collection: 'plans',
+            id: getString(entry.id) ?? 'unknown',
+            reason: 'incoming_invalid',
+          });
+        }
+      }
+      const mergedPlans = mergeByIdLastWriteWins(
+        plans,
+        incomingPlans,
+        'plans',
+        (item) => parseIsoOrZero(item.createdAt),
+        (item) => item.createdAt,
       );
+      plans = mergedPlans.items;
+      conflicts.push(...mergedPlans.conflicts);
 
       const incomingCalendarEvents = toArrayOfRecords(payload.calendarEvents).map((entry) =>
         normalizeCalendarEventInput(entry, nowIso),
       );
-      calendarEvents = mergeByIdLastWriteWins(calendarEvents, incomingCalendarEvents, (item) =>
-        Math.max(parseIsoOrZero(item.start), parseIsoOrZero(item.end)),
-      ).slice(-MAX_CALENDAR_EVENTS);
+      const mergedCalendarEvents = mergeByIdLastWriteWins(
+        calendarEvents,
+        incomingCalendarEvents,
+        'calendarEvents',
+        (item) => Math.max(parseIsoOrZero(item.start), parseIsoOrZero(item.end)),
+        (item) => item.end,
+      );
+      calendarEvents = mergedCalendarEvents.items.slice(-MAX_CALENDAR_EVENTS);
+      conflicts.push(...mergedCalendarEvents.conflicts);
 
       const incomingNotes = toArrayOfRecords(payload.notes).map((entry) =>
         normalizeNoteInput(entry as unknown as LifeGraphNote, nowIso),
       );
-      notes = mergeByIdLastWriteWins(notes, incomingNotes, (item) =>
-        parseIsoOrZero(item.createdAt),
-      ).slice(-MAX_NOTES);
+      const mergedNotes = mergeByIdLastWriteWins(
+        notes,
+        incomingNotes,
+        'notes',
+        (item) => parseIsoOrZero(item.createdAt),
+        (item) => item.createdAt,
+      );
+      notes = mergedNotes.items.slice(-MAX_NOTES);
+      conflicts.push(...mergedNotes.conflicts);
 
       const incomingResearch = toArrayOfRecords(payload.researchResults).map((entry) =>
         normalizeResearchInput(entry as unknown as LifeGraphResearchResult, nowIso),
       );
-      researchResults = mergeByIdLastWriteWins(researchResults, incomingResearch, (item) =>
-        parseIsoOrZero(item.savedAt),
-      ).slice(-MAX_RESEARCH_RESULTS);
+      const mergedResearch = mergeByIdLastWriteWins(
+        researchResults,
+        incomingResearch,
+        'researchResults',
+        (item) => parseIsoOrZero(item.savedAt),
+        (item) => item.savedAt,
+      );
+      researchResults = mergedResearch.items.slice(-MAX_RESEARCH_RESULTS);
+      conflicts.push(...mergedResearch.conflicts);
 
       const incomingWeather = toArrayOfRecords(payload.weatherSnapshots).map((entry) =>
         normalizeWeatherInput(entry as unknown as LifeGraphWeatherSnapshot, nowIso),
       );
-      weatherSnapshots = mergeByIdLastWriteWins(weatherSnapshots, incomingWeather, (item) =>
-        parseIsoOrZero(item.timestamp),
-      ).slice(-MAX_WEATHER_SNAPSHOTS);
+      const mergedWeather = mergeByIdLastWriteWins(
+        weatherSnapshots,
+        incomingWeather,
+        'weatherSnapshots',
+        (item) => parseIsoOrZero(item.timestamp),
+        (item) => item.timestamp,
+      );
+      weatherSnapshots = mergedWeather.items.slice(-MAX_WEATHER_SNAPSHOTS);
+      conflicts.push(...mergedWeather.conflicts);
 
       const incomingNews = toArrayOfRecords(payload.newsDigests).map((entry) =>
         normalizeNewsInput(entry as unknown as LifeGraphNewsDigest),
       );
-      newsDigests = mergeByIdLastWriteWins(newsDigests, incomingNews, () => 0).slice(
-        -MAX_NEWS_DIGESTS,
-      );
+      const mergedNews = mergeByIdLastWriteWins(newsDigests, incomingNews, 'newsDigests', () => 0);
+      newsDigests = mergedNews.items.slice(-MAX_NEWS_DIGESTS);
+      conflicts.push(...mergedNews.conflicts);
 
       const incomingMemory = toArrayOfRecords(payload.memory).map((entry) =>
-        normalizeMemoryInput(entry as unknown as LifeGraphMemoryEntry, nowIso),
+        normalizeMemoryInput(entry as unknown as LifeGraphMemoryEntry, nowIso, {
+          forceLocalEmbedding: true,
+        }),
       );
-      memory = mergeByIdLastWriteWins(memory, incomingMemory, (item) =>
-        parseIsoOrZero(item.timestamp),
-      ).slice(-MAX_MEMORY_ENTRIES);
+      const mergedMemory = mergeByIdLastWriteWins(
+        memory,
+        incomingMemory,
+        'memory',
+        (item) => parseIsoOrZero(item.timestamp),
+        (item) => item.timestamp,
+      );
+      memory = mergedMemory.items.slice(-MAX_MEMORY_ENTRIES);
+      conflicts.push(...mergedMemory.conflicts);
 
       const eventType = getString(payload.type);
       const eventData = isRecord(payload.data) ? payload.data : null;
@@ -1048,47 +1120,66 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           eventType === 'lifeos.calendar.event.added' ||
           eventType === 'lifeos.voice.intent.calendar.add'
         ) {
-          calendarEvents = mergeByIdLastWriteWins(
+          const singleCalendarMerge = mergeByIdLastWriteWins(
             calendarEvents,
             [normalizeCalendarEventInput(eventData, nowIso)],
+            'calendarEvents',
             (item) => Math.max(parseIsoOrZero(item.start), parseIsoOrZero(item.end)),
-          ).slice(-MAX_CALENDAR_EVENTS);
+            (item) => item.end,
+          );
+          calendarEvents = singleCalendarMerge.items.slice(-MAX_CALENDAR_EVENTS);
+          conflicts.push(...singleCalendarMerge.conflicts);
         } else if (
           eventType === 'lifeos.note.added' ||
           eventType === 'lifeos.voice.intent.note.add'
         ) {
-          notes = mergeByIdLastWriteWins(
+          const singleNoteMerge = mergeByIdLastWriteWins(
             notes,
             [normalizeNoteInput(eventData as unknown as LifeGraphNote, nowIso)],
+            'notes',
             (item) => parseIsoOrZero(item.createdAt),
-          ).slice(-MAX_NOTES);
+            (item) => item.createdAt,
+          );
+          notes = singleNoteMerge.items.slice(-MAX_NOTES);
+          conflicts.push(...singleNoteMerge.conflicts);
         } else if (
           eventType === 'lifeos.research.completed' ||
           eventType === 'lifeos.voice.intent.research'
         ) {
-          researchResults = mergeByIdLastWriteWins(
+          const singleResearchMerge = mergeByIdLastWriteWins(
             researchResults,
             [normalizeResearchInput(eventData as unknown as LifeGraphResearchResult, nowIso)],
+            'researchResults',
             (item) => parseIsoOrZero(item.savedAt),
-          ).slice(-MAX_RESEARCH_RESULTS);
+            (item) => item.savedAt,
+          );
+          researchResults = singleResearchMerge.items.slice(-MAX_RESEARCH_RESULTS);
+          conflicts.push(...singleResearchMerge.conflicts);
         } else if (
           eventType === 'lifeos.weather.snapshot.captured' ||
           eventType === 'lifeos.voice.intent.weather'
         ) {
-          weatherSnapshots = mergeByIdLastWriteWins(
+          const singleWeatherMerge = mergeByIdLastWriteWins(
             weatherSnapshots,
             [normalizeWeatherInput(eventData as unknown as LifeGraphWeatherSnapshot, nowIso)],
+            'weatherSnapshots',
             (item) => parseIsoOrZero(item.timestamp),
-          ).slice(-MAX_WEATHER_SNAPSHOTS);
+            (item) => item.timestamp,
+          );
+          weatherSnapshots = singleWeatherMerge.items.slice(-MAX_WEATHER_SNAPSHOTS);
+          conflicts.push(...singleWeatherMerge.conflicts);
         } else if (
           eventType === 'lifeos.news.digest.ready' ||
           eventType === 'lifeos.voice.intent.news'
         ) {
-          newsDigests = mergeByIdLastWriteWins(
+          const singleNewsMerge = mergeByIdLastWriteWins(
             newsDigests,
             [normalizeNewsInput(eventData as unknown as LifeGraphNewsDigest)],
+            'newsDigests',
             () => 0,
-          ).slice(-MAX_NEWS_DIGESTS);
+          );
+          newsDigests = singleNewsMerge.items.slice(-MAX_NEWS_DIGESTS);
+          conflicts.push(...singleNewsMerge.conflicts);
         }
       }
 
@@ -1106,6 +1197,11 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         },
         resolvedGraphPath,
       );
+
+      return {
+        merged: true,
+        conflicts,
+      };
     },
 
     async applyUpdates(updates: LifeGraphUpdate[]) {
