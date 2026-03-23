@@ -1,13 +1,22 @@
+import { randomUUID } from 'node:crypto';
+
 import type {
   LifeGraphClient,
   LifeGraphMemoryEntry,
+  LifeGraphMemoryRole,
   LifeGraphMemorySearchOptions,
   LifeGraphMemorySearchResult,
   LifeGraphMemoryType,
+  LifeGraphMemoryThreadOptions,
 } from './types';
 
 const EMBEDDING_DIMENSION = 384;
 const DEFAULT_MAX_MEMORY = 10_000;
+const DEFAULT_CONTEXT_DAYS = 7;
+const DEFAULT_CONTEXT_LIMIT = 8;
+const DEFAULT_THREAD_SUMMARY_TRIGGER = 30;
+const DEFAULT_THREAD_SUMMARY_KEEP = 12;
+const MAX_CONTEXT_ENTRY_CHARS = 240;
 
 export interface MemoryEventLike {
   type?: unknown;
@@ -242,12 +251,42 @@ export interface MemoryManagerOptions {
   embeddingProvider?: MemoryEmbeddingProvider;
   now?: () => Date;
   maxEntries?: number;
+  contextDays?: number;
+  contextLimit?: number;
+  threadSummaryTrigger?: number;
+  threadSummaryKeep?: number;
 }
 
 export interface RememberInput {
   type: LifeGraphMemoryType;
   content: string;
   relatedTo?: string[];
+  role?: LifeGraphMemoryRole;
+  threadId?: string;
+  key?: string;
+  value?: string;
+  summaryOfThreadId?: string;
+}
+
+export interface ThreadMessageInput {
+  content: string;
+  role?: LifeGraphMemoryRole;
+  type?: LifeGraphMemoryType;
+  relatedTo?: string[];
+  key?: string;
+  value?: string;
+}
+
+export interface StartThreadOptions {
+  initialMessage?: string;
+  role?: LifeGraphMemoryRole;
+  relatedTo?: string[];
+}
+
+export interface ConversationContextOptions extends LifeGraphMemorySearchOptions {
+  threadId?: string;
+  sinceDays?: number;
+  limit?: number;
 }
 
 export class MemoryManager {
@@ -255,12 +294,20 @@ export class MemoryManager {
   private readonly embeddingProvider: MemoryEmbeddingProvider;
   private readonly now: () => Date;
   private readonly maxEntries: number;
+  private readonly contextDays: number;
+  private readonly contextLimit: number;
+  private readonly threadSummaryTrigger: number;
+  private readonly threadSummaryKeep: number;
 
   constructor(options: MemoryManagerOptions) {
     this.client = options.client;
     this.embeddingProvider = options.embeddingProvider ?? new DeterministicEmbeddingProvider();
     this.now = options.now ?? (() => new Date());
     this.maxEntries = options.maxEntries ?? DEFAULT_MAX_MEMORY;
+    this.contextDays = options.contextDays ?? DEFAULT_CONTEXT_DAYS;
+    this.contextLimit = options.contextLimit ?? DEFAULT_CONTEXT_LIMIT;
+    this.threadSummaryTrigger = options.threadSummaryTrigger ?? DEFAULT_THREAD_SUMMARY_TRIGGER;
+    this.threadSummaryKeep = options.threadSummaryKeep ?? DEFAULT_THREAD_SUMMARY_KEEP;
   }
 
   async remember(input: RememberInput): Promise<LifeGraphMemoryEntry | null> {
@@ -276,6 +323,11 @@ export class MemoryManager {
       relatedTo: input.relatedTo ?? [],
       embedding,
       timestamp: this.now().toISOString(),
+      ...(input.role ? { role: input.role } : {}),
+      ...(input.threadId ? { threadId: input.threadId } : {}),
+      ...(input.key ? { key: input.key.trim() } : {}),
+      ...(input.value ? { value: input.value.trim() } : {}),
+      ...(input.summaryOfThreadId ? { summaryOfThreadId: input.summaryOfThreadId } : {}),
     });
   }
 
@@ -296,6 +348,51 @@ export class MemoryManager {
     return this.client.searchMemory(query, options);
   }
 
+  async startThread(options: StartThreadOptions = {}): Promise<string> {
+    const threadId = randomUUID();
+    const initialMessage = options.initialMessage?.trim();
+    if (initialMessage) {
+      await this.remember({
+        type: 'conversation',
+        content: initialMessage,
+        relatedTo: options.relatedTo ?? [],
+        role: options.role ?? 'system',
+        threadId,
+      });
+    }
+    return threadId;
+  }
+
+  async addToThread(
+    threadId: string,
+    input: ThreadMessageInput,
+  ): Promise<LifeGraphMemoryEntry | null> {
+    const normalizedThreadId = threadId.trim();
+    if (!normalizedThreadId) {
+      return null;
+    }
+
+    const entry = await this.remember({
+      type: input.type ?? 'conversation',
+      content: input.content,
+      relatedTo: input.relatedTo ?? [],
+      role: input.role ?? 'user',
+      threadId: normalizedThreadId,
+      ...(input.key ? { key: input.key } : {}),
+      ...(input.value ? { value: input.value } : {}),
+    });
+
+    await this.summarizeThreadIfNeeded(normalizedThreadId);
+    return entry;
+  }
+
+  async getThread(
+    threadId: string,
+    options: LifeGraphMemoryThreadOptions = {},
+  ): Promise<LifeGraphMemoryEntry[]> {
+    return this.client.getMemoryThread(threadId, options);
+  }
+
   async getRelevantContext(
     eventOrQuery: MemoryEventLike | string,
     options: LifeGraphMemorySearchOptions = {},
@@ -308,10 +405,100 @@ export class MemoryManager {
 
     const limit = options.limit ?? 5;
     const results = await this.search(query, { ...options, limit });
-    return results.map(
-      (entry) =>
-        `[${entry.type}] ${entry.content} (score=${entry.score.toFixed(2)}, at=${entry.timestamp})`,
-    );
+    return results.map((entry) => this.toContextLine(entry, entry.score));
+  }
+
+  async getRelevantContextForCurrentConversation(
+    query: string,
+    options: ConversationContextOptions = {},
+  ): Promise<string[]> {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) {
+      return [];
+    }
+
+    const limit = Math.max(1, options.limit ?? this.contextLimit);
+    const sinceDays = Math.max(1, options.sinceDays ?? this.contextDays);
+    const thresholdMs = this.now().getTime() - sinceDays * 24 * 60 * 60 * 1000;
+
+    const graph = await this.client.loadGraph();
+    const recent = (graph.memory ?? [])
+      .filter((entry) => Date.parse(entry.timestamp) >= thresholdMs)
+      .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+      .slice(0, limit)
+      .map((entry) => this.toContextLine(entry));
+
+    const relevant = await this.getRelevantContext(normalizedQuery, {
+      ...options,
+      limit,
+    });
+
+    const threadContext =
+      options.threadId && options.threadId.trim().length > 0
+        ? (await this.getThread(options.threadId, { limit }))
+            .slice(-limit)
+            .map((entry) => this.toContextLine(entry))
+        : [];
+
+    const merged = [...threadContext, ...recent, ...relevant];
+    const deduped: string[] = [];
+    const seen = new Set<string>();
+    for (const item of merged) {
+      if (seen.has(item)) {
+        continue;
+      }
+      seen.add(item);
+      deduped.push(item);
+      if (deduped.length >= limit) {
+        break;
+      }
+    }
+    return deduped;
+  }
+
+  async getRelevantContextForToday(limit = this.contextLimit): Promise<string[]> {
+    const dayLimit = Math.max(1, limit);
+    const graph = await this.client.loadGraph();
+    const thresholdMs = this.now().getTime() - 24 * 60 * 60 * 1000;
+    return (graph.memory ?? [])
+      .filter((entry) => Date.parse(entry.timestamp) >= thresholdMs)
+      .sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp))
+      .slice(0, dayLimit)
+      .map((entry) => this.toContextLine(entry));
+  }
+
+  async summarizeThread(threadId: string): Promise<LifeGraphMemoryEntry | null> {
+    const normalizedThreadId = threadId.trim();
+    if (!normalizedThreadId) {
+      return null;
+    }
+
+    const thread = await this.getThread(normalizedThreadId, {
+      limit: this.threadSummaryTrigger * 2,
+    });
+    if (thread.length < this.threadSummaryTrigger) {
+      return null;
+    }
+
+    const lastSummaryIndex = this.findLastSummaryIndex(thread, normalizedThreadId);
+    const sinceSummary = lastSummaryIndex >= 0 ? thread.slice(lastSummaryIndex + 1) : [...thread];
+    if (sinceSummary.length < this.threadSummaryTrigger) {
+      return null;
+    }
+
+    const summary = this.buildThreadSummary(sinceSummary.slice(-this.threadSummaryKeep));
+    if (!summary) {
+      return null;
+    }
+
+    return this.remember({
+      type: 'insight',
+      role: 'system',
+      threadId: normalizedThreadId,
+      summaryOfThreadId: normalizedThreadId,
+      content: summary,
+      relatedTo: [`thread:${normalizedThreadId}`],
+    });
   }
 
   async trim(): Promise<void> {
@@ -328,5 +515,50 @@ export class MemoryManager {
       memory: trimmed,
       updatedAt: this.now().toISOString(),
     });
+  }
+
+  private toContextLine(entry: LifeGraphMemoryEntry, score?: number): string {
+    const rolePrefix = entry.role ? `${entry.role} ` : '';
+    const content = entry.content.replace(/\s+/g, ' ').trim().slice(0, MAX_CONTEXT_ENTRY_CHARS);
+    const scorePart = typeof score === 'number' ? ` score=${score.toFixed(2)}` : '';
+    return `[${entry.type}] ${rolePrefix}${content}${scorePart} @${entry.timestamp}`;
+  }
+
+  private findLastSummaryIndex(thread: LifeGraphMemoryEntry[], threadId: string): number {
+    for (let index = thread.length - 1; index >= 0; index -= 1) {
+      const candidate = thread[index];
+      if (!candidate) {
+        continue;
+      }
+      if (candidate.summaryOfThreadId === threadId) {
+        return index;
+      }
+      if (candidate.role === 'system' && candidate.content.startsWith('Thread summary:')) {
+        return index;
+      }
+    }
+    return -1;
+  }
+
+  private buildThreadSummary(entries: LifeGraphMemoryEntry[]): string {
+    const fragments = entries
+      .filter((entry) => entry.content.trim().length > 0)
+      .map((entry) => {
+        const role = entry.role ?? 'user';
+        return `${role}: ${entry.content.trim().replace(/\s+/g, ' ')}`;
+      })
+      .slice(-this.threadSummaryKeep);
+    if (fragments.length === 0) {
+      return '';
+    }
+    return `Thread summary: ${fragments.join(' | ').slice(0, 1400)}`;
+  }
+
+  private async summarizeThreadIfNeeded(threadId: string): Promise<void> {
+    try {
+      await this.summarizeThread(threadId);
+    } catch {
+      return;
+    }
   }
 }

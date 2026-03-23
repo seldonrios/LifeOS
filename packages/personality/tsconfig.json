@@ -1,26 +1,13 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2022", "DOM"],
     "rootDir": "./src",
     "outDir": "./dist"
   },
   "include": ["src/**/*.ts"],
   "references": [
     {
-      "path": "../event-bus"
-    },
-    {
       "path": "../life-graph"
-    },
-    {
-      "path": "../module-loader"
-    },
-    {
-      "path": "../personality"
-    },
-    {
-      "path": "../voice-core"
     }
   ]
 }

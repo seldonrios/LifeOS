@@ -453,6 +453,58 @@ test('status --json emits summary JSON', async () => {
   assert.equal(parsed.activeGoals[0]?.title, 'Board Meeting Prep');
 });
 
+test('memory status --json emits memory counters', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['memory', 'status', '--json'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: '2026-03-23T08:00:00.000Z',
+            plans: [],
+            memory: [
+              {
+                id: 'memory_1',
+                type: 'conversation',
+                content: 'User asked for a short briefing.',
+                embedding: Array.from({ length: 384 }, () => 0),
+                timestamp: '2026-03-23T07:50:00.000Z',
+                relatedTo: ['voice'],
+                threadId: '6dc43712-5709-41de-a4ca-6589f19a8159',
+              },
+              {
+                id: 'memory_2',
+                type: 'preference',
+                content: 'communication_style: concise',
+                key: 'communication_style',
+                value: 'concise',
+                embedding: Array.from({ length: 384 }, () => 0),
+                timestamp: '2026-03-23T07:55:00.000Z',
+                relatedTo: ['personality'],
+              },
+            ],
+          };
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    totalEntries: number;
+    threadCount: number;
+    byType: Record<string, number>;
+  };
+  assert.equal(payload.totalEntries, 2);
+  assert.equal(payload.threadCount, 1);
+  assert.equal(payload.byType.preference, 1);
+  assert.equal(payload.byType.conversation, 1);
+});
+
 test('review command prints human insights', async () => {
   const stdout: string[] = [];
 
@@ -744,6 +796,35 @@ test('voice demo supports scenario shortcuts', async () => {
 
   assert.equal(exitCode, 0);
   assert.deepEqual(voiceCalls, ['Hey LifeOS, research quantum computing breakthroughs this year']);
+});
+
+test('voice demo supports proactive scenario shortcut', async () => {
+  const voiceCalls: string[] = [];
+
+  const exitCode = await runCli(['voice', 'demo', '--scenario', 'proactive'], {
+    createVoiceCore: () => ({
+      async start() {
+        return;
+      },
+      async runDemo(text: string) {
+        voiceCalls.push(text);
+        return {
+          handled: true,
+          action: 'preference_updated',
+          responseText: 'Understood. I will keep responses concise.',
+        };
+      },
+      async close() {
+        return;
+      },
+      getWakePhrase() {
+        return 'Hey LifeOS';
+      },
+    }),
+  });
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(voiceCalls, ['Hey LifeOS, I prefer short answers']);
 });
 
 test('research command publishes research intent event', async () => {

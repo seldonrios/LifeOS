@@ -1,5 +1,5 @@
 {
-  "name": "@lifeos/orchestrator",
+  "name": "@lifeos/personality",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -15,10 +15,6 @@
     "test": "tsx --test src/index.test.ts"
   },
   "dependencies": {
-    "@lifeos/event-bus": "workspace:*",
-    "@lifeos/life-graph": "workspace:*",
-    "@lifeos/module-loader": "workspace:*",
-    "@lifeos/personality": "workspace:*",
-    "@lifeos/voice-core": "workspace:*"
+    "@lifeos/life-graph": "workspace:*"
   }
 }

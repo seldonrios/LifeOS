@@ -88,6 +88,7 @@ export const Topics = {
     voiceIntentWeather: 'lifeos.voice.intent.weather',
     voiceIntentNews: 'lifeos.voice.intent.news',
     voiceIntentBriefing: 'lifeos.voice.intent.briefing',
+    voiceIntentPreferenceSet: 'lifeos.voice.intent.preference.set',
     calendarEventAdded: 'lifeos.calendar.event.added',
     taskRescheduleSuggested: 'lifeos.task.reschedule.suggested',
     noteAdded: 'lifeos.note.added',
@@ -97,5 +98,7 @@ export const Topics = {
     newsDigestReady: 'lifeos.news.digest.ready',
     orchestratorSuggestion: 'lifeos.orchestrator.suggestion',
     briefingGenerated: 'lifeos.briefing.generated',
+    personalityUpdated: 'lifeos.personality.updated',
+    memoryStatusGenerated: 'lifeos.memory.status.generated',
   },
 } as const;

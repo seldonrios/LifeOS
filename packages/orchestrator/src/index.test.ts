@@ -189,6 +189,38 @@ test('orchestrator handles explicit briefing intent and speaks summary', async (
   assert.ok(briefingEvent);
 });
 
+test('orchestrator persists preference updates and emits personality update signal', async () => {
+  const { context, subscriptions, published, memoryEntries } = createContextMock();
+  const module = createOrchestratorModule({
+    tts: mockTtsSink().tts,
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+  await module.init(context);
+
+  const handler = subscriptions[0]?.handler;
+  assert.ok(handler);
+  await handler?.({
+    id: 'evt_preference',
+    type: Topics.lifeos.voiceIntentPreferenceSet,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'voice-core',
+    version: '0.1.0',
+    data: {
+      key: 'communication_style',
+      value: 'short answers',
+      utterance: 'I prefer short answers',
+    },
+  });
+
+  assert.equal(memoryEntries.length, 1);
+  assert.equal(memoryEntries[0]?.type, 'preference');
+  assert.equal(memoryEntries[0]?.key, 'communication_style');
+  const personalityEvent = published.find(
+    (entry) => entry.topic === Topics.lifeos.personalityUpdated,
+  );
+  assert.ok(personalityEvent);
+});
+
 test('orchestrator emits proactive suggestion when decision engine requests speech', async () => {
   const { context, subscriptions, published } = createContextMock();
   const sink = mockTtsSink();
@@ -378,6 +410,35 @@ test('orchestrator suppresses duplicate proactive suggestions within cooldown', 
     (entry) => entry.topic === Topics.lifeos.orchestratorSuggestion,
   );
   assert.equal(suggestions.length, 1);
+});
+
+test('orchestrator tolerates unserializable event payloads during memory/context capture', async () => {
+  const { context, subscriptions, memoryEntries } = createContextMock();
+  const module = createOrchestratorModule({
+    tts: mockTtsSink().tts,
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+  await module.init(context);
+
+  const handler = subscriptions[0]?.handler;
+  assert.ok(handler);
+
+  const circular: Record<string, unknown> = {
+    id: 'x',
+  };
+  circular.self = circular;
+
+  await handler?.({
+    id: 'evt_circular',
+    type: Topics.lifeos.researchCompleted,
+    timestamp: '2026-03-25T08:10:00.000Z',
+    source: 'research-module',
+    version: '0.1.0',
+    data: circular,
+  });
+
+  assert.equal(memoryEntries.length, 1);
+  assert.match(String(memoryEntries[0]?.content), /\[unserializable\]/i);
 });
 
 test('orchestrator normalizes unsafe decision updates before apply', async () => {

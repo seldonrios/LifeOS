@@ -256,6 +256,68 @@ test('briefing intent publishes dedicated briefing topic', async () => {
   ]);
 });
 
+test('preference intent publishes dedicated preference topic', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_set',
+      payload: { key: 'communication_style', value: 'short answers' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('I prefer short answers');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  assert.match(outcome.responseText, /concise/i);
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentPreferenceSet, Topics.lifeos.voiceCommandProcessed],
+  );
+  assert.equal(publishCalls[0]?.data.key, 'communication_style');
+});
+
+test('preference classifier aliases normalize to preference_set', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_update' as never,
+      payload: { key: 'style', value: 'short answers' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('set my style to short answers');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  assert.equal(publishCalls[0]?.data.key, 'communication_style');
+});
+
+test('preference intent falls back to unhandled when value is missing', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_set',
+      payload: {},
+    }),
+  });
+
+  const outcome = await router.handleCommand('update my preferences');
+  assert.equal(outcome.handled, false);
+  assert.equal(outcome.action, 'unhandled');
+  assert.deepEqual(publishCalls, [Topics.lifeos.voiceCommandUnhandled]);
+});
+
 test('note search intent publishes dedicated note search topic', async () => {
   const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const router = new IntentRouter({
@@ -339,6 +401,28 @@ test('classifier failures fall back to heuristic task parsing', async () => {
   assert.equal(outcome.handled, true);
   assert.equal(outcome.action, 'task_added');
   assert.equal(createNodeCalls.length, 1);
+});
+
+test('classifier failures fall back to preference parsing for "i prefer" commands', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => {
+      throw new Error('local model unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('I prefer short answers');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  const preferenceEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentPreferenceSet,
+  );
+  assert.ok(preferenceEvent);
+  assert.equal(preferenceEvent?.data.key, 'communication_style');
 });
 
 test('event publish failures do not fail task creation', async () => {

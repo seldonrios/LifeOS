@@ -6,6 +6,7 @@ import {
   type LifeGraphUpdate,
 } from '@lifeos/life-graph';
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import { Personality, type PersonalityProfile } from '@lifeos/personality';
 import { TextToSpeech } from '@lifeos/voice-core';
 
 interface SpeechOutput {
@@ -25,15 +26,22 @@ export interface OrchestratorDecisionInput {
 
 type DecisionEngine = (
   input: OrchestratorDecisionInput,
+  profile: PersonalityProfile,
   runtimeContext: ModuleRuntimeContext,
   client: LifeGraphClient,
 ) => Promise<OrchestratorDecision>;
+
+interface PersonalityProvider {
+  loadProfile(): Promise<PersonalityProfile>;
+  updatePreference?(key: string, value: unknown): Promise<unknown>;
+}
 
 export interface OrchestratorModuleOptions {
   fetchFn?: typeof fetch;
   now?: () => Date;
   tts?: SpeechOutput;
   decisionEngine?: DecisionEngine;
+  personality?: PersonalityProvider;
 }
 
 const DEFAULT_TIMEOUT_MS = 6000;
@@ -41,9 +49,18 @@ const MAX_CONTEXT_ITEMS = 6;
 const MAX_PROACTIVE_MESSAGE_CHARS = 320;
 const MAX_DECISION_UPDATES = 24;
 const SUGGESTION_DEDUP_WINDOW_MS = 90_000;
+const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function safeSerialize(value: unknown, maxChars = 4000): string {
+  try {
+    return JSON.stringify(value).slice(0, maxChars);
+  } catch {
+    return '"[unserializable]"';
+  }
 }
 
 function getString(value: unknown): string | null {
@@ -76,9 +93,13 @@ function hasTokenOverlap(left: string, right: string): boolean {
   return false;
 }
 
-function buildOrchestratorPrompt(input: OrchestratorDecisionInput): string {
-  const payload = JSON.stringify(
+function buildOrchestratorPromptWithProfile(
+  input: OrchestratorDecisionInput,
+  profile: PersonalityProfile,
+): string {
+  const payload = safeSerialize(
     {
+      profile,
       event: {
         type: input.event.type,
         source: input.event.source,
@@ -86,10 +107,10 @@ function buildOrchestratorPrompt(input: OrchestratorDecisionInput): string {
       },
       context: input.context,
     },
-    null,
-    2,
+    6000,
   );
-  return `You are the LifeOS Orchestrator. Decide whether to proactively help.
+  return `You are the LifeOS Orchestrator.
+You must respect user preferences and communication style.
 Respond strictly as JSON:
 {
   "action": "speak" | "update" | "nothing",
@@ -97,6 +118,7 @@ Respond strictly as JSON:
   "updates": []
 }
 If there is no high-value action, choose "nothing".
+Keep suggestions concise when profile.communicationStyle asks for short responses.
 
 Input:
 ${payload}`;
@@ -196,6 +218,8 @@ async function publishSafe(
 async function buildBriefing(
   client: LifeGraphClient,
   now: Date,
+  profile: PersonalityProfile,
+  memory: MemoryManager,
 ): Promise<{ summary: string; memoryRelated: string[] }> {
   const graph = await client.loadGraph();
   const nowMs = now.getTime();
@@ -221,7 +245,13 @@ async function buildBriefing(
     (left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt),
   )[0];
 
+  const shortBriefing =
+    profile.communicationStyle.toLowerCase().includes('concise') ||
+    profile.quirks.some((quirk) => quirk.toLowerCase().includes('long briefing'));
   const lines: string[] = ['Good morning. Here is what matters today.'];
+  if (profile.priorities.length > 0) {
+    lines.push(`Priorities today: ${profile.priorities.slice(0, 3).join(', ')}.`);
+  }
   if (!nextTask) {
     lines.push('No open tasks need immediate action.');
   } else {
@@ -246,9 +276,17 @@ async function buildBriefing(
   if (latestResearch?.summary) {
     lines.push(`Recent research: ${latestResearch.summary}`);
   }
+  const recentMemory = await memory.getRelevantContextForToday(2);
+  const memoryHighlight = recentMemory[0]?.replace(/\s*@[0-9TZ:.\-+]+$/, '');
+  if (memoryHighlight) {
+    lines.push(`Memory highlight: ${memoryHighlight}.`);
+  }
+
+  const selectedLines = shortBriefing ? lines.slice(0, 5) : lines;
+  const maxChars = shortBriefing ? 520 : 900;
 
   return {
-    summary: lines.join(' ').slice(0, 900),
+    summary: selectedLines.join(' ').slice(0, maxChars),
     memoryRelated: [
       ...(nextTask ? [nextTask.id] : []),
       ...upcomingEvents.map((event) => event.id),
@@ -323,7 +361,7 @@ async function heuristicDecision(
 }
 
 function createDecisionEngine(fetchFn: typeof fetch): DecisionEngine {
-  return async (input, runtimeContext, client) => {
+  return async (input, profile, runtimeContext, client) => {
     const model =
       runtimeContext.env.LIFEOS_ORCHESTRATOR_MODEL?.trim() ||
       runtimeContext.env.LIFEOS_VOICE_MODEL?.trim() ||
@@ -354,11 +392,11 @@ function createDecisionEngine(fetchFn: typeof fetch): DecisionEngine {
             {
               role: 'system',
               content:
-                'You are LifeOS Orchestrator. Decide whether to speak a concise proactive suggestion, update memory, or do nothing.',
+                'You are LifeOS Orchestrator. Respect personality preferences and keep proactive suggestions practical.',
             },
             {
               role: 'user',
-              content: buildOrchestratorPrompt(input),
+              content: buildOrchestratorPromptWithProfile(input, profile),
             },
           ],
         }),
@@ -404,11 +442,69 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
             },
       );
       const memory = new MemoryManager({ client, now });
+      const personality =
+        options.personality ??
+        new Personality({
+          client,
+          now,
+        });
+      let profileCache: {
+        value: PersonalityProfile;
+        expiresAtMs: number;
+      } | null = null;
+      const fallbackProfile: PersonalityProfile = {
+        communicationStyle: 'concise and direct',
+        priorities: ['health', 'deep work', 'family'],
+        quirks: ['hates long briefings', 'loves research rabbit holes'],
+        preferences: {},
+      };
+
+      async function getProfile(): Promise<PersonalityProfile> {
+        const nowMs = now().getTime();
+        if (profileCache && profileCache.expiresAtMs > nowMs) {
+          return profileCache.value;
+        }
+        try {
+          const loaded = await personality.loadProfile();
+          profileCache = {
+            value: loaded,
+            expiresAtMs: nowMs + PROFILE_CACHE_TTL_MS,
+          };
+          return loaded;
+        } catch (error: unknown) {
+          context.log(`[Orchestrator] profile degraded: ${normalizeErrorMessage(error)}`);
+          return profileCache?.value ?? fallbackProfile;
+        }
+      }
 
       await context.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
+        if (event.type === Topics.lifeos.voiceIntentPreferenceSet) {
+          const key = getString(event.data.key);
+          const value = getString(event.data.value);
+          if (!key || !value) {
+            context.log('[Orchestrator] preference update ignored: missing key/value');
+            return;
+          }
+          try {
+            await personality.updatePreference?.(key, value);
+            profileCache = null;
+            await publishSafe(context, Topics.lifeos.personalityUpdated, {
+              key,
+              value,
+              updatedAt: now().toISOString(),
+            });
+          } catch (error: unknown) {
+            context.log(
+              `[Orchestrator] preference update degraded: ${normalizeErrorMessage(error)}`,
+            );
+          }
+          return;
+        }
+
         if (event.type === Topics.lifeos.voiceIntentBriefing) {
           try {
-            const briefing = await buildBriefing(client, now());
+            const profile = await getProfile();
+            const briefing = await buildBriefing(client, now(), profile, memory);
             await speakSafe(tts, briefing.summary, context);
             await publishSafe(context, Topics.lifeos.briefingGenerated, {
               summary: briefing.summary,
@@ -454,7 +550,7 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
         try {
           await memory.remember({
             type: memoryType,
-            content: `${event.type} ${JSON.stringify(event.data).slice(0, 2000)}`,
+            content: `${event.type} ${safeSerialize(event.data, 2000)}`,
             relatedTo: [event.type],
           });
         } catch (error: unknown) {
@@ -463,20 +559,26 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
 
         let contextSnippets: string[] = [];
         try {
-          contextSnippets = await memory.getRelevantContext(event, {
-            limit: MAX_CONTEXT_ITEMS,
-            minScore: 0.1,
-          });
+          contextSnippets = await memory.getRelevantContextForCurrentConversation(
+            `${event.type} ${safeSerialize(event.data, 3000)}`,
+            {
+              limit: MAX_CONTEXT_ITEMS,
+              sinceDays: 7,
+              minScore: 0.1,
+            },
+          );
         } catch (error: unknown) {
           context.log(`[Orchestrator] context lookup degraded: ${normalizeErrorMessage(error)}`);
         }
 
+        const profile = await getProfile();
         const decision = normalizeDecision(
           await decide(
             {
               event: event as BaseEvent<Record<string, unknown>>,
               context: contextSnippets,
             },
+            profile,
             context,
             client,
           ),

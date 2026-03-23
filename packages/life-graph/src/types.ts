@@ -163,6 +163,10 @@ export interface LifeGraphClient {
     query: string,
     options?: LifeGraphMemorySearchOptions,
   ): Promise<LifeGraphMemorySearchResult[]>;
+  getMemoryThread(
+    threadId: string,
+    options?: LifeGraphMemoryThreadOptions,
+  ): Promise<LifeGraphMemoryEntry[]>;
   applyUpdates(updates: LifeGraphUpdate[]): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
@@ -239,7 +243,9 @@ export interface LifeGraphNoteSearchOptions {
   limit?: number;
 }
 
-export type LifeGraphMemoryType = 'conversation' | 'research' | 'note' | 'insight';
+export type LifeGraphMemoryType = 'conversation' | 'research' | 'note' | 'insight' | 'preference';
+
+export type LifeGraphMemoryRole = 'user' | 'assistant' | 'system';
 
 export interface LifeGraphMemoryEntry {
   id: string;
@@ -248,6 +254,11 @@ export interface LifeGraphMemoryEntry {
   embedding: number[];
   timestamp: string;
   relatedTo: string[];
+  threadId?: string;
+  role?: LifeGraphMemoryRole;
+  key?: string;
+  value?: string;
+  summaryOfThreadId?: string;
 }
 
 export interface LifeGraphMemorySearchOptions {
@@ -258,6 +269,11 @@ export interface LifeGraphMemorySearchOptions {
 
 export interface LifeGraphMemorySearchResult extends LifeGraphMemoryEntry {
   score: number;
+}
+
+export interface LifeGraphMemoryThreadOptions {
+  limit?: number;
+  sinceDays?: number;
 }
 
 export type LifeGraphUpdate = {

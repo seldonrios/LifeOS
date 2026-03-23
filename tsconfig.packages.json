@@ -35,6 +35,9 @@
       "path": "./packages/news-module"
     },
     {
+      "path": "./packages/personality"
+    },
+    {
       "path": "./packages/orchestrator"
     },
     {

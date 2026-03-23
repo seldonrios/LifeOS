@@ -67,6 +67,7 @@ const VOICE_DEMO_SCENARIOS = {
   weather: 'Hey LifeOS, what is the weather in London this weekend?',
   news: 'Hey LifeOS, give me top tech news today',
   briefing: 'Hey LifeOS, give me my daily briefing',
+  proactive: 'Hey LifeOS, I prefer short answers',
 } as const;
 
 interface GoalCommandOptions {
@@ -126,6 +127,13 @@ interface VoiceCommandOptions {
   mode: 'start' | 'demo' | 'consent' | 'calendar' | 'briefing';
   text: string;
   scenario?: keyof typeof VOICE_DEMO_SCENARIOS;
+  graphPath: string;
+  verbose: boolean;
+}
+
+interface MemoryCommandOptions {
+  action: 'status';
+  outputJson: boolean;
   graphPath: string;
   verbose: boolean;
 }
@@ -484,6 +492,13 @@ function normalizeVoiceMode(action: string): VoiceCommandOptions['mode'] | null 
     return action;
   }
 
+  return null;
+}
+
+function normalizeMemoryAction(action: string): MemoryCommandOptions['action'] | null {
+  if (action === 'status') {
+    return action;
+  }
   return null;
 }
 
@@ -1310,6 +1325,87 @@ export async function runVoiceCommand(
   }
 }
 
+export async function runMemoryCommand(
+  options: MemoryCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+    const graph = await client.loadGraph();
+    const memoryEntries = graph.memory ?? [];
+    const byType = memoryEntries.reduce<Record<string, number>>((acc, entry) => {
+      const next = acc[entry.type] ?? 0;
+      acc[entry.type] = next + 1;
+      return acc;
+    }, {});
+    const threadCount = new Set(
+      memoryEntries
+        .map((entry) => entry.threadId)
+        .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0),
+    ).size;
+    const latestTimestamp =
+      memoryEntries
+        .map((entry) => entry.timestamp)
+        .sort((left, right) => {
+          const rightMs = Date.parse(right);
+          const leftMs = Date.parse(left);
+          const safeRight = Number.isFinite(rightMs) ? rightMs : Number.NEGATIVE_INFINITY;
+          const safeLeft = Number.isFinite(leftMs) ? leftMs : Number.NEGATIVE_INFINITY;
+          return safeRight - safeLeft;
+        })[0] ?? null;
+
+    const payload = {
+      totalEntries: memoryEntries.length,
+      threadCount,
+      latestTimestamp,
+      byType,
+    };
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      writeStdout(chalk.bold('LifeOS Memory Status\n'));
+      writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+      writeStdout(`Entries: ${payload.totalEntries}\n`);
+      writeStdout(`Threads: ${payload.threadCount}\n`);
+      writeStdout(`Latest: ${payload.latestTimestamp ?? 'n/a'}\n`);
+      const byTypeLine =
+        Object.keys(payload.byType).length === 0
+          ? 'none'
+          : Object.entries(payload.byType)
+              .sort((left, right) => left[0].localeCompare(right[0]))
+              .map(([type, count]) => `${type}=${count}`)
+              .join(', ');
+      writeStdout(`By type: ${byTypeLine}\n`);
+    }
+
+    await publishEventSafely(
+      Topics.lifeos.memoryStatusGenerated,
+      payload,
+      dependencies,
+      env,
+      verboseLog,
+    );
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
 export async function runResearchCommand(
   options: ResearchCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -1697,13 +1793,40 @@ function buildProgram(
     });
 
   program
+    .command('memory')
+    .description('Inspect memory status')
+    .argument('[action]', 'status', 'status')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (action: string, commandOptions) => {
+      const normalizedAction = normalizeMemoryAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(`${chalk.red.bold('Error:')} Invalid memory action "${action}". Use status.\n`);
+        return;
+      }
+
+      const commandExitCode = await runMemoryCommand(
+        {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
     .command('voice')
     .description('Manage voice runtime: start, demo, consent, calendar, or briefing')
     .argument('[mode]', 'start | demo | consent | calendar | briefing', 'start')
     .option('--text <text>', 'Demo utterance when mode=demo (overrides --scenario)', '')
     .option(
       '--scenario <scenario>',
-      'Demo scenario: task | calendar | research | note | weather | news | briefing',
+      'Demo scenario: task | calendar | research | note | weather | news | briefing | proactive',
       'task',
     )
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)

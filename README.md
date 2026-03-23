@@ -65,7 +65,8 @@ pnpm lifeos status --json
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
-lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing] [--graph-path <path>] [--verbose]
+lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
+lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
@@ -85,11 +86,14 @@ pnpm lifeos voice briefing
 # "Hey LifeOS, add a task to finish the report by Friday"
 # "Hey LifeOS, research quantum computing breakthroughs this year"
 # "Hey LifeOS, note that the team prefers async updates"
+# "Hey LifeOS, I prefer short answers"
 # "Hey LifeOS, what's the weather in London this weekend?"
 # "Hey LifeOS, give me top tech news today"
 pnpm lifeos voice demo --scenario research
 pnpm lifeos voice demo --scenario weather
 pnpm lifeos voice demo --scenario briefing
+pnpm lifeos voice demo --scenario proactive
+pnpm lifeos memory status
 ```
 
 ## ⚙️ Configuration
@@ -141,6 +145,7 @@ Active implementation packages:
 - `@lifeos/notes-module`
 - `@lifeos/weather-module`
 - `@lifeos/news-module`
+- `@lifeos/personality`
 - `@lifeos/orchestrator`
 
 Runtime modules:

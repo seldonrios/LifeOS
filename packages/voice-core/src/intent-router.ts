@@ -14,7 +14,20 @@ const MAX_NOTE_TITLE_CHARS = 200;
 const MAX_NOTE_CONTENT_CHARS = 2000;
 const MAX_NOTE_TAGS = 20;
 const MAX_NOTE_TAG_CHARS = 40;
+const MAX_PREFERENCE_KEY_CHARS = 80;
+const MAX_PREFERENCE_VALUE_CHARS = 300;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const PREFERENCE_KEY_ALIASES: Record<string, 'communication_style' | 'priorities' | 'quirks'> = {
+  communication_style: 'communication_style',
+  communicationstyle: 'communication_style',
+  style: 'communication_style',
+  response_style: 'communication_style',
+  briefing_style: 'communication_style',
+  priority: 'priorities',
+  priorities: 'priorities',
+  quirk: 'quirks',
+  quirks: 'quirks',
+};
 
 type ClassifiedIntent =
   | 'task_add'
@@ -27,6 +40,7 @@ type ClassifiedIntent =
   | 'research'
   | 'briefing'
   | 'next_actions'
+  | 'preference_set'
   | 'unknown';
 
 interface IntentClassification {
@@ -37,13 +51,19 @@ interface IntentClassification {
 export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
 
 {
-  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | briefing | next_actions | unknown",
+  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | briefing | next_actions | preference_set | unknown",
   "payload": {}
 }`;
 
 export interface IntentOutcome {
   handled: boolean;
-  action: 'task_added' | 'next_actions' | 'time_reported' | 'agent_work_requested' | 'unhandled';
+  action:
+    | 'task_added'
+    | 'next_actions'
+    | 'time_reported'
+    | 'agent_work_requested'
+    | 'preference_updated'
+    | 'unhandled';
   responseText: string;
   planId?: string;
   taskId?: string;
@@ -171,6 +191,49 @@ function extractSinceDaysFromText(text: string): number | null {
   return null;
 }
 
+function extractPreferenceFromText(text: string): { key: string; value: string } | null {
+  const preferMatch = text.match(/^.*?\bi prefer\s+(.+)$/i)?.[1];
+  if (preferMatch) {
+    return {
+      key: 'communication_style',
+      value: clampText(preferMatch, MAX_PREFERENCE_VALUE_CHARS),
+    };
+  }
+
+  const rememberMatch = text.match(/^.*?\bremember(?: that)? i\s+(.+)$/i)?.[1];
+  if (rememberMatch) {
+    return {
+      key: 'quirks',
+      value: clampText(`i ${rememberMatch}`, MAX_PREFERENCE_VALUE_CHARS),
+    };
+  }
+
+  const prioritizeMatch = text.match(/^.*?\b(?:always\s+)?prioritize\s+(.+)$/i)?.[1];
+  if (prioritizeMatch) {
+    return {
+      key: 'priorities',
+      value: clampText(prioritizeMatch, MAX_PREFERENCE_VALUE_CHARS),
+    };
+  }
+
+  return null;
+}
+
+function normalizePreferenceKey(
+  raw: string | null,
+): 'communication_style' | 'priorities' | 'quirks' | null {
+  if (!raw) {
+    return null;
+  }
+  const normalized = raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_\s-]/g, '')
+    .replace(/[\s-]+/g, '_')
+    .slice(0, MAX_PREFERENCE_KEY_CHARS);
+  return PREFERENCE_KEY_ALIASES[normalized] ?? null;
+}
+
 function isResearchFollowUpPhrase(text: string): boolean {
   return /^(tell me more|expand(?: on)?|continue|go deeper|what else|what about|elaborate(?: on)?)\b/i.test(
     text.trim(),
@@ -214,9 +277,12 @@ function normalizeClassifiedIntent(value: unknown): ClassifiedIntent {
     value === 'news' ||
     value === 'research' ||
     value === 'briefing' ||
-    value === 'next_actions'
+    value === 'next_actions' ||
+    value === 'preference_set' ||
+    value === 'preference' ||
+    value === 'preference_update'
   ) {
-    return value;
+    return value === 'preference' || value === 'preference_update' ? 'preference_set' : value;
   }
 
   return 'unknown';
@@ -239,6 +305,17 @@ function parseClassificationResponse(raw: string): IntentClassification {
 
   return {
     intent: normalizeClassifiedIntent(candidate.intent),
+    payload,
+  };
+}
+
+function normalizeClassification(input: IntentClassification): IntentClassification {
+  const payload =
+    input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload)
+      ? input.payload
+      : {};
+  return {
+    intent: normalizeClassifiedIntent((input as { intent?: unknown }).intent),
     payload,
   };
 }
@@ -387,6 +464,7 @@ export class IntentRouter {
         payload: {},
       };
     }
+    classification = normalizeClassification(classification);
 
     switch (classification.intent) {
       case 'task_add':
@@ -409,6 +487,8 @@ export class IntentRouter {
         return this.handleAgentIntent(normalizedText, 'research', classification.payload);
       case 'briefing':
         return this.handleAgentIntent(normalizedText, 'briefing', classification.payload);
+      case 'preference_set':
+        return this.handlePreferenceIntent(normalizedText, classification.payload);
       default:
         return this.handleUnknownIntent(normalizedText);
     }
@@ -455,6 +535,14 @@ export class IntentRouter {
     }
     if (lower.includes('briefing') || lower.includes('good morning')) {
       return 'briefing';
+    }
+    if (
+      lower.includes('i prefer') ||
+      lower.includes('remember i') ||
+      lower.includes('remember that i') ||
+      lower.includes('prioritize')
+    ) {
+      return 'preference_set';
     }
     if (lower.includes('research')) {
       return 'research';
@@ -584,6 +672,49 @@ export class IntentRouter {
       return 'Preparing your daily briefing.';
     }
     return 'Preparing your news digest.';
+  }
+
+  private async handlePreferenceIntent(
+    text: string,
+    payload: Record<string, unknown>,
+  ): Promise<IntentOutcome> {
+    const parsed = extractPreferenceFromText(text);
+    const key =
+      normalizePreferenceKey(getString(payload.key)) ??
+      normalizePreferenceKey(parsed?.key ?? null) ??
+      'communication_style';
+    const value = clampText(
+      getString(payload.value) ?? parsed?.value ?? '',
+      MAX_PREFERENCE_VALUE_CHARS,
+    );
+    if (!value) {
+      return this.handleUnknownIntent(text);
+    }
+    const requestedAt = this.now().toISOString();
+    const normalizedPayload = {
+      key,
+      value,
+      utterance: text,
+      requestedAt,
+    };
+
+    await this.publishSafe(Topics.lifeos.voiceIntentPreferenceSet, normalizedPayload);
+    await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+      action: 'preference_updated',
+      text,
+      key,
+      value,
+    });
+
+    const responseText =
+      key === 'communication_style'
+        ? 'Understood. I will keep responses concise.'
+        : 'Understood. I will remember that preference.';
+    return {
+      handled: true,
+      action: 'preference_updated',
+      responseText,
+    };
   }
 
   private buildIntentPayload(

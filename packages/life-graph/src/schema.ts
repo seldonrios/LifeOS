@@ -84,11 +84,16 @@ export const NewsDigestSchema = z
 export const MemoryEntrySchema = z
   .object({
     id: z.string().uuid(),
-    type: z.enum(['conversation', 'research', 'note', 'insight']),
+    type: z.enum(['conversation', 'research', 'note', 'insight', 'preference']),
     content: z.string().trim().min(1),
     embedding: z.array(z.number()),
     timestamp: IsoDateTimeSchema,
     relatedTo: z.array(z.string().trim().min(1)).default([]),
+    threadId: z.string().uuid().optional(),
+    role: z.enum(['user', 'assistant', 'system']).optional(),
+    key: z.string().trim().min(1).optional(),
+    value: z.string().trim().min(1).optional(),
+    summaryOfThreadId: z.string().uuid().optional(),
   })
   .strict();
 

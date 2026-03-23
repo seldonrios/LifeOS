@@ -98,6 +98,8 @@ const MAX_MEMORY_ENTRIES = 10_000;
 const MAX_MEMORY_CONTENT_CHARS = 6000;
 const MAX_MEMORY_RELATED = 24;
 const MEMORY_EMBEDDING_DIM = 384;
+const MAX_MEMORY_KEY_CHARS = 80;
+const MAX_MEMORY_VALUE_CHARS = 300;
 const MAX_NOTE_TITLE_CHARS = 200;
 const MAX_NOTE_CONTENT_CHARS = 8000;
 const MAX_NOTE_TAGS = 20;
@@ -172,6 +174,11 @@ function getOptionalNumber(value: unknown): number | null {
   }
 
   return value;
+}
+
+function parsePositiveIntegerOption(value: unknown, fallback: number, max: number): number {
+  const parsed = parsePositiveInteger(value) ?? fallback;
+  return Math.min(parsed, max);
 }
 
 function parseLimit(params: QueryParams): number | null {
@@ -364,6 +371,15 @@ function normalizeEmbedding(value: unknown): number[] {
   return vector.map((item) => item / magnitude);
 }
 
+function toUuidOrUndefined(value: unknown): string | undefined {
+  const candidate = getString(value);
+  if (!candidate) {
+    return undefined;
+  }
+  const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  return uuidPattern.test(candidate) ? candidate : undefined;
+}
+
 function normalizeMemoryInput(
   entry:
     | (Omit<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'> &
@@ -375,7 +391,8 @@ function normalizeMemoryInput(
     entry.type === 'conversation' ||
     entry.type === 'research' ||
     entry.type === 'note' ||
-    entry.type === 'insight'
+    entry.type === 'insight' ||
+    entry.type === 'preference'
       ? entry.type
       : 'insight';
   const content = normalizeStringField(entry.content, 'Untitled memory', MAX_MEMORY_CONTENT_CHARS);
@@ -385,6 +402,9 @@ function normalizeMemoryInput(
       ? normalizeEmbedding(entry.embedding)
       : createDeterministicEmbedding(content);
 
+  const threadId = toUuidOrUndefined(entry.threadId);
+  const summaryOfThreadId = toUuidOrUndefined(entry.summaryOfThreadId);
+
   return {
     id: getString(entry.id) ?? randomUUID(),
     type,
@@ -392,6 +412,17 @@ function normalizeMemoryInput(
     embedding: seedEmbedding,
     timestamp: normalizeIsoTimestamp(entry.timestamp, nowIso),
     relatedTo,
+    ...(threadId ? { threadId } : {}),
+    ...(entry.role === 'user' || entry.role === 'assistant' || entry.role === 'system'
+      ? { role: entry.role }
+      : {}),
+    ...(getString(entry.key)
+      ? { key: normalizeStringField(entry.key, 'preference', MAX_MEMORY_KEY_CHARS) }
+      : {}),
+    ...(getString(entry.value)
+      ? { value: normalizeStringField(entry.value, '', MAX_MEMORY_VALUE_CHARS) }
+      : {}),
+    ...(summaryOfThreadId ? { summaryOfThreadId } : {}),
   };
 }
 
@@ -834,6 +865,25 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         .slice(0, limit);
 
       return scored;
+    },
+
+    async getMemoryThread(threadId, options = {}) {
+      const normalizedThreadId = toUuidOrUndefined(threadId);
+      if (!normalizedThreadId) {
+        return [];
+      }
+
+      const graph = await manager.load(resolvedGraphPath);
+      const limit = parsePositiveIntegerOption(options.limit, 100, 2000);
+      const sinceDays = parsePositiveInteger(options.sinceDays) ?? 0;
+      const thresholdMs =
+        sinceDays > 0 ? Date.now() - sinceDays * 24 * 60 * 60 * 1000 : Number.NEGATIVE_INFINITY;
+
+      return (graph.memory ?? [])
+        .filter((entry) => entry.threadId === normalizedThreadId)
+        .filter((entry) => parseIsoOrZero(entry.timestamp) >= thresholdMs)
+        .sort((left, right) => parseIsoOrZero(left.timestamp) - parseIsoOrZero(right.timestamp))
+        .slice(-limit);
     },
 
     async applyUpdates(updates: LifeGraphUpdate[]) {

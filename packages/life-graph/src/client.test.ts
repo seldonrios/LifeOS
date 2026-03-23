@@ -213,6 +213,43 @@ test('searchMemory ranks related entries and applyUpdates appends memory', async
   assert.ok(matches.every((entry) => Number.isFinite(entry.score)));
 });
 
+test('memory thread retrieval keeps role and preference metadata with date filtering', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+  const threadId = '6dc43712-5709-41de-a4ca-6589f19a8159';
+
+  await client.appendMemoryEntry({
+    type: 'conversation',
+    content: 'I prefer short answers.',
+    role: 'user',
+    threadId,
+    timestamp: '2026-03-20T09:00:00.000Z',
+    relatedTo: ['voice'],
+  });
+  await client.appendMemoryEntry({
+    type: 'preference',
+    content: 'communicationStyle: concise',
+    key: 'communicationStyle',
+    value: 'concise',
+    role: 'system',
+    threadId,
+    timestamp: '2026-03-25T09:00:00.000Z',
+    relatedTo: ['profile'],
+  });
+
+  const fullThread = await client.getMemoryThread(threadId, { limit: 10 });
+  assert.equal(fullThread.length, 2);
+  assert.equal(fullThread[0]?.role, 'user');
+  assert.equal(fullThread[1]?.type, 'preference');
+  assert.equal(fullThread[1]?.key, 'communicationStyle');
+  assert.equal(fullThread[1]?.value, 'concise');
+
+  const recent = await client.getMemoryThread(threadId, { sinceDays: 2, limit: 10 });
+  assert.equal(recent.length, 1);
+  assert.equal(recent[0]?.type, 'preference');
+});
+
 test('query supports plans/tasks with filters and limits', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');
