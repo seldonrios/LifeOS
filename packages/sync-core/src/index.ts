@@ -34,6 +34,18 @@ export function createSyncModule(options: SyncModuleOptions = {}): LifeOSModule 
         eventBus: context.eventBus,
         deviceId: localDeviceId,
         deviceName: localDeviceName,
+        env: context.env,
+        ...(context.graphPath ? { graphPath: context.graphPath } : {}),
+        client: context.createLifeGraphClient(
+          context.graphPath
+            ? {
+                graphPath: context.graphPath,
+                env: context.env,
+              }
+            : {
+                env: context.env,
+              },
+        ),
         logger: (line) => context.log(`[SyncCore] ${line}`),
         onIncomingDelta: async (delta) => {
           await registry.touchDevice(delta.deviceId, delta.deviceName);

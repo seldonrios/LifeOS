@@ -1544,6 +1544,11 @@ export async function runSyncCommand(
     }
 
     if (options.action === 'demo') {
+      if (!options.outputJson) {
+        writeStdout('🚀 Starting multi-device sync demo...\n');
+        writeStdout('1. In this terminal: make a change\n');
+        writeStdout('2. In another terminal: run `pnpm lifeos sync demo` and watch it appear\n');
+      }
       const eventBus = createLocalRuntimeEventBus();
       const primaryDeviceId = 'demo-laptop';
       const secondaryDeviceId = 'demo-phone';
@@ -1604,6 +1609,7 @@ export async function runSyncCommand(
         writeStdout(`Origin: ${payload.originDeviceId}\n`);
         writeStdout(`Mirrored to: ${payload.mirroredDeviceId}\n`);
         writeStdout(`Mirrored events: ${payload.mirroredEvents}\n`);
+        writeStdout('The sync engine will now actually merge.\n');
         writeStdout(chalk.green('Sync demo complete.\n'));
       }
       await publishEventSafely(

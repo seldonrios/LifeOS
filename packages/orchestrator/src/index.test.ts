@@ -146,6 +146,13 @@ function mockTtsSink() {
   };
 }
 
+function getHandler(
+  subscriptions: CapturedSubscription[],
+  topic: string,
+): ((event: BaseEvent<unknown>) => Promise<void>) | undefined {
+  return subscriptions.find((entry) => entry.topic === topic)?.handler;
+}
+
 test('orchestrator subscribes to lifeos wildcard events', async () => {
   const { context, subscriptions } = createContextMock();
   const module = createOrchestratorModule({
@@ -156,8 +163,60 @@ test('orchestrator subscribes to lifeos wildcard events', async () => {
   await module.init(context);
   assert.deepEqual(
     subscriptions.map((entry) => entry.topic),
-    ['lifeos.>'],
+    [Topics.lifeos.syncDelta, 'lifeos.>'],
   );
+});
+
+test('orchestrator re-evaluates when sync delta is received', async () => {
+  const { context, subscriptions, published } = createContextMock();
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    decisionEngine: async ({ event }) => {
+      if (event.type === 'sync_received') {
+        return {
+          action: 'speak',
+          message: 'Sync update received. I rechecked your priorities.',
+        };
+      }
+      return { action: 'nothing' };
+    },
+  });
+
+  await module.init(context);
+  const handler = getHandler(subscriptions, Topics.lifeos.syncDelta);
+  assert.ok(handler);
+
+  await handler?.({
+    id: 'evt_sync',
+    type: Topics.lifeos.syncDelta,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'sync-core',
+    version: '0.1.0',
+    data: {
+      deltaId: 'delta_1',
+      deviceId: 'device-a',
+      deviceName: 'Laptop',
+      timestamp: '2026-03-25T08:00:00.000Z',
+      payload: {
+        id: 'evt_remote',
+        type: Topics.lifeos.noteAdded,
+        timestamp: '2026-03-25T08:00:00.000Z',
+        source: 'notes-module',
+        version: '0.1.0',
+        data: {
+          title: 'remote note',
+        },
+      },
+      version: '0.1.0',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
+  const suggestion = published.find(
+    (entry) => entry.topic === Topics.lifeos.orchestratorSuggestion,
+  );
+  assert.ok(suggestion);
 });
 
 test('orchestrator handles explicit briefing intent and speaks summary', async () => {
@@ -170,7 +229,7 @@ test('orchestrator handles explicit briefing intent and speaks summary', async (
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_briefing',
@@ -214,7 +273,7 @@ test('orchestrator respects briefing_max_seconds preference when building briefi
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_briefing_pref',
@@ -239,7 +298,7 @@ test('orchestrator persists preference updates and emits personality update sign
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_preference',
@@ -275,7 +334,7 @@ test('orchestrator emits proactive suggestion when decision engine requests spee
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_research_done',
@@ -305,7 +364,7 @@ test('orchestrator emits context-spike suggestion on research events without mod
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_context_spike',
@@ -342,7 +401,7 @@ test('orchestrator auto-briefing triggers on first wake once per day', async () 
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
 
   await handler?.({
@@ -380,7 +439,7 @@ test('orchestrator processes self-published auto-briefing intents', async () => 
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
 
   await handler?.({
@@ -424,7 +483,7 @@ test('orchestrator falls back to note-task heuristic when model is unavailable',
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_note_added',
@@ -460,7 +519,7 @@ test('orchestrator suppresses duplicate proactive suggestions within cooldown', 
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
 
   await handler?.({
@@ -499,7 +558,7 @@ test('orchestrator tolerates unserializable event payloads during memory/context
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
 
   const circular: Record<string, unknown> = {
@@ -542,7 +601,7 @@ test('orchestrator normalizes unsafe decision updates before apply', async () =>
   });
   await module.init(context);
 
-  const handler = subscriptions[0]?.handler;
+  const handler = getHandler(subscriptions, 'lifeos.>');
   assert.ok(handler);
   await handler?.({
     id: 'evt_update_test',

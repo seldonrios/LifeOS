@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { LifeGraphManager, type LifeGraphManagerOptions } from './manager';
 import { cosineSimilarity, createDeterministicEmbedding } from './memory';
 import { resolveLifeGraphPath } from './path';
+import { parseGoalPlan } from './schema';
 import { getGraphSummary } from './store';
 import type {
   GoalPlan,
@@ -100,6 +101,9 @@ const MAX_MEMORY_RELATED = 24;
 const MEMORY_EMBEDDING_DIM = 384;
 const MAX_MEMORY_KEY_CHARS = 80;
 const MAX_MEMORY_VALUE_CHARS = 300;
+const MAX_CALENDAR_EVENTS = 4000;
+const MAX_CALENDAR_TITLE_CHARS = 220;
+const MAX_CALENDAR_LOCATION_CHARS = 180;
 const MAX_NOTE_TITLE_CHARS = 200;
 const MAX_NOTE_CONTENT_CHARS = 8000;
 const MAX_NOTE_TAGS = 20;
@@ -287,6 +291,44 @@ function normalizeNoteInput(
   };
 }
 
+function normalizeCalendarEventInput(
+  event: Record<string, unknown>,
+  nowIso: string,
+): {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  attendees?: string[];
+  location?: string;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+} {
+  const start = normalizeIsoTimestamp(event.start, nowIso);
+  const end = normalizeIsoTimestamp(event.end, start);
+  const statusValue = getString(event.status);
+  const status =
+    statusValue === 'tentative' || statusValue === 'cancelled' || statusValue === 'confirmed'
+      ? statusValue
+      : 'confirmed';
+
+  const attendees = normalizeStringArray(event.attendees, MAX_NOTE_TAGS, MAX_NOTE_TAG_CHARS);
+  const locationValue = getString(event.location);
+
+  return {
+    id: getString(event.id) ?? randomUUID(),
+    title: normalizeStringField(event.title, 'Untitled event', MAX_CALENDAR_TITLE_CHARS),
+    start,
+    end,
+    ...(attendees.length > 0 ? { attendees } : {}),
+    ...(locationValue
+      ? {
+          location: normalizeStringField(locationValue, locationValue, MAX_CALENDAR_LOCATION_CHARS),
+        }
+      : {}),
+    status,
+  };
+}
+
 function normalizeResearchInput(
   result:
     | (Omit<LifeGraphResearchResult, 'id' | 'savedAt' | 'threadId'> &
@@ -432,6 +474,51 @@ function parseIsoOrZero(value: string | undefined): number {
   }
   const parsed = new Date(value).getTime();
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toArrayOfRecords(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value.filter((entry): entry is Record<string, unknown> => isRecord(entry));
+}
+
+function mergeByIdLastWriteWins<T extends { id: string }>(
+  existingItems: T[],
+  incomingItems: T[],
+  getTimestamp: (item: T) => number,
+): T[] {
+  const byId = new Map<string, T>();
+  for (const item of existingItems) {
+    const id = item.id.trim();
+    if (!id) {
+      continue;
+    }
+    byId.set(id, item);
+  }
+
+  for (const incoming of incomingItems) {
+    const id = incoming.id.trim();
+    if (!id) {
+      continue;
+    }
+    const existing = byId.get(id);
+    if (!existing) {
+      byId.set(id, incoming);
+      continue;
+    }
+    const incomingTs = getTimestamp(incoming);
+    const existingTs = getTimestamp(existing);
+    if (incomingTs >= existingTs) {
+      byId.set(id, incoming);
+    }
+  }
+
+  return Array.from(byId.values());
 }
 
 function toTopicQuery(topic: string | undefined): string | null {
@@ -884,6 +971,141 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         .filter((entry) => parseIsoOrZero(entry.timestamp) >= thresholdMs)
         .sort((left, right) => parseIsoOrZero(left.timestamp) - parseIsoOrZero(right.timestamp))
         .slice(-limit);
+    },
+
+    async mergeDelta(deltaPayload) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const payload = isRecord(deltaPayload) ? deltaPayload : {};
+
+      let plans = [...graph.plans];
+      let calendarEvents = [...(graph.calendarEvents ?? [])];
+      let notes = [...(graph.notes ?? [])];
+      let researchResults = [...(graph.researchResults ?? [])];
+      let weatherSnapshots = [...(graph.weatherSnapshots ?? [])];
+      let newsDigests = [...(graph.newsDigests ?? [])];
+      let memory = [...(graph.memory ?? [])];
+
+      const incomingPlans = toArrayOfRecords(payload.goals ?? payload.plans)
+        .map((entry) => {
+          try {
+            return parseGoalPlan(entry);
+          } catch {
+            return null;
+          }
+        })
+        .filter((entry): entry is GoalPlan => Boolean(entry));
+      plans = mergeByIdLastWriteWins(plans, incomingPlans, (item) =>
+        parseIsoOrZero(item.createdAt),
+      );
+
+      const incomingCalendarEvents = toArrayOfRecords(payload.calendarEvents).map((entry) =>
+        normalizeCalendarEventInput(entry, nowIso),
+      );
+      calendarEvents = mergeByIdLastWriteWins(calendarEvents, incomingCalendarEvents, (item) =>
+        Math.max(parseIsoOrZero(item.start), parseIsoOrZero(item.end)),
+      ).slice(-MAX_CALENDAR_EVENTS);
+
+      const incomingNotes = toArrayOfRecords(payload.notes).map((entry) =>
+        normalizeNoteInput(entry as unknown as LifeGraphNote, nowIso),
+      );
+      notes = mergeByIdLastWriteWins(notes, incomingNotes, (item) =>
+        parseIsoOrZero(item.createdAt),
+      ).slice(-MAX_NOTES);
+
+      const incomingResearch = toArrayOfRecords(payload.researchResults).map((entry) =>
+        normalizeResearchInput(entry as unknown as LifeGraphResearchResult, nowIso),
+      );
+      researchResults = mergeByIdLastWriteWins(researchResults, incomingResearch, (item) =>
+        parseIsoOrZero(item.savedAt),
+      ).slice(-MAX_RESEARCH_RESULTS);
+
+      const incomingWeather = toArrayOfRecords(payload.weatherSnapshots).map((entry) =>
+        normalizeWeatherInput(entry as unknown as LifeGraphWeatherSnapshot, nowIso),
+      );
+      weatherSnapshots = mergeByIdLastWriteWins(weatherSnapshots, incomingWeather, (item) =>
+        parseIsoOrZero(item.timestamp),
+      ).slice(-MAX_WEATHER_SNAPSHOTS);
+
+      const incomingNews = toArrayOfRecords(payload.newsDigests).map((entry) =>
+        normalizeNewsInput(entry as unknown as LifeGraphNewsDigest),
+      );
+      newsDigests = mergeByIdLastWriteWins(newsDigests, incomingNews, () => 0).slice(
+        -MAX_NEWS_DIGESTS,
+      );
+
+      const incomingMemory = toArrayOfRecords(payload.memory).map((entry) =>
+        normalizeMemoryInput(entry as unknown as LifeGraphMemoryEntry, nowIso),
+      );
+      memory = mergeByIdLastWriteWins(memory, incomingMemory, (item) =>
+        parseIsoOrZero(item.timestamp),
+      ).slice(-MAX_MEMORY_ENTRIES);
+
+      const eventType = getString(payload.type);
+      const eventData = isRecord(payload.data) ? payload.data : null;
+      if (eventType && eventData) {
+        if (
+          eventType === 'lifeos.calendar.event.added' ||
+          eventType === 'lifeos.voice.intent.calendar.add'
+        ) {
+          calendarEvents = mergeByIdLastWriteWins(
+            calendarEvents,
+            [normalizeCalendarEventInput(eventData, nowIso)],
+            (item) => Math.max(parseIsoOrZero(item.start), parseIsoOrZero(item.end)),
+          ).slice(-MAX_CALENDAR_EVENTS);
+        } else if (
+          eventType === 'lifeos.note.added' ||
+          eventType === 'lifeos.voice.intent.note.add'
+        ) {
+          notes = mergeByIdLastWriteWins(
+            notes,
+            [normalizeNoteInput(eventData as unknown as LifeGraphNote, nowIso)],
+            (item) => parseIsoOrZero(item.createdAt),
+          ).slice(-MAX_NOTES);
+        } else if (
+          eventType === 'lifeos.research.completed' ||
+          eventType === 'lifeos.voice.intent.research'
+        ) {
+          researchResults = mergeByIdLastWriteWins(
+            researchResults,
+            [normalizeResearchInput(eventData as unknown as LifeGraphResearchResult, nowIso)],
+            (item) => parseIsoOrZero(item.savedAt),
+          ).slice(-MAX_RESEARCH_RESULTS);
+        } else if (
+          eventType === 'lifeos.weather.snapshot.captured' ||
+          eventType === 'lifeos.voice.intent.weather'
+        ) {
+          weatherSnapshots = mergeByIdLastWriteWins(
+            weatherSnapshots,
+            [normalizeWeatherInput(eventData as unknown as LifeGraphWeatherSnapshot, nowIso)],
+            (item) => parseIsoOrZero(item.timestamp),
+          ).slice(-MAX_WEATHER_SNAPSHOTS);
+        } else if (
+          eventType === 'lifeos.news.digest.ready' ||
+          eventType === 'lifeos.voice.intent.news'
+        ) {
+          newsDigests = mergeByIdLastWriteWins(
+            newsDigests,
+            [normalizeNewsInput(eventData as unknown as LifeGraphNewsDigest)],
+            () => 0,
+          ).slice(-MAX_NEWS_DIGESTS);
+        }
+      }
+
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          plans,
+          calendarEvents,
+          notes,
+          researchResults,
+          weatherSnapshots,
+          newsDigests,
+          memory,
+        },
+        resolvedGraphPath,
+      );
     },
 
     async applyUpdates(updates: LifeGraphUpdate[]) {

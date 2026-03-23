@@ -167,6 +167,7 @@ export interface LifeGraphClient {
     threadId: string,
     options?: LifeGraphMemoryThreadOptions,
   ): Promise<LifeGraphMemoryEntry[]>;
+  mergeDelta(deltaPayload: unknown): Promise<void>;
   applyUpdates(updates: LifeGraphUpdate[]): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;

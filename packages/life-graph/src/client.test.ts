@@ -213,6 +213,70 @@ test('searchMemory ranks related entries and applyUpdates appends memory', async
   assert.ok(matches.every((entry) => Number.isFinite(entry.score)));
 });
 
+test('mergeDelta performs last-write-wins merge for plans and notes', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.createNode('plan', {
+    id: 'goal_merge_1',
+    title: 'Plan Alpha',
+    description: 'Initial',
+    deadline: '2026-03-30',
+    createdAt: '2026-03-20T08:00:00.000Z',
+    tasks: [{ id: 'task_merge_1', title: 'Task A', status: 'todo', priority: 3 }],
+  });
+  await client.appendNote({
+    id: '7bfe792c-8054-441f-87fd-95f9f3f5f8bd',
+    title: 'Initial note',
+    content: 'Old content',
+    tags: ['sync'],
+    createdAt: '2026-03-20T08:00:00.000Z',
+    voiceTriggered: true,
+  });
+
+  await client.mergeDelta({
+    plans: [
+      {
+        id: 'goal_merge_1',
+        title: 'Plan Alpha',
+        description: 'Updated from remote',
+        deadline: '2026-03-30',
+        createdAt: '2026-03-22T08:00:00.000Z',
+        tasks: [{ id: 'task_merge_1', title: 'Task A remote', status: 'todo', priority: 4 }],
+      },
+      {
+        id: 'goal_merge_2',
+        title: 'Plan Beta',
+        description: 'Remote new plan',
+        deadline: null,
+        createdAt: '2026-03-22T10:00:00.000Z',
+        tasks: [{ id: 'task_merge_2', title: 'Task B', status: 'todo', priority: 3 }],
+      },
+    ],
+    notes: [
+      {
+        id: '7bfe792c-8054-441f-87fd-95f9f3f5f8bd',
+        title: 'Initial note',
+        content: 'New content from remote',
+        tags: ['sync', 'remote'],
+        voiceTriggered: true,
+        createdAt: '2026-03-22T09:00:00.000Z',
+      },
+    ],
+  });
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.plans.length, 2);
+  const mergedPlan = graph.plans.find((entry) => entry.id === 'goal_merge_1');
+  assert.equal(mergedPlan?.description, 'Updated from remote');
+  assert.equal(mergedPlan?.tasks[0]?.title, 'Task A remote');
+  const mergedNote = graph.notes?.find(
+    (entry) => entry.id === '7bfe792c-8054-441f-87fd-95f9f3f5f8bd',
+  );
+  assert.equal(mergedNote?.content, 'New content from remote');
+});
+
 test('memory thread retrieval keeps role and preference metadata with date filtering', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');

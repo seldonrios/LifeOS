@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
+import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph';
 
 const SYNC_VERSION = '0.1.0';
 const MAX_TRACKED_DELTAS = 2000;
@@ -30,8 +31,11 @@ export interface SyncEngineOptions {
   eventBus: ManagedEventBus;
   deviceId: string;
   deviceName: string;
+  env?: NodeJS.ProcessEnv;
+  graphPath?: string;
   now?: () => Date;
   logger?: (message: string) => void;
+  client?: Pick<LifeGraphClient, 'mergeDelta'>;
   shouldBroadcast?: (event: BaseEvent<Record<string, unknown>>) => boolean;
   onIncomingDelta?: (delta: SyncDelta) => Promise<void> | void;
 }
@@ -108,6 +112,7 @@ function trimSet(set: Set<string>, maxSize: number): void {
 
 export class SyncEngine {
   private readonly eventBus: ManagedEventBus;
+  private readonly client: Pick<LifeGraphClient, 'mergeDelta'>;
   private readonly now: () => Date;
   private readonly logger: (message: string) => void;
   private readonly shouldBroadcast: (event: BaseEvent<Record<string, unknown>>) => boolean;
@@ -124,6 +129,12 @@ export class SyncEngine {
 
   constructor(private readonly options: SyncEngineOptions) {
     this.eventBus = options.eventBus;
+    this.client =
+      options.client ??
+      createLifeGraphClient({
+        ...(options.env ? { env: options.env } : {}),
+        ...(options.graphPath ? { graphPath: options.graphPath } : {}),
+      });
     this.now = options.now ?? (() => new Date());
     this.logger = options.logger ?? (() => undefined);
     this.shouldBroadcast = options.shouldBroadcast ?? (() => true);
@@ -232,37 +243,44 @@ export class SyncEngine {
   }
 
   async handleIncomingDelta(delta: SyncDelta): Promise<boolean> {
-    if (
-      !this.active ||
-      delta.deviceId === this.options.deviceId ||
-      this.seenDeltaIds.has(delta.deltaId)
-    ) {
+    if (!this.active || delta.deviceId === this.options.deviceId) {
+      return false;
+    }
+    if (this.seenDeltaIds.has(delta.deltaId)) {
       return false;
     }
 
-    this.seenDeltaIds.add(delta.deltaId);
-    trimSet(this.seenDeltaIds, MAX_TRACKED_DELTAS);
-    this.devices.set(delta.deviceId, {
-      deviceId: delta.deviceId,
-      deviceName: delta.deviceName,
-      lastSyncTimestamp: delta.timestamp,
-    });
-    this.stats.deltasReceived += 1;
+    this.logger(`🔄 Syncing delta from ${delta.deviceId}`);
 
-    await this.onIncomingDelta(delta);
+    try {
+      await this.client.mergeDelta(delta.payload);
+      this.seenDeltaIds.add(delta.deltaId);
+      trimSet(this.seenDeltaIds, MAX_TRACKED_DELTAS);
+      this.devices.set(delta.deviceId, {
+        deviceId: delta.deviceId,
+        deviceName: delta.deviceName,
+        lastSyncTimestamp: delta.timestamp,
+      });
+      this.stats.deltasReceived += 1;
+      this.logger('✅ Delta merged successfully');
 
-    const replayedEvent: BaseEvent<Record<string, unknown>> = {
-      ...delta.payload,
-      metadata: {
-        ...(isRecord(delta.payload.metadata) ? delta.payload.metadata : {}),
-        syncReplayed: true,
-        syncOriginDeviceId: delta.deviceId,
-        syncDeltaId: delta.deltaId,
-      },
-    };
+      await this.onIncomingDelta(delta);
 
-    await this.eventBus.publish(replayedEvent.type, replayedEvent);
-    this.stats.deltasReplayed += 1;
-    return true;
+      const replayedEvent: BaseEvent<Record<string, unknown>> = {
+        ...delta.payload,
+        metadata: {
+          ...(isRecord(delta.payload.metadata) ? delta.payload.metadata : {}),
+          syncReplayed: true,
+          syncOriginDeviceId: delta.deviceId,
+          syncDeltaId: delta.deltaId,
+        },
+      };
+      await this.eventBus.publish(replayedEvent.type, replayedEvent);
+      this.stats.deltasReplayed += 1;
+      return true;
+    } catch (error: unknown) {
+      this.logger(`❌ Failed to merge delta: ${String(error)}`);
+      return false;
+    }
   }
 }

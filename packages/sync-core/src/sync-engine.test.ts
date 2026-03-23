@@ -52,12 +52,22 @@ test('sync engine broadcasts delta and replays to remote device once', async () 
     eventBus: eventBusA,
     deviceId: 'device-a',
     deviceName: 'Laptop',
+    client: {
+      async mergeDelta() {
+        return;
+      },
+    },
     shouldBroadcast: (event) => event.source === 'device-a',
   });
   const engineB = new SyncEngine({
     eventBus: eventBusB,
     deviceId: 'device-b',
     deviceName: 'Phone',
+    client: {
+      async mergeDelta() {
+        return;
+      },
+    },
     shouldBroadcast: (event) => event.source === 'device-b',
   });
 
@@ -102,6 +112,11 @@ test('sync engine ignores own delta payloads', async () => {
     eventBus,
     deviceId: 'device-self',
     deviceName: 'Tablet',
+    client: {
+      async mergeDelta() {
+        return;
+      },
+    },
   });
   await engine.start();
 
@@ -116,6 +131,43 @@ test('sync engine ignores own delta payloads', async () => {
 
   assert.equal(accepted, false);
   assert.equal(engine.getStats().deltasReceived, 0);
+
+  await engine.close();
+  await eventBus.close();
+});
+
+test('sync engine calls mergeDelta when receiving remote delta', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-merge',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const mergeCalls: unknown[] = [];
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-local',
+    deviceName: 'Laptop',
+    client: {
+      async mergeDelta(deltaPayload: unknown) {
+        mergeCalls.push(deltaPayload);
+      },
+    },
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-remote-1',
+    deviceId: 'device-remote',
+    deviceName: 'Phone',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(Topics.lifeos.noteAdded, { id: 'note_1', title: 'x' }, 'device-remote'),
+  });
+
+  assert.equal(accepted, true);
+  assert.equal(mergeCalls.length, 1);
+  assert.equal(engine.getStats().deltasReceived, 1);
 
   await engine.close();
   await eventBus.close();

@@ -102,6 +102,29 @@ pnpm lifeos sync demo
 
 ## ⚙️ Configuration
 
+## Multi-Device Sync
+
+### Multi-Device Sync (Phase 5)
+
+LifeOS now syncs your Life Graph across laptop, phone, tablet, etc. -- 100% locally via NATS.
+
+**Quick start:**
+
+```bash
+# On Device 1
+pnpm lifeos sync pair "My Phone"
+
+# On Device 2
+pnpm lifeos sync pair "My Laptop"
+```
+
+Changes made on any device instantly appear on the others. Works offline when disconnected.
+Try it:
+
+```bash
+pnpm lifeos sync demo
+```
+
 Environment variables:
 
 - `OLLAMA_HOST` override Ollama endpoint

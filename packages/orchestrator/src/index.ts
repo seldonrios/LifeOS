@@ -574,7 +574,65 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
         return true;
       }
 
+      async function handleSyncDelta(event: BaseEvent<Record<string, unknown>>): Promise<void> {
+        context.log('📡 Received sync from another device');
+
+        let contextSnippets: string[] = [];
+        try {
+          contextSnippets = await memory.getRelevantContextForCurrentConversation(
+            `sync_received ${safeSerialize(event.data, 2000)}`,
+            {
+              limit: MAX_CONTEXT_ITEMS,
+              sinceDays: 7,
+              minScore: 0.1,
+            },
+          );
+        } catch (error: unknown) {
+          context.log(`[Orchestrator] sync context degraded: ${normalizeErrorMessage(error)}`);
+        }
+
+        const profile = await getProfile();
+        const decision = normalizeDecision(
+          await decide(
+            {
+              event: {
+                ...event,
+                type: 'sync_received',
+                data: {
+                  delta: event.data,
+                  receivedAt: now().toISOString(),
+                },
+              },
+              context: contextSnippets,
+            },
+            profile,
+            context,
+            client,
+          ),
+        );
+
+        if (decision.action === 'update' && decision.updates && decision.updates.length > 0) {
+          try {
+            await client.applyUpdates(decision.updates);
+          } catch (error: unknown) {
+            context.log(`[Orchestrator] sync update degraded: ${normalizeErrorMessage(error)}`);
+          }
+        }
+
+        if (decision.action === 'speak' && getString(decision.message)) {
+          await emitSuggestion(String(decision.message), event.type, now(), 'decision');
+        }
+      }
+
+      await context.subscribe<Record<string, unknown>>(Topics.lifeos.syncDelta, async (event) => {
+        await handleSyncDelta(event as BaseEvent<Record<string, unknown>>);
+      });
+
       await context.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
+        if (event.type === Topics.lifeos.syncDelta) {
+          return;
+        }
+
         if (event.type === Topics.lifeos.voiceIntentPreferenceSet) {
           const key = getString(event.data.key);
           const value = getString(event.data.value);
