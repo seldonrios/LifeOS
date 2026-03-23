@@ -189,6 +189,48 @@ test('orchestrator handles explicit briefing intent and speaks summary', async (
   assert.ok(briefingEvent);
 });
 
+test('orchestrator respects briefing_max_seconds preference when building briefings', async () => {
+  const { context, subscriptions } = createContextMock();
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    now: () => new Date('2026-03-25T08:00:00.000Z'),
+    personality: {
+      async loadProfile() {
+        return {
+          communicationStyle: 'concise and direct',
+          priorities: ['health', 'deep work'],
+          quirks: ['hates long briefings'],
+          preferences: {
+            briefing_max_seconds: '20',
+          },
+        };
+      },
+      async updatePreference() {
+        return null;
+      },
+    },
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+  await module.init(context);
+
+  const handler = subscriptions[0]?.handler;
+  assert.ok(handler);
+  await handler?.({
+    id: 'evt_briefing_pref',
+    type: Topics.lifeos.voiceIntentBriefing,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'voice-core',
+    version: '0.1.0',
+    data: {
+      requestedAt: '2026-03-25T08:00:00.000Z',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
+  assert.ok((sink.spoken[0]?.length ?? 0) <= 220);
+});
+
 test('orchestrator persists preference updates and emits personality update signal', async () => {
   const { context, subscriptions, published, memoryEntries } = createContextMock();
   const module = createOrchestratorModule({
@@ -252,6 +294,43 @@ test('orchestrator emits proactive suggestion when decision engine requests spee
     (entry) => entry.topic === Topics.lifeos.orchestratorSuggestion,
   );
   assert.ok(suggestion);
+});
+
+test('orchestrator emits context-spike suggestion on research events without model prompt', async () => {
+  const { context, subscriptions, published, memoryEntries } = createContextMock();
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+  await module.init(context);
+
+  const handler = subscriptions[0]?.handler;
+  assert.ok(handler);
+  await handler?.({
+    id: 'evt_context_spike',
+    type: Topics.lifeos.researchCompleted,
+    timestamp: '2026-03-25T08:05:00.000Z',
+    source: 'research-module',
+    version: '0.1.0',
+    data: {
+      query: 'Grok 4 roadmap',
+      summary: 'summary',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
+  assert.match(sink.spoken[0] ?? '', /context spike/i);
+  const suggestion = published.find(
+    (entry) => entry.topic === Topics.lifeos.orchestratorSuggestion,
+  );
+  assert.ok(suggestion);
+  assert.equal(suggestion?.data.source, 'context_spike');
+  assert.ok(
+    memoryEntries.some((entry) =>
+      String(entry.content ?? '').includes('Suggestion (context_spike):'),
+    ),
+  );
 });
 
 test('orchestrator auto-briefing triggers on first wake once per day', async () => {
@@ -386,22 +465,22 @@ test('orchestrator suppresses duplicate proactive suggestions within cooldown', 
 
   await handler?.({
     id: 'evt_research_1',
-    type: Topics.lifeos.researchCompleted,
+    type: Topics.lifeos.noteAdded,
     timestamp: '2026-03-25T08:00:00.000Z',
-    source: 'research-module',
+    source: 'notes-module',
     version: '0.1.0',
     data: {
-      query: 'Grok 4 roadmap',
+      title: 'Prep notes',
     },
   });
   await handler?.({
     id: 'evt_research_2',
-    type: Topics.lifeos.researchCompleted,
+    type: Topics.lifeos.noteAdded,
     timestamp: '2026-03-25T08:00:10.000Z',
-    source: 'research-module',
+    source: 'notes-module',
     version: '0.1.0',
     data: {
-      query: 'Grok 4 roadmap',
+      title: 'Prep notes',
     },
   });
 

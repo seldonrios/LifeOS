@@ -17,6 +17,8 @@ const PROFILE_KEY_ALIASES: Record<string, string> = {
   style: 'communication_style',
   response_style: 'communication_style',
   briefing_style: 'communication_style',
+  briefing_max_seconds: 'briefing_max_seconds',
+  briefing_seconds: 'briefing_max_seconds',
   priorities: 'priorities',
   priority: 'priorities',
   quirks: 'quirks',

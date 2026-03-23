@@ -1346,6 +1346,13 @@ export async function runMemoryCommand(
     const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
     const graph = await client.loadGraph();
     const memoryEntries = graph.memory ?? [];
+    const sortedByRecent = [...memoryEntries].sort((left, right) => {
+      const rightMs = Date.parse(right.timestamp);
+      const leftMs = Date.parse(left.timestamp);
+      const safeRight = Number.isFinite(rightMs) ? rightMs : Number.NEGATIVE_INFINITY;
+      const safeLeft = Number.isFinite(leftMs) ? leftMs : Number.NEGATIVE_INFINITY;
+      return safeRight - safeLeft;
+    });
     const byType = memoryEntries.reduce<Record<string, number>>((acc, entry) => {
       const next = acc[entry.type] ?? 0;
       acc[entry.type] = next + 1;
@@ -1356,22 +1363,61 @@ export async function runMemoryCommand(
         .map((entry) => entry.threadId)
         .filter((entry): entry is string => typeof entry === 'string' && entry.trim().length > 0),
     ).size;
-    const latestTimestamp =
+    const latestTimestamp = sortedByRecent[0]?.timestamp ?? null;
+    const topThreads = Array.from(
       memoryEntries
-        .map((entry) => entry.timestamp)
-        .sort((left, right) => {
-          const rightMs = Date.parse(right);
-          const leftMs = Date.parse(left);
-          const safeRight = Number.isFinite(rightMs) ? rightMs : Number.NEGATIVE_INFINITY;
-          const safeLeft = Number.isFinite(leftMs) ? leftMs : Number.NEGATIVE_INFINITY;
-          return safeRight - safeLeft;
-        })[0] ?? null;
+        .reduce<Map<string, { entries: number; latestTimestamp: string }>>((acc, entry) => {
+          if (!entry.threadId?.trim()) {
+            return acc;
+          }
+          const existing = acc.get(entry.threadId) ?? {
+            entries: 0,
+            latestTimestamp: entry.timestamp,
+          };
+          const existingMs = Date.parse(existing.latestTimestamp);
+          const nextMs = Date.parse(entry.timestamp);
+          existing.entries += 1;
+          if (Number.isFinite(nextMs) && (!Number.isFinite(existingMs) || nextMs > existingMs)) {
+            existing.latestTimestamp = entry.timestamp;
+          }
+          acc.set(entry.threadId, existing);
+          return acc;
+        }, new Map())
+        .entries(),
+    )
+      .map(([threadId, value]) => ({
+        threadId,
+        entries: value.entries,
+        latestTimestamp: value.latestTimestamp,
+      }))
+      .sort((left, right) => right.entries - left.entries)
+      .slice(0, 5);
+    const recentInsights = sortedByRecent
+      .filter((entry) => entry.type === 'insight' || entry.type === 'research')
+      .slice(0, 3)
+      .map((entry) => ({
+        id: entry.id,
+        type: entry.type,
+        timestamp: entry.timestamp,
+        contentPreview: entry.content.replace(/\s+/g, ' ').trim().slice(0, 120),
+      }));
+    const storageBytesEstimate = memoryEntries.reduce((sum, entry) => {
+      return (
+        sum +
+        entry.content.length +
+        entry.relatedTo.join(',').length +
+        (entry.embedding.length * 8 + 80)
+      );
+    }, 0);
 
     const payload = {
       totalEntries: memoryEntries.length,
       threadCount,
       latestTimestamp,
       byType,
+      topThreads,
+      recentInsights,
+      storageBytesEstimate,
     };
 
     if (options.outputJson) {
@@ -1382,6 +1428,7 @@ export async function runMemoryCommand(
       writeStdout(`Entries: ${payload.totalEntries}\n`);
       writeStdout(`Threads: ${payload.threadCount}\n`);
       writeStdout(`Latest: ${payload.latestTimestamp ?? 'n/a'}\n`);
+      writeStdout(`Storage (est): ${payload.storageBytesEstimate} bytes\n`);
       const byTypeLine =
         Object.keys(payload.byType).length === 0
           ? 'none'
@@ -1390,6 +1437,22 @@ export async function runMemoryCommand(
               .map(([type, count]) => `${type}=${count}`)
               .join(', ');
       writeStdout(`By type: ${byTypeLine}\n`);
+      if (payload.topThreads.length > 0) {
+        const threadLine = payload.topThreads
+          .map((entry) => `${entry.threadId} (${entry.entries})`)
+          .join(', ');
+        writeStdout(`Top threads: ${threadLine}\n`);
+      } else {
+        writeStdout('Top threads: none\n');
+      }
+      if (payload.recentInsights.length > 0) {
+        const insightLine = payload.recentInsights
+          .map((entry) => `[${entry.type}] ${entry.contentPreview}`)
+          .join(' | ');
+        writeStdout(`Recent insights: ${insightLine}\n`);
+      } else {
+        writeStdout('Recent insights: none\n');
+      }
     }
 
     await publishEventSafely(

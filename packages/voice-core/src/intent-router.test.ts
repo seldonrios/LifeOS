@@ -318,6 +318,53 @@ test('preference intent falls back to unhandled when value is missing', async ()
   assert.deepEqual(publishCalls, [Topics.lifeos.voiceCommandUnhandled]);
 });
 
+test('preference intent parses briefing max seconds and publishes normalized value', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_set',
+      payload: {},
+    }),
+  });
+
+  const outcome = await router.handleCommand('Keep briefings under 20 seconds');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'preference_updated');
+  assert.match(outcome.responseText, /under 20 seconds/i);
+
+  const preferenceEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentPreferenceSet,
+  );
+  assert.equal(preferenceEvent?.data.key, 'briefing_max_seconds');
+  assert.equal(preferenceEvent?.data.value, '20');
+});
+
+test('preference intent clamps briefing max seconds into safe bounds', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'preference_set',
+      payload: { key: 'briefing_seconds', value: '3' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('set briefing to 3 seconds');
+  assert.equal(outcome.handled, true);
+  const preferenceEvent = publishCalls.find(
+    (entry) => entry.topic === Topics.lifeos.voiceIntentPreferenceSet,
+  );
+  assert.equal(preferenceEvent?.data.key, 'briefing_max_seconds');
+  assert.equal(preferenceEvent?.data.value, '10');
+});
+
 test('note search intent publishes dedicated note search topic', async () => {
   const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
   const router = new IntentRouter({

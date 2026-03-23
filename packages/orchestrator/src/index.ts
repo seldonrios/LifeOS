@@ -50,6 +50,12 @@ const MAX_PROACTIVE_MESSAGE_CHARS = 320;
 const MAX_DECISION_UPDATES = 24;
 const SUGGESTION_DEDUP_WINDOW_MS = 90_000;
 const PROFILE_CACHE_TTL_MS = 5 * 60 * 1000;
+const DEFAULT_BRIEFING_MAX_CHARS = 900;
+const SHORT_BRIEFING_MAX_CHARS = 520;
+const BRIEFING_MIN_CHARS = 180;
+const BRIEFING_MAX_CHARS = 1300;
+const BRIEFING_CHARS_PER_SECOND = 11;
+const CONTEXT_SPIKE_CALENDAR_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -73,6 +79,34 @@ function getString(value: unknown): string | null {
 
 function toDateKey(value: Date): string {
   return value.toISOString().slice(0, 10);
+}
+
+function parseTimestampMs(value: string | undefined): number {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function resolveBriefingMaxChars(profile: PersonalityProfile, shortBriefing: boolean): number {
+  const preferenceSeconds = parsePositiveInt(profile.preferences.briefing_max_seconds);
+  if (preferenceSeconds) {
+    const preferredChars = preferenceSeconds * BRIEFING_CHARS_PER_SECOND;
+    return Math.max(BRIEFING_MIN_CHARS, Math.min(BRIEFING_MAX_CHARS, preferredChars));
+  }
+  return shortBriefing ? SHORT_BRIEFING_MAX_CHARS : DEFAULT_BRIEFING_MAX_CHARS;
 }
 
 function tokenize(value: string): string[] {
@@ -283,7 +317,7 @@ async function buildBriefing(
   }
 
   const selectedLines = shortBriefing ? lines.slice(0, 5) : lines;
-  const maxChars = shortBriefing ? 520 : 900;
+  const maxChars = resolveBriefingMaxChars(profile, shortBriefing);
 
   return {
     summary: selectedLines.join(' ').slice(0, maxChars),
@@ -293,6 +327,37 @@ async function buildBriefing(
       ...(latestResearch ? [latestResearch.id] : []),
     ],
   };
+}
+
+async function buildContextSpikeSuggestion(
+  event: BaseEvent<Record<string, unknown>>,
+  client: LifeGraphClient,
+  referenceNow: Date,
+): Promise<string | null> {
+  if (event.type !== Topics.lifeos.researchCompleted) {
+    return null;
+  }
+
+  const query = getString(event.data.query);
+  if (!query) {
+    return null;
+  }
+
+  const graph = await client.loadGraph();
+  const nowMs = referenceNow.getTime();
+  const withinWindowMs = nowMs + CONTEXT_SPIKE_CALENDAR_WINDOW_MS;
+  const match = (graph.calendarEvents ?? []).find((calendarEvent) => {
+    const startMs = parseTimestampMs(calendarEvent.start);
+    if (!Number.isFinite(startMs) || startMs < nowMs || startMs > withinWindowMs) {
+      return false;
+    }
+    return hasTokenOverlap(calendarEvent.title, query);
+  });
+  if (!match) {
+    return null;
+  }
+
+  return `Context spike: your research on ${query} matches "${match.title}". Should I add prep notes now?`;
 }
 
 async function heuristicDecision(
@@ -477,6 +542,38 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
         }
       }
 
+      async function emitSuggestion(
+        message: string,
+        eventType: string,
+        eventAt: Date,
+        source: 'context_spike' | 'decision',
+      ): Promise<boolean> {
+        const nowMs = eventAt.getTime();
+        if (
+          lastSuggestion &&
+          lastSuggestion.message === message &&
+          nowMs - lastSuggestion.atMs < SUGGESTION_DEDUP_WINDOW_MS
+        ) {
+          context.log('[Orchestrator] duplicate suggestion suppressed.');
+          return false;
+        }
+        lastSuggestion = { message, atMs: nowMs };
+
+        await speakSafe(tts, message, context);
+        await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
+          message,
+          eventType,
+          at: eventAt.toISOString(),
+          source,
+        });
+        await memory.remember({
+          type: 'insight',
+          content: `Suggestion (${source}): ${message}`,
+          relatedTo: [eventType],
+        });
+        return true;
+      }
+
       await context.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
         if (event.type === Topics.lifeos.voiceIntentPreferenceSet) {
           const key = getString(event.data.key);
@@ -557,6 +654,27 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
           context.log(`[Orchestrator] memory degraded: ${normalizeErrorMessage(error)}`);
         }
 
+        try {
+          const spikeSuggestion = await buildContextSpikeSuggestion(
+            event as BaseEvent<Record<string, unknown>>,
+            client,
+            eventNow,
+          );
+          if (spikeSuggestion) {
+            const emitted = await emitSuggestion(
+              spikeSuggestion,
+              event.type,
+              eventNow,
+              'context_spike',
+            );
+            if (emitted) {
+              return;
+            }
+          }
+        } catch (error: unknown) {
+          context.log(`[Orchestrator] context spike degraded: ${normalizeErrorMessage(error)}`);
+        }
+
         let contextSnippets: string[] = [];
         try {
           contextSnippets = await memory.getRelevantContextForCurrentConversation(
@@ -594,23 +712,7 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
 
         if (decision.action === 'speak' && getString(decision.message)) {
           const message = String(decision.message);
-          const nowMs = eventNow.getTime();
-          if (
-            lastSuggestion &&
-            lastSuggestion.message === message &&
-            nowMs - lastSuggestion.atMs < SUGGESTION_DEDUP_WINDOW_MS
-          ) {
-            context.log('[Orchestrator] duplicate suggestion suppressed.');
-            return;
-          }
-          lastSuggestion = { message, atMs: nowMs };
-
-          await speakSafe(tts, message, context);
-          await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
-            message,
-            eventType: event.type,
-            at: eventNow.toISOString(),
-          });
+          await emitSuggestion(message, event.type, eventNow, 'decision');
         }
       });
     },

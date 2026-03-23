@@ -16,13 +16,20 @@ const MAX_NOTE_TAGS = 20;
 const MAX_NOTE_TAG_CHARS = 40;
 const MAX_PREFERENCE_KEY_CHARS = 80;
 const MAX_PREFERENCE_VALUE_CHARS = 300;
+const MIN_BRIEFING_SECONDS = 10;
+const MAX_BRIEFING_SECONDS = 90;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
-const PREFERENCE_KEY_ALIASES: Record<string, 'communication_style' | 'priorities' | 'quirks'> = {
+const PREFERENCE_KEY_ALIASES: Record<
+  string,
+  'communication_style' | 'priorities' | 'quirks' | 'briefing_max_seconds'
+> = {
   communication_style: 'communication_style',
   communicationstyle: 'communication_style',
   style: 'communication_style',
   response_style: 'communication_style',
   briefing_style: 'communication_style',
+  briefing_max_seconds: 'briefing_max_seconds',
+  briefing_seconds: 'briefing_max_seconds',
   priority: 'priorities',
   priorities: 'priorities',
   quirk: 'quirks',
@@ -192,6 +199,16 @@ function extractSinceDaysFromText(text: string): number | null {
 }
 
 function extractPreferenceFromText(text: string): { key: string; value: string } | null {
+  const briefingSecondsMatch = text.match(
+    /\b(?:keep\s+)?briefings?\s+(?:under|below|<=?|at most)\s*(\d{1,3})\s*seconds?\b/i,
+  )?.[1];
+  if (briefingSecondsMatch) {
+    return {
+      key: 'briefing_max_seconds',
+      value: briefingSecondsMatch,
+    };
+  }
+
   const preferMatch = text.match(/^.*?\bi prefer\s+(.+)$/i)?.[1];
   if (preferMatch) {
     return {
@@ -221,7 +238,7 @@ function extractPreferenceFromText(text: string): { key: string; value: string }
 
 function normalizePreferenceKey(
   raw: string | null,
-): 'communication_style' | 'priorities' | 'quirks' | null {
+): 'communication_style' | 'priorities' | 'quirks' | 'briefing_max_seconds' | null {
   if (!raw) {
     return null;
   }
@@ -232,6 +249,18 @@ function normalizePreferenceKey(
     .replace(/[\s-]+/g, '_')
     .slice(0, MAX_PREFERENCE_KEY_CHARS);
   return PREFERENCE_KEY_ALIASES[normalized] ?? null;
+}
+
+function normalizeBriefingSecondsValue(raw: string | null): string | null {
+  if (!raw) {
+    return null;
+  }
+  const parsed = Number.parseInt(raw.trim(), 10);
+  if (!Number.isFinite(parsed)) {
+    return null;
+  }
+  const bounded = Math.max(MIN_BRIEFING_SECONDS, Math.min(MAX_BRIEFING_SECONDS, parsed));
+  return String(bounded);
 }
 
 function isResearchFollowUpPhrase(text: string): boolean {
@@ -533,16 +562,17 @@ export class IntentRouter {
     if (lower.includes('news') || lower.includes('headlines')) {
       return 'news';
     }
-    if (lower.includes('briefing') || lower.includes('good morning')) {
-      return 'briefing';
-    }
     if (
+      extractPreferenceFromText(text) ||
       lower.includes('i prefer') ||
       lower.includes('remember i') ||
       lower.includes('remember that i') ||
       lower.includes('prioritize')
     ) {
       return 'preference_set';
+    }
+    if (lower.includes('briefing') || lower.includes('good morning')) {
+      return 'briefing';
     }
     if (lower.includes('research')) {
       return 'research';
@@ -690,10 +720,15 @@ export class IntentRouter {
     if (!value) {
       return this.handleUnknownIntent(text);
     }
+    const normalizedValue =
+      key === 'briefing_max_seconds' ? normalizeBriefingSecondsValue(value) : value;
+    if (!normalizedValue) {
+      return this.handleUnknownIntent(text);
+    }
     const requestedAt = this.now().toISOString();
     const normalizedPayload = {
       key,
-      value,
+      value: normalizedValue,
       utterance: text,
       requestedAt,
     };
@@ -703,13 +738,15 @@ export class IntentRouter {
       action: 'preference_updated',
       text,
       key,
-      value,
+      value: normalizedValue,
     });
 
-    const responseText =
-      key === 'communication_style'
-        ? 'Understood. I will keep responses concise.'
-        : 'Understood. I will remember that preference.';
+    let responseText = 'Understood. I will remember that preference.';
+    if (key === 'communication_style') {
+      responseText = 'Understood. I will keep responses concise.';
+    } else if (key === 'briefing_max_seconds') {
+      responseText = `Understood. I will keep briefings under ${normalizedValue} seconds.`;
+    }
     return {
       handled: true,
       action: 'preference_updated',
