@@ -1651,6 +1651,53 @@ test('marketplace search returns matching entries', async () => {
   assert.ok(payload.some((entry) => entry.id === 'research'));
 });
 
+test('marketplace list --certified returns certified entries only', async () => {
+  const stdout: string[] = [];
+  const exitCode = await runCli(['marketplace', 'list', '--certified', '--json'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as Array<{ id: string; certified: boolean }>;
+  assert.ok(payload.length > 0);
+  assert.ok(payload.every((entry) => entry.certified));
+});
+
+test('marketplace commands read community-modules.json from cwd', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-marketplace-catalog-'));
+  await writeFile(
+    join(baseDir, 'community-modules.json'),
+    JSON.stringify(
+      {
+        modules: [
+          {
+            name: 'sample-module',
+            repo: 'octocat/sample-module',
+            certified: false,
+            category: 'custom',
+            tags: ['sample'],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const stdout: string[] = [];
+  const exitCode = await runCli(['marketplace', 'list', '--json'], {
+    cwd: () => baseDir,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as Array<{ id: string }>;
+  assert.equal(payload.length, 1);
+  assert.equal(payload[0]?.id, 'sample-module');
+});
+
 test('marketplace search requires a term', async () => {
   const stderr: string[] = [];
   const exitCode = await runCli(['marketplace', 'search'], {

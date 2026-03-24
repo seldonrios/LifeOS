@@ -190,6 +190,7 @@ interface MarketplaceCommandOptions {
   action: 'list' | 'search';
   term?: string;
   outputJson: boolean;
+  certifiedOnly: boolean;
 }
 
 interface MeshCommandOptions {
@@ -2293,7 +2294,7 @@ export async function runModuleCommand(
       return 1;
     }
     try {
-      const installed = await installMarketplaceModule(moduleName, { env });
+      const installed = await installMarketplaceModule(moduleName, { env, baseDir: baseCwd });
       if (
         optionalModules.includes(installed.moduleId as (typeof optionalModules)[number]) &&
         MODULE_DEFINITIONS[installed.moduleId] !== null
@@ -2320,7 +2321,7 @@ export async function runModuleCommand(
       return 1;
     }
     try {
-      const certified = await certifyMarketplaceModule(moduleName, { env });
+      const certified = await certifyMarketplaceModule(moduleName, { env, baseDir: baseCwd });
       writeStdout(chalk.green(`Certified ${certified.repo}.\n`));
       return 0;
     } catch (error: unknown) {
@@ -2340,6 +2341,7 @@ export async function runMarketplaceCommand(
   dependencies: RunCliDependencies = {},
 ): Promise<number> {
   const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
 
@@ -2353,8 +2355,16 @@ export async function runMarketplaceCommand(
 
     const entries =
       options.action === 'search'
-        ? await searchMarketplaceEntries(options.term ?? '', { env })
-        : await listMarketplaceEntries({ env });
+        ? await searchMarketplaceEntries(options.term ?? '', {
+            env,
+            baseDir: baseCwd,
+            certifiedOnly: options.certifiedOnly,
+          })
+        : await listMarketplaceEntries({
+            env,
+            baseDir: baseCwd,
+            certifiedOnly: options.certifiedOnly,
+          });
 
     if (options.outputJson) {
       writeStdout(`${JSON.stringify(entries, null, 2)}\n`);
@@ -2929,6 +2939,7 @@ function buildProgram(
     .description('Explore certified and community modules')
     .argument('[action]', 'list | search', 'list')
     .argument('[term]', 'Search term when action=search')
+    .option('--certified', 'Show only certified modules')
     .option('--json', 'Output JSON only')
     .action(async (action: string, term: string | undefined, commandOptions) => {
       const normalizedAction = normalizeMarketplaceAction(action);
@@ -2943,6 +2954,7 @@ function buildProgram(
         {
           action: normalizedAction,
           outputJson: Boolean(commandOptions.json),
+          certifiedOnly: Boolean(commandOptions.certified),
           ...(term ? { term } : {}),
         },
         dependencies,

@@ -46,6 +46,7 @@ pnpm lifeos module validate my-new-module
 - Must use the official template
 
 Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
+Marketplace catalog: `community-modules.json` (root).
 
 ## Build a New Module
 

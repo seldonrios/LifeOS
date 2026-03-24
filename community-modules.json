@@ -1,0 +1,56 @@
+{
+  "modules": [
+    {
+      "name": "google-bridge",
+      "repo": "seldonrios/google-bridge-module",
+      "certified": true,
+      "category": "bridge",
+      "description": "Unified Google Workspace bridge for Calendar, Tasks, Gmail, Drive, Contacts, Keep, Chat, Meet, Docs, and Sheets.",
+      "tags": ["google", "bridge", "calendar", "tasks", "gmail"],
+      "subFeatures": [
+        "calendar",
+        "tasks",
+        "gmail",
+        "drive",
+        "contacts",
+        "keep",
+        "chat",
+        "meet",
+        "docs",
+        "sheets"
+      ]
+    },
+    {
+      "name": "research",
+      "repo": "lifeos-community/research-module",
+      "certified": true,
+      "category": "knowledge",
+      "description": "Research assistant with local context and follow-up memory.",
+      "tags": ["research", "knowledge"]
+    },
+    {
+      "name": "weather",
+      "repo": "lifeos-community/weather-module",
+      "certified": true,
+      "category": "utilities",
+      "description": "Offline-first weather snapshots and spoken forecasts.",
+      "tags": ["weather", "daily"]
+    },
+    {
+      "name": "news",
+      "repo": "lifeos-community/news-module",
+      "certified": true,
+      "category": "information",
+      "description": "RSS-powered daily digest with local summarization fallback.",
+      "tags": ["news", "digest"]
+    },
+    {
+      "name": "smart-home",
+      "repo": "lifeos-community/smart-home-module",
+      "certified": false,
+      "category": "automation",
+      "description": "Bridge LifeOS intents to Home Assistant and MQTT devices.",
+      "tags": ["automation", "home"]
+    }
+  ]
+}

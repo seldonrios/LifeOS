@@ -7,6 +7,8 @@ export interface MarketplaceEntry {
   description: string;
   tags: string[];
   certified: boolean;
+  category: string;
+  subFeatures: string[];
 }
 
 interface MarketplaceState {
@@ -18,6 +20,9 @@ interface MarketplaceState {
 export interface MarketplaceOptions {
   env?: NodeJS.ProcessEnv;
   statePath?: string;
+  baseDir?: string;
+  catalogPath?: string;
+  certifiedOnly?: boolean;
 }
 
 const DEFAULT_CATALOG: MarketplaceEntry[] = [
@@ -27,6 +32,8 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     description: 'Research assistant with local context and follow-up memory.',
     tags: ['research', 'knowledge'],
     certified: true,
+    category: 'knowledge',
+    subFeatures: [],
   },
   {
     id: 'weather',
@@ -34,6 +41,8 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     description: 'Offline-first weather snapshots and spoken forecasts.',
     tags: ['weather', 'daily'],
     certified: true,
+    category: 'utilities',
+    subFeatures: [],
   },
   {
     id: 'news',
@@ -41,6 +50,17 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     description: 'RSS-powered daily digest with local summarization fallback.',
     tags: ['news', 'digest'],
     certified: true,
+    category: 'information',
+    subFeatures: [],
+  },
+  {
+    id: 'google-bridge',
+    repo: 'seldonrios/google-bridge-module',
+    description: 'Unified Google bridge (Calendar, Tasks, Gmail and workspace sync).',
+    tags: ['google', 'bridge', 'calendar', 'tasks', 'gmail'],
+    certified: true,
+    category: 'bridge',
+    subFeatures: ['calendar', 'tasks', 'gmail', 'drive', 'contacts', 'keep'],
   },
   {
     id: 'smart-home',
@@ -48,11 +68,27 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     description: 'Bridge LifeOS intents to Home Assistant and MQTT devices.',
     tags: ['automation', 'home'],
     certified: false,
+    category: 'automation',
+    subFeatures: [],
   },
 ];
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const CATALOG_REPO_SET = new Set(DEFAULT_CATALOG.map((entry) => entry.repo.toLowerCase()));
+const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
+interface CommunityModulesFileEntry {
+  name?: unknown;
+  repo?: unknown;
+  certified?: unknown;
+  category?: unknown;
+  description?: unknown;
+  tags?: unknown;
+  subFeatures?: unknown;
+}
+
+interface CommunityModulesFile {
+  modules?: unknown;
+}
 
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
@@ -88,6 +124,75 @@ function normalizeList(value: unknown): string[] {
         .filter((entry) => entry.length > 0),
     ),
   ];
+}
+
+function normalizeSubFeatures(value: unknown): string[] {
+  return normalizeList(value).filter((entry) => MODULE_ID_PATTERN.test(entry));
+}
+
+function normalizeCategory(value: unknown): string {
+  if (typeof value !== 'string') {
+    return 'community';
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized && MODULE_ID_PATTERN.test(normalized) ? normalized : 'community';
+}
+
+function normalizeDescription(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') {
+    return fallback;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : fallback;
+}
+
+function normalizeCatalogEntry(entry: CommunityModulesFileEntry): MarketplaceEntry | null {
+  const name = typeof entry.name === 'string' ? entry.name.trim().toLowerCase() : '';
+  const repo = typeof entry.repo === 'string' ? entry.repo.trim().toLowerCase() : '';
+  if (!MODULE_ID_PATTERN.test(name) || !REPO_PATTERN.test(repo)) {
+    return null;
+  }
+
+  return {
+    id: name,
+    repo,
+    description: normalizeDescription(entry.description, `${name} community module`),
+    tags: normalizeList(entry.tags),
+    certified: entry.certified === true,
+    category: normalizeCategory(entry.category),
+    subFeatures: normalizeSubFeatures(entry.subFeatures),
+  };
+}
+
+function resolveCatalogPath(options: MarketplaceOptions = {}): string {
+  if (options.catalogPath) {
+    return options.catalogPath;
+  }
+  const baseDir = options.baseDir ?? process.cwd();
+  return join(baseDir, 'community-modules.json');
+}
+
+async function readCatalog(options: MarketplaceOptions = {}): Promise<MarketplaceEntry[]> {
+  const catalogPath = resolveCatalogPath(options);
+  try {
+    const raw = JSON.parse(await readFile(catalogPath, 'utf8')) as CommunityModulesFile;
+    const modules = Array.isArray(raw.modules) ? raw.modules : [];
+    const parsed = modules
+      .map((entry) =>
+        normalizeCatalogEntry(
+          entry && typeof entry === 'object' && !Array.isArray(entry)
+            ? (entry as CommunityModulesFileEntry)
+            : {},
+        ),
+      )
+      .filter((entry): entry is MarketplaceEntry => entry !== null);
+    if (parsed.length > 0) {
+      return parsed;
+    }
+  } catch {
+    // fallback to built-in catalog
+  }
+  return DEFAULT_CATALOG;
 }
 
 function defaultState(now = new Date()): MarketplaceState {
@@ -138,12 +243,17 @@ async function writeMarketplaceState(
 export async function listMarketplaceEntries(
   options: MarketplaceOptions = {},
 ): Promise<Array<MarketplaceEntry & { installed: boolean }>> {
+  const catalog = await readCatalog(options);
   const state = await readMarketplaceState(options);
   const installedSet = new Set(state.installed);
-  return DEFAULT_CATALOG.map((entry) => ({
+  const entries = catalog.map((entry) => ({
     ...entry,
     installed: installedSet.has(entry.repo.toLowerCase()),
   }));
+  if (options.certifiedOnly) {
+    return entries.filter((entry) => entry.certified);
+  }
+  return entries;
 }
 
 export async function searchMarketplaceEntries(
@@ -173,7 +283,9 @@ export async function installMarketplaceModule(
   if (!REPO_PATTERN.test(normalizedRepo)) {
     throw new Error('Repository must be in the form "<owner>/<repo>".');
   }
-  const moduleId = normalizeRepoId(normalizedRepo);
+  const catalog = await readCatalog(options);
+  const catalogMatch = catalog.find((entry) => entry.repo.toLowerCase() === normalizedRepo);
+  const moduleId = catalogMatch?.id ?? normalizeRepoId(normalizedRepo);
   if (!moduleId) {
     throw new Error('Repository name could not be converted to a valid module id.');
   }
@@ -204,8 +316,10 @@ export async function certifyMarketplaceModule(
     throw new Error('Repository must be in the form "<owner>/<repo>".');
   }
 
+  const catalog = await readCatalog(options);
+  const catalogRepoSet = new Set(catalog.map((entry) => entry.repo.toLowerCase()));
   const state = await readMarketplaceState(options);
-  const isKnownCatalogRepo = CATALOG_REPO_SET.has(normalizedRepo);
+  const isKnownCatalogRepo = catalogRepoSet.has(normalizedRepo);
   const isInstalled = state.installed.includes(normalizedRepo);
   if (!isKnownCatalogRepo && !isInstalled) {
     throw new Error(

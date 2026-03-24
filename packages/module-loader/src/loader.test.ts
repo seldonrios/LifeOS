@@ -357,3 +357,165 @@ test('ModuleLoader rejects module without manifest in strict mode', async () => 
     });
   });
 });
+
+test('ModuleLoader enforces event publish permissions in strict runtime mode', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'event-locked');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'event-locked',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'strict' },
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'event-locked',
+      async init(context) {
+        await context.publish('lifeos.unauthorized.publish', { ok: true }, 'event-locked');
+      },
+    });
+  });
+});
+
+test('ModuleLoader enforces graph write permissions in strict runtime mode', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'graph-readonly');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'graph-readonly',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
+        requires: ['@lifeos/life-graph'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'strict' },
+    eventBus,
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return { plans: [] };
+        },
+        async saveGraph() {
+          return;
+        },
+      }) as never,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'graph-readonly',
+      async init(context) {
+        const client = context.createLifeGraphClient();
+        await client.saveGraph({} as never);
+      },
+    });
+  });
+});
+
+test('ModuleLoader warn runtime mode logs unauthorized actions without blocking', async () => {
+  const eventBus = new MockEventBus();
+  const logs: string[] = [];
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'warn-mode-module');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'warn-mode-module',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'warn' },
+    eventBus,
+    logger: (line) => {
+      logs.push(line);
+    },
+  });
+
+  await loader.load({
+    id: 'warn-mode-module',
+    async init(context) {
+      await context.publish('lifeos.unauthorized.publish', { ok: true }, 'warn-mode-module');
+    },
+  });
+
+  assert.equal(loader.has('warn-mode-module'), true);
+  assert.ok(logs.some((line) => line.includes('unauthorized event.publish')));
+});

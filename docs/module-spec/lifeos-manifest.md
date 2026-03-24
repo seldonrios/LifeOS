@@ -79,3 +79,4 @@ When `modules/<id>/lifeos.json` exists, `@lifeos/module-loader`:
 3. Rejects unauthorized permission requests
 
 Set `LIFEOS_MODULE_MANIFEST_REQUIRED=true` to require a manifest for every loaded module id.
+Set `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` to reject runtime publish/subscribe/graph actions that are not declared in the manifest (`warn` by default).
