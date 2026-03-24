@@ -9,6 +9,10 @@
     "voice": [],
     "events": ["subscribe:lifeos.tick", "publish:lifeos.vision.ingested"]
   },
+  "resources": {
+    "cpu": "medium",
+    "memory": "medium"
+  },
   "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
   "category": "media",
   "tags": ["vision", "ingestion"]

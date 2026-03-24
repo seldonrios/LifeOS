@@ -9,6 +9,10 @@
     "voice": ["speak", "listen"],
     "events": ["subscribe:lifeos.voice.command.received", "publish:lifeos.voice.command.processed"]
   },
+  "resources": {
+    "cpu": "medium",
+    "memory": "medium"
+  },
   "requires": ["@lifeos/voice-core", "@lifeos/event-bus"],
   "category": "assistant",
   "tags": ["voice", "assistant"]

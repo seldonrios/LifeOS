@@ -45,6 +45,7 @@ export interface CreateModuleLoaderOptions {
   env?: NodeJS.ProcessEnv;
   baseDir?: string;
   graphPath?: string;
+  requireManifest?: boolean;
   eventBus?: ManagedEventBus;
   eventBusOptions?: CreateEventBusClientOptions;
   createLifeGraphClient?: typeof createLifeGraphClient;
@@ -71,6 +72,7 @@ export class ModuleLoader {
   private readonly env: NodeJS.ProcessEnv;
   private readonly baseDir: string;
   private readonly graphPath: string | undefined;
+  private readonly requireManifest: boolean;
   private readonly eventBus: ManagedEventBus;
   private readonly createGraphClient: typeof createLifeGraphClient;
   private readonly logger: (message: string) => void;
@@ -79,6 +81,9 @@ export class ModuleLoader {
     this.env = options.env ?? process.env;
     this.baseDir = options.baseDir ?? process.cwd();
     this.graphPath = options.graphPath;
+    this.requireManifest =
+      options.requireManifest ??
+      (this.env.LIFEOS_MODULE_MANIFEST_REQUIRED ?? '').trim().toLowerCase() === 'true';
     this.createGraphClient = options.createLifeGraphClient ?? createLifeGraphClient;
     this.logger = options.logger ?? ((line: string) => console.log(line));
     this.eventBus =
@@ -170,6 +175,9 @@ export class ModuleLoader {
     } catch (error: unknown) {
       const code = (error as NodeJS.ErrnoException)?.code;
       if (code === 'ENOENT') {
+        if (this.requireManifest) {
+          throw new Error(`Module ${module.id} missing required lifeos.json at ${manifestPath}.`);
+        }
         this.logger(
           `[ModuleLoader] ${module.id} has no lifeos.json manifest; skipping policy check`,
         );

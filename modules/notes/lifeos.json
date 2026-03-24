@@ -1,0 +1,24 @@
+{
+  "name": "notes",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Voice-first notes capture and retrieval module",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": [],
+    "events": [
+      "subscribe:lifeos.voice.intent.note_add",
+      "subscribe:lifeos.voice.intent.note_search",
+      "publish:lifeos.note.added",
+      "publish:lifeos.note.search_results"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "knowledge",
+  "tags": ["notes", "memory"]
+}

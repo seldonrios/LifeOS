@@ -7,12 +7,18 @@ export interface LifeOSManifestPermissions {
   events: string[];
 }
 
+export interface LifeOSManifestResources {
+  cpu: 'low' | 'medium' | 'high';
+  memory: 'low' | 'medium';
+}
+
 export interface LifeOSModuleManifest {
   name: string;
   version: string;
   author: string;
   description?: string;
   permissions: LifeOSManifestPermissions;
+  resources: LifeOSManifestResources;
   requires: string[];
   category: string;
   tags: string[];
@@ -29,6 +35,8 @@ const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
+const CPU_TIERS = new Set(['low', 'medium', 'high']);
+const MEMORY_TIERS = new Set(['low', 'medium']);
 
 function getString(value: unknown): string | null {
   if (typeof value !== 'string') {
@@ -60,6 +68,22 @@ function normalizePermissions(value: unknown): LifeOSManifestPermissions {
   };
 }
 
+function normalizeResources(value: unknown): LifeOSManifestResources | null {
+  const record =
+    value && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : {};
+  const cpu = getString(record.cpu)?.toLowerCase();
+  const memory = getString(record.memory)?.toLowerCase();
+  if (!cpu || !memory || !CPU_TIERS.has(cpu) || !MEMORY_TIERS.has(memory)) {
+    return null;
+  }
+  return {
+    cpu: cpu as LifeOSManifestResources['cpu'],
+    memory: memory as LifeOSManifestResources['memory'],
+  };
+}
+
 function buildManifestCandidate(raw: unknown): LifeOSModuleManifest {
   const record =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
@@ -70,6 +94,7 @@ function buildManifestCandidate(raw: unknown): LifeOSModuleManifest {
     author: getString(record.author) ?? '',
     ...(description ? { description } : {}),
     permissions: normalizePermissions(record.permissions),
+    resources: normalizeResources(record.resources) ?? { cpu: 'low', memory: 'low' },
     requires: toStringArray(record.requires),
     category: getString(record.category) ?? '',
     tags: toStringArray(record.tags),
@@ -77,6 +102,13 @@ function buildManifestCandidate(raw: unknown): LifeOSModuleManifest {
 }
 
 export function validateLifeOSManifest(raw: unknown): LifeOSManifestValidationResult {
+  const record =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const resourceRecord =
+    record.resources && typeof record.resources === 'object' && !Array.isArray(record.resources)
+      ? (record.resources as Record<string, unknown>)
+      : null;
+
   const manifest = buildManifestCandidate(raw);
   const errors: string[] = [];
 
@@ -93,6 +125,18 @@ export function validateLifeOSManifest(raw: unknown): LifeOSManifestValidationRe
   }
   if (!CATEGORY_PATTERN.test(manifest.category)) {
     errors.push('manifest.category must be kebab-case and 2-41 characters.');
+  }
+
+  if (!resourceRecord) {
+    errors.push('manifest.resources is required and must include cpu and memory tiers.');
+  }
+  const cpuTier = getString(resourceRecord?.cpu)?.toLowerCase();
+  const memoryTier = getString(resourceRecord?.memory)?.toLowerCase();
+  if (!cpuTier || !CPU_TIERS.has(cpuTier)) {
+    errors.push('manifest.resources.cpu must be one of: low, medium, high.');
+  }
+  if (!memoryTier || !MEMORY_TIERS.has(memoryTier)) {
+    errors.push('manifest.resources.memory must be one of: low, medium.');
   }
 
   for (const requiredPackage of manifest.requires) {

@@ -20,6 +20,10 @@ This manifest is the security contract for module loading, certification, and ma
     "voice": ["speak"],
     "events": ["subscribe:lifeos.tick", "publish:lifeos.health.update"]
   },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
   "requires": ["@lifeos/voice-core", "@lifeos/life-graph"],
   "category": "health",
   "tags": ["habit", "fitness"]
@@ -36,6 +40,7 @@ Template reference:
 - `version`: semver string (example: `0.1.0`).
 - `author`: non-empty owner identifier.
 - `permissions`: explicit requested capabilities.
+- `resources`: runtime hints used for scheduling and baseline safety (`cpu`, `memory`).
 - `requires`: required LifeOS package dependencies, each in `@lifeos/<pkg>` format.
 - `category`: lowercase kebab-case category.
 - `tags`: lowercase kebab-case labels.
@@ -46,6 +51,8 @@ Template reference:
 - `permissions.voice`: `speak | listen`
 - `permissions.network`: lowercase identifiers (example: `weather`, `news`)
 - `permissions.events`: must be `subscribe:<topic>` or `publish:<topic>`
+- `resources.cpu`: `low | medium | high`
+- `resources.memory`: `low | medium`
 
 ## CLI Support
 
@@ -69,4 +76,4 @@ When `modules/<id>/lifeos.json` exists, `@lifeos/module-loader`:
 2. Runs permission checks
 3. Rejects unauthorized permission requests
 
-If a module does not ship a `lifeos.json` file yet, loader policy checks are skipped and the module still loads.
+Set `LIFEOS_MODULE_MANIFEST_REQUIRED=true` to require a manifest for every loaded module id.

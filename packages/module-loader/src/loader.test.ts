@@ -138,6 +138,10 @@ test('ModuleLoader validates module permissions from lifeos.json when present', 
           voice: ['speak'],
           events: ['subscribe:lifeos.tick'],
         },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
         requires: ['@lifeos/voice-core'],
         category: 'custom',
         tags: ['test'],
@@ -183,6 +187,10 @@ test('ModuleLoader rejects unauthorized permissions in lifeos.json', async () =>
           network: [],
           voice: [],
           events: ['publish:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
         },
         requires: ['@lifeos/voice-core'],
         category: 'custom',
@@ -248,6 +256,10 @@ test('ModuleLoader rejects manifest name mismatch', async () => {
           voice: [],
           events: ['subscribe:lifeos.tick'],
         },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
         requires: ['@lifeos/voice-core'],
         category: 'custom',
         tags: ['test'],
@@ -293,6 +305,10 @@ test('ModuleLoader rejects overly broad publish event permission', async () => {
           voice: [],
           events: ['publish:lifeos.>'],
         },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
         requires: ['@lifeos/voice-core'],
         category: 'custom',
         tags: ['test'],
@@ -313,6 +329,28 @@ test('ModuleLoader rejects overly broad publish event permission', async () => {
   await assert.rejects(async () => {
     await loader.load({
       id: 'broad-publisher',
+      async init() {
+        return;
+      },
+    });
+  });
+});
+
+test('ModuleLoader rejects module without manifest in strict mode', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    requireManifest: true,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'strict-module',
       async init() {
         return;
       },

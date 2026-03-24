@@ -1,0 +1,23 @@
+{
+  "name": "scheduler",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Task scheduling and overdue handling module",
+  "permissions": {
+    "graph": ["read", "append", "write"],
+    "network": [],
+    "voice": [],
+    "events": [
+      "subscribe:lifeos.voice.intent.task_add",
+      "subscribe:lifeos.tick.overdue",
+      "publish:lifeos.scheduler.reschedule_suggested"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "productivity",
+  "tags": ["tasks", "scheduler"]
+}

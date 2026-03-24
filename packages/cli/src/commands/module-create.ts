@@ -6,6 +6,8 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$
 const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
+const CPU_TIERS = new Set(['low', 'medium', 'high']);
+const MEMORY_TIERS = new Set(['low', 'medium']);
 
 export interface ModuleCreateOptions {
   baseDir: string;
@@ -31,11 +33,17 @@ interface RawManifestPermissions {
   events: string[];
 }
 
+interface RawManifestResources {
+  cpu: string;
+  memory: string;
+}
+
 interface RawManifest {
   name: string;
   version: string;
   author: string;
   permissions: RawManifestPermissions;
+  resources: RawManifestResources;
   requires: string[];
   category: string;
   tags: string[];
@@ -79,25 +87,45 @@ function toStringArray(value: unknown): string[] {
 function validateManifest(raw: unknown): string[] {
   const record =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const permissionRecord =
+    record.permissions && typeof record.permissions === 'object'
+      ? (record.permissions as Record<string, unknown>)
+      : null;
+  const resourceRecord =
+    record.resources && typeof record.resources === 'object'
+      ? (record.resources as Record<string, unknown>)
+      : null;
 
   const manifest: RawManifest = {
     name: typeof record.name === 'string' ? record.name.trim() : '',
     version: typeof record.version === 'string' ? record.version.trim() : '',
     author: typeof record.author === 'string' ? record.author.trim() : '',
-    permissions:
-      record.permissions && typeof record.permissions === 'object'
-        ? {
-            graph: toStringArray((record.permissions as Record<string, unknown>).graph),
-            network: toStringArray((record.permissions as Record<string, unknown>).network),
-            voice: toStringArray((record.permissions as Record<string, unknown>).voice),
-            events: toStringArray((record.permissions as Record<string, unknown>).events),
-          }
-        : {
-            graph: [],
-            network: [],
-            voice: [],
-            events: [],
-          },
+    permissions: permissionRecord
+      ? {
+          graph: toStringArray(permissionRecord.graph),
+          network: toStringArray(permissionRecord.network),
+          voice: toStringArray(permissionRecord.voice),
+          events: toStringArray(permissionRecord.events),
+        }
+      : {
+          graph: [],
+          network: [],
+          voice: [],
+          events: [],
+        },
+    resources: resourceRecord
+      ? {
+          cpu:
+            typeof resourceRecord.cpu === 'string' ? resourceRecord.cpu.trim().toLowerCase() : '',
+          memory:
+            typeof resourceRecord.memory === 'string'
+              ? resourceRecord.memory.trim().toLowerCase()
+              : '',
+        }
+      : {
+          cpu: '',
+          memory: '',
+        },
     requires: toStringArray(record.requires),
     category: typeof record.category === 'string' ? record.category.trim() : '',
     tags: toStringArray(record.tags),
@@ -115,6 +143,12 @@ function validateManifest(raw: unknown): string[] {
   }
   if (!CATEGORY_PATTERN.test(manifest.category)) {
     errors.push('manifest.category must be lowercase kebab-case.');
+  }
+  if (!CPU_TIERS.has(manifest.resources.cpu)) {
+    errors.push('manifest.resources.cpu must be one of: low, medium, high.');
+  }
+  if (!MEMORY_TIERS.has(manifest.resources.memory)) {
+    errors.push('manifest.resources.memory must be one of: low, medium.');
   }
   for (const requiredPackage of manifest.requires) {
     if (!PACKAGE_NAME_PATTERN.test(requiredPackage)) {
@@ -185,6 +219,10 @@ export async function createModuleScaffold(
       network: [],
       voice: [],
       events: ['subscribe:lifeos.tick'],
+    },
+    resources: {
+      cpu: 'low',
+      memory: 'low',
     },
     requires: ['@lifeos/voice-core', '@lifeos/life-graph'],
     category: 'custom',

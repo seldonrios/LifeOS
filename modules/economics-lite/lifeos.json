@@ -9,6 +9,10 @@
     "voice": [],
     "events": ["subscribe:lifeos.tick", "publish:lifeos.economics.update"]
   },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
   "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
   "category": "finance",
   "tags": ["economics", "budget"]

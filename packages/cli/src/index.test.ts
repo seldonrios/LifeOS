@@ -1289,9 +1289,12 @@ test('module create scaffolds a module with lifeos.json and source template', as
   ) as {
     name: string;
     author: string;
+    resources: { cpu: string; memory: string };
   };
   assert.equal(manifest.name, 'my-awesome-module');
   assert.equal(manifest.author, 'octocat');
+  assert.equal(manifest.resources.cpu, 'low');
+  assert.equal(manifest.resources.memory, 'low');
 });
 
 test('module validate rejects malformed manifest', async () => {

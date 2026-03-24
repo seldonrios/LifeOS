@@ -1,0 +1,23 @@
+{
+  "name": "reminder",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Reminder reactions for overdue and task events",
+  "permissions": {
+    "graph": ["read"],
+    "network": [],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.task.completed",
+      "publish:lifeos.reminder.triggered"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/event-bus"],
+  "category": "productivity",
+  "tags": ["reminder", "tasks"]
+}

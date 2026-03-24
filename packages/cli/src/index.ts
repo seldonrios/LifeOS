@@ -2234,6 +2234,7 @@ export async function runModulesCommand(
     dependencies.moduleLoader ??
     createLoader({
       env,
+      requireManifest: true,
       eventBus: createDefaultEventBusClient(dependencies)({
         env,
         name: 'lifeos-cli-modules',
@@ -2750,6 +2751,7 @@ async function main(): Promise<void> {
   if (bootCandidates) {
     const loaderOptions: Parameters<typeof createModuleLoader>[0] = {
       env: process.env,
+      requireManifest: true,
       eventBus: createLocalRuntimeEventBus(),
       logger: (line: string) => {
         process.stdout.write(`${chalk.gray(`[modules] ${line}`)}\n`);

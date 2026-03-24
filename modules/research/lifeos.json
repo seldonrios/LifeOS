@@ -1,0 +1,19 @@
+{
+  "name": "research",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Local research assistant with summarized memory output",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": ["speak"],
+    "events": ["subscribe:lifeos.voice.intent.research", "publish:lifeos.research.completed"]
+  },
+  "resources": {
+    "cpu": "high",
+    "memory": "medium"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "knowledge",
+  "tags": ["research", "assistant"]
+}

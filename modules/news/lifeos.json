@@ -1,0 +1,19 @@
+{
+  "name": "news",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "News digest generation with local caching",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": ["news", "rss"],
+    "voice": ["speak"],
+    "events": ["subscribe:lifeos.voice.intent.news", "publish:lifeos.news.digest.created"]
+  },
+  "resources": {
+    "cpu": "medium",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "information",
+  "tags": ["news", "digest"]
+}

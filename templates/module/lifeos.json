@@ -9,6 +9,10 @@
     "voice": ["speak"],
     "events": ["subscribe:lifeos.tick", "publish:lifeos.health.update"]
   },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
   "requires": ["@lifeos/voice-core", "@lifeos/life-graph"],
   "category": "health",
   "tags": ["habit", "fitness"]

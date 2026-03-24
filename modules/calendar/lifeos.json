@@ -9,6 +9,10 @@
     "voice": [],
     "events": ["subscribe:lifeos.tick", "publish:lifeos.calendar.event"]
   },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
   "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
   "category": "productivity",
   "tags": ["calendar", "planning"]

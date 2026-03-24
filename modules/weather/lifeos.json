@@ -1,0 +1,19 @@
+{
+  "name": "weather",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Weather snapshots with offline cache fallback",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": ["weather"],
+    "voice": ["speak"],
+    "events": ["subscribe:lifeos.voice.intent.weather", "publish:lifeos.weather.snapshot.captured"]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "utilities",
+  "tags": ["weather", "forecast"]
+}

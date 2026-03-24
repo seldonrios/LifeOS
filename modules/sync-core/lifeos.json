@@ -1,0 +1,19 @@
+{
+  "name": "sync-core",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Signed local-first multi-device graph synchronization",
+  "permissions": {
+    "graph": ["read", "write"],
+    "network": ["sync", "mesh"],
+    "voice": [],
+    "events": ["subscribe:lifeos.>", "publish:lifeos.sync.delta", "publish:lifeos.sync.audit"]
+  },
+  "resources": {
+    "cpu": "medium",
+    "memory": "medium"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "system",
+  "tags": ["sync", "mesh", "security"]
+}

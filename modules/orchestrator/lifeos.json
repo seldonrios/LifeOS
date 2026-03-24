@@ -1,0 +1,24 @@
+{
+  "name": "orchestrator",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Central decision and proactive orchestration brain",
+  "permissions": {
+    "graph": ["read", "append", "write"],
+    "network": [],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.>",
+      "publish:lifeos.orchestrator.suggestion",
+      "publish:lifeos.briefing.generated",
+      "publish:lifeos.personality.updated"
+    ]
+  },
+  "resources": {
+    "cpu": "high",
+    "memory": "medium"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus", "@lifeos/voice-core"],
+  "category": "system",
+  "tags": ["orchestrator", "personality", "proactive"]
+}

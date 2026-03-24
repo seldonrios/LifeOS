@@ -41,6 +41,7 @@ pnpm lifeos module validate my-new-module
 
 - Must include `lifeos.json` manifest
 - Must declare permissions
+- Must declare resource hints (`resources.cpu`, `resources.memory`)
 - Must pass sandbox tests
 - Must use the official template
 
