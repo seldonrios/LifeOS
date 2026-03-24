@@ -679,6 +679,49 @@ async function readGoogleBridgeStatusSnapshot(
   }
 }
 
+function isGoogleBridgeAuthorized(env: NodeJS.ProcessEnv): boolean {
+  const tokenPath = join(resolveHomeDir(env), '.lifeos', 'secrets', 'google.json');
+  return existsSync(tokenPath);
+}
+
+function formatSyncRecency(syncedAt: string): string {
+  const millis = Date.parse(syncedAt);
+  if (!Number.isFinite(millis)) {
+    return 'unknown';
+  }
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - millis) / 60_000));
+  if (ageMinutes < 1) {
+    return 'just now';
+  }
+  if (ageMinutes < 60) {
+    return `${ageMinutes} minute${ageMinutes === 1 ? '' : 's'} ago`;
+  }
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours} hour${ageHours === 1 ? '' : 's'} ago`;
+  }
+  const ageDays = Math.floor(ageHours / 24);
+  return `${ageDays} day${ageDays === 1 ? '' : 's'} ago`;
+}
+
+function resolveGoogleBridgeHealth(syncedAt: string | null): string {
+  if (!syncedAt) {
+    return 'not-synced';
+  }
+  const millis = Date.parse(syncedAt);
+  if (!Number.isFinite(millis)) {
+    return 'unknown';
+  }
+  const ageMinutes = Math.max(0, Math.floor((Date.now() - millis) / 60_000));
+  if (ageMinutes <= 30) {
+    return 'healthy';
+  }
+  if (ageMinutes <= 360) {
+    return 'stale';
+  }
+  return 'degraded';
+}
+
 function resolveVoiceDemoText(options: VoiceCommandOptions): string {
   const trimmed = options.text.trim();
   if (trimmed.length > 0) {
@@ -2060,15 +2103,21 @@ export async function runModuleCommand(
 
     const enabled = await getEnabledGoogleBridgeSubFeatures({ env });
     const syncStatus = await readGoogleBridgeStatusSnapshot(env);
+    const authorized = isGoogleBridgeAuthorized(env);
     const lastSyncLabel = syncStatus?.syncedAt
       ? new Date(syncStatus.syncedAt).toLocaleString()
       : 'never';
+    const syncRecency = syncStatus?.syncedAt ? formatSyncRecency(syncStatus.syncedAt) : 'n/a';
+    const health = resolveGoogleBridgeHealth(syncStatus?.syncedAt ?? null);
     writeStdout(chalk.bold('Google Bridge Status\n'));
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     writeStdout(
       `Enabled sub-features: ${enabled.length > 0 ? enabled.join(', ') : chalk.gray('none')}\n`,
     );
     writeStdout(`Last sync: ${lastSyncLabel}\n`);
+    writeStdout(`Sync recency: ${syncRecency}\n`);
+    writeStdout(`Health: ${health}\n`);
+    writeStdout(`Authorization: ${authorized ? 'connected' : 'missing'}\n`);
     if (syncStatus?.source) {
       writeStdout(`Last source: ${syncStatus.source}\n`);
     }

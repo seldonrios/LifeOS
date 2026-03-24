@@ -10,7 +10,7 @@ import {
   getEnabledGoogleBridgeSubFeatures,
   type GoogleBridgeSubFeature,
 } from './config';
-import { authorizeGoogleBridge, getGoogleAccessToken } from './oauth';
+import { authorizeGoogleBridge, getGoogleAccessToken, getGoogleBridgeTokenPath } from './oauth';
 import { createGoogleCalendarEvent, syncGoogleCalendar } from './sync/calendar';
 import { syncGoogleChatMessages } from './sync/chat';
 import { syncGoogleContacts } from './sync/contacts';
@@ -203,12 +203,19 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
       // first run
     }
 
-    await publishUserFeedback(
-      context,
-      "Welcome to Google Bridge. You can now sync your calendar, tasks, Gmail and more with LifeOS. Say 'Hey LifeOS, sync my calendar' to get started.",
-      'google_bridge_welcome',
-      'google-bridge-init',
-    );
+    let tokenReady = false;
+    try {
+      await access(getGoogleBridgeTokenPath({ env: context.env }));
+      tokenReady = true;
+    } catch {
+      tokenReady = false;
+    }
+
+    const welcomeText = tokenReady
+      ? "Welcome to Google Bridge. Your Google account is connected. Say 'Hey LifeOS, sync my calendar' to get started."
+      : "Welcome to Google Bridge. To get started, run 'lifeos module setup google-bridge' to connect your Google account, then say 'Hey LifeOS, sync my calendar'.";
+
+    await publishUserFeedback(context, welcomeText, 'google_bridge_welcome', 'google-bridge-init');
     await mkdir(dirname(flagPath), { recursive: true });
     await writeFile(flagPath, `${now().toISOString()}\n`, 'utf8');
   }
