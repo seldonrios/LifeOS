@@ -33,6 +33,18 @@ interface GoogleCalendarEventsResponse {
   items?: GoogleCalendarEventItem[];
 }
 
+interface GoogleCalendarInsertRequest {
+  summary: string;
+  start: { dateTime: string };
+  end: { dateTime: string };
+  description?: string;
+  location?: string;
+}
+
+interface GoogleCalendarInsertResponse {
+  id?: string;
+}
+
 function clampText(value: string, maxChars: number): string {
   return value.trim().slice(0, maxChars);
 }
@@ -83,6 +95,59 @@ function toEndIso(item: GoogleCalendarEventItem, startIso: string): string {
     return fallback;
   }
   return candidate;
+}
+
+function getString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseIso(value: unknown): string | null {
+  const candidate = getString(value);
+  if (!candidate) {
+    return null;
+  }
+  const parsed = new Date(candidate);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+function buildCalendarInsertPayload(
+  payload: Record<string, unknown>,
+): GoogleCalendarInsertRequest | null {
+  const title = clampText(
+    getString(payload.title) ?? getString(payload.name) ?? 'Calendar event',
+    MAX_TITLE_CHARS,
+  );
+  const startIso = parseIso(payload.start);
+  if (!startIso) {
+    return null;
+  }
+  const parsedEnd = parseIso(payload.end);
+  const endIso =
+    parsedEnd && Date.parse(parsedEnd) > Date.parse(startIso)
+      ? parsedEnd
+      : new Date(Date.parse(startIso) + 60 * 60 * 1000).toISOString();
+
+  const insertPayload: GoogleCalendarInsertRequest = {
+    summary: title,
+    start: { dateTime: startIso },
+    end: { dateTime: endIso },
+  };
+  const description = getString(payload.description);
+  if (description) {
+    insertPayload.description = clampText(description, 2000);
+  }
+  const location = getString(payload.location);
+  if (location) {
+    insertPayload.location = clampText(location, 180);
+  }
+  return insertPayload;
 }
 
 function mergeCalendarEvents(
@@ -181,4 +246,43 @@ export async function syncGoogleCalendar(
   );
 
   return normalized.length;
+}
+
+export async function createGoogleCalendarEvent(
+  context: ModuleRuntimeContext,
+  accessToken: string,
+  payload: Record<string, unknown>,
+): Promise<{ googleEventId: string; title: string; start: string; end: string } | null> {
+  const requestBody = buildCalendarInsertPayload(payload);
+  if (!requestBody) {
+    return null;
+  }
+
+  const response = await fetch(GOOGLE_CALENDAR_EVENTS_ENDPOINT, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(requestBody),
+  });
+  if (!response.ok) {
+    const body = await response.text();
+    throw new Error(`Google Calendar create failed (${response.status}): ${body.slice(0, 240)}`);
+  }
+
+  const created = (await response.json()) as GoogleCalendarInsertResponse;
+  const googleEventId = getString(created.id) ?? '';
+  if (!googleEventId) {
+    return null;
+  }
+
+  const result = {
+    googleEventId,
+    title: requestBody.summary,
+    start: requestBody.start.dateTime,
+    end: requestBody.end.dateTime,
+  };
+  await context.publish('lifeos.bridge.google.calendar.created', result, 'google-bridge');
+  return result;
 }

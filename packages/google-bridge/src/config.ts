@@ -7,6 +7,11 @@ export const GOOGLE_BRIDGE_SUBFEATURES = [
   'gmail',
   'drive',
   'contacts',
+  'keep',
+  'chat',
+  'meet',
+  'docs',
+  'sheets',
 ] as const;
 
 export type GoogleBridgeSubFeature = (typeof GOOGLE_BRIDGE_SUBFEATURES)[number];

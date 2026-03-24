@@ -1,8 +1,8 @@
 {
   "name": "google-bridge",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "author": "seldonrios",
-  "description": "Unified bridge for Google Calendar, Tasks, Gmail, Drive, and Contacts",
+  "description": "Unified bridge for Google Calendar, Tasks, Gmail, Drive, Contacts, Keep, Chat, Meet, Docs, and Sheets",
   "permissions": {
     "graph": ["read", "append", "write"],
     "network": ["googleapis"],
@@ -11,10 +11,24 @@
       "subscribe:lifeos.tick",
       "subscribe:lifeos.tick.overdue",
       "subscribe:lifeos.bridge.google.sync.requested",
+      "subscribe:lifeos.voice.intent.calendar.add",
+      "subscribe:lifeos.voice.intent.task.add",
       "subscribe:lifeos.voice.command.processed",
+      "publish:lifeos.voice.command.processed",
       "publish:lifeos.bridge.google.calendar.updated",
+      "publish:lifeos.bridge.google.calendar.created",
+      "publish:lifeos.bridge.google.calendar.create_failed",
       "publish:lifeos.bridge.google.tasks.updated",
+      "publish:lifeos.bridge.google.tasks.created",
+      "publish:lifeos.bridge.google.tasks.create_failed",
       "publish:lifeos.bridge.google.gmail.updated",
+      "publish:lifeos.bridge.google.drive.updated",
+      "publish:lifeos.bridge.google.contacts.updated",
+      "publish:lifeos.bridge.google.keep.updated",
+      "publish:lifeos.bridge.google.chat.updated",
+      "publish:lifeos.bridge.google.meet.updated",
+      "publish:lifeos.bridge.google.docs.updated",
+      "publish:lifeos.bridge.google.sheets.updated",
       "publish:lifeos.bridge.google.sync.completed"
     ]
   },
@@ -22,8 +36,37 @@
     "cpu": "medium",
     "memory": "medium"
   },
-  "subFeatures": ["calendar", "tasks", "gmail", "drive", "contacts"],
-  "requires": ["@lifeos/event-bus", "@lifeos/life-graph", "@lifeos/module-loader"],
+  "subFeatures": [
+    "calendar",
+    "tasks",
+    "gmail",
+    "drive",
+    "contacts",
+    "keep",
+    "chat",
+    "meet",
+    "docs",
+    "sheets"
+  ],
+  "requires": [
+    "@lifeos/event-bus",
+    "@lifeos/life-graph",
+    "@lifeos/module-loader",
+    "@lifeos/voice-core"
+  ],
   "category": "bridge",
-  "tags": ["google", "calendar", "tasks", "oauth"]
+  "tags": [
+    "google",
+    "calendar",
+    "tasks",
+    "gmail",
+    "drive",
+    "contacts",
+    "keep",
+    "chat",
+    "meet",
+    "docs",
+    "sheets",
+    "oauth"
+  ]
 }

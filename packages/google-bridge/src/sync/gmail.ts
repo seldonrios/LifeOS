@@ -1,5 +1,6 @@
 import type { LifeGraphClient } from '@lifeos/life-graph';
 import type { ModuleRuntimeContext } from '@lifeos/module-loader';
+import { summarizeForBusyUser } from './summary';
 
 const GMAIL_MESSAGES_ENDPOINT = 'https://gmail.googleapis.com/gmail/v1/users/me/messages';
 const MAX_GMAIL_MESSAGES = 10;
@@ -137,10 +138,12 @@ export async function syncGmailUnreadMessages(
     const from = getHeader(message, 'From');
     const date = getHeader(message, 'Date');
     const snippet = clampText(message.snippet ?? '', MAX_SNIPPET_CHARS);
+    const summary = await summarizeForBusyUser(context, snippet);
 
     const contentLines = [
       from ? `From: ${from}` : null,
       date ? `Date: ${date}` : null,
+      `Summary: ${summary}`,
       snippet ? `Snippet: ${snippet}` : 'Snippet: (empty)',
     ].filter((line): line is string => Boolean(line));
 

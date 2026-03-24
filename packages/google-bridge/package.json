@@ -1,6 +1,6 @@
 {
   "name": "@lifeos/google-bridge",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./src/index.ts",
@@ -12,11 +12,12 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts src/sync/gmail.test.ts"
+    "test": "tsx --test src/index.test.ts src/sync/gmail.test.ts src/sync/extra-sync.test.ts src/sync/summary.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
-    "@lifeos/module-loader": "workspace:*"
+    "@lifeos/module-loader": "workspace:*",
+    "@lifeos/voice-core": "workspace:*"
   }
 }

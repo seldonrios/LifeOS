@@ -28,6 +28,12 @@ interface GoogleTasksResponse {
   items?: GoogleTask[];
 }
 
+interface GoogleTaskCreateResponse {
+  id?: string;
+  title?: string;
+  due?: string;
+}
+
 function stableId(seed: string): string {
   return createHash('sha1').update(seed).digest('hex').slice(0, 24);
 }
@@ -41,6 +47,29 @@ function toDateOnly(value: string | undefined): string | undefined {
     return undefined;
   }
   return parsed.toISOString().slice(0, 10);
+}
+
+function getString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function toGoogleTaskDueDate(value: unknown): string | undefined {
+  const candidate = getString(value);
+  if (!candidate) {
+    return undefined;
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
+    return `${candidate}T09:00:00.000Z`;
+  }
+  const parsed = new Date(candidate);
+  if (Number.isNaN(parsed.getTime())) {
+    return undefined;
+  }
+  return parsed.toISOString();
 }
 
 function toTask(item: GoogleTask): LifeGraphTask | null {
@@ -163,4 +192,69 @@ export async function syncGoogleTasks(
   );
 
   return tasks.length;
+}
+
+export async function createGoogleTaskFromVoice(
+  context: ModuleRuntimeContext,
+  accessToken: string,
+  payload: Record<string, unknown>,
+): Promise<{ googleTaskId: string; title: string; due?: string } | null> {
+  const title = (getString(payload.taskTitle) ?? getString(payload.title) ?? '').slice(0, 200);
+  if (!title) {
+    return null;
+  }
+
+  const listsResponse = await fetch(`${GOOGLE_TASKLISTS_ENDPOINT}?maxResults=20`, {
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!listsResponse.ok) {
+    const body = await listsResponse.text();
+    throw new Error(
+      `Google Tasks list request failed (${listsResponse.status}): ${body.slice(0, 240)}`,
+    );
+  }
+  const listsPayload = (await listsResponse.json()) as GoogleTaskListsResponse;
+  const taskList = pickTaskList(listsPayload.items ?? []);
+  if (!taskList?.id) {
+    return null;
+  }
+
+  const due = toGoogleTaskDueDate(payload.dueDate ?? payload.due);
+  const createResponse = await fetch(
+    `${GOOGLE_TASKS_ENDPOINT}/${encodeURIComponent(taskList.id)}/tasks`,
+    {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        title,
+        ...(due ? { due } : {}),
+      }),
+    },
+  );
+  if (!createResponse.ok) {
+    const body = await createResponse.text();
+    throw new Error(`Google Tasks create failed (${createResponse.status}): ${body.slice(0, 240)}`);
+  }
+  const created = (await createResponse.json()) as GoogleTaskCreateResponse;
+  const googleTaskId = getString(created.id) ?? '';
+  if (!googleTaskId) {
+    return null;
+  }
+
+  const result: { googleTaskId: string; title: string; due?: string } = {
+    googleTaskId,
+    title: getString(created.title) ?? title,
+  };
+  const createdDue = getString(created.due) ?? due;
+  if (createdDue) {
+    result.due = createdDue;
+  }
+
+  await context.publish('lifeos.bridge.google.tasks.created', result, 'google-bridge');
+  return result;
 }

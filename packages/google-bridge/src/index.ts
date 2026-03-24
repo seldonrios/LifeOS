@@ -8,9 +8,16 @@ import {
   type GoogleBridgeSubFeature,
 } from './config';
 import { authorizeGoogleBridge, getGoogleAccessToken } from './oauth';
-import { syncGoogleCalendar } from './sync/calendar';
+import { createGoogleCalendarEvent, syncGoogleCalendar } from './sync/calendar';
+import { syncGoogleChatMessages } from './sync/chat';
+import { syncGoogleContacts } from './sync/contacts';
+import { syncGoogleDocs } from './sync/docs';
+import { syncGoogleDriveFiles } from './sync/drive';
 import { syncGmailUnreadMessages } from './sync/gmail';
-import { syncGoogleTasks } from './sync/tasks';
+import { syncGoogleKeepNotes } from './sync/keep';
+import { syncGoogleMeetEvents } from './sync/meet';
+import { syncGoogleSheets } from './sync/sheets';
+import { createGoogleTaskFromVoice, syncGoogleTasks } from './sync/tasks';
 
 export {
   GOOGLE_BRIDGE_SUBFEATURES,
@@ -35,6 +42,20 @@ export interface GoogleBridgeModuleOptions {
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function normalizeBooleanFlag(value: string | undefined, fallback: boolean): boolean {
+  if (!value) {
+    return fallback;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '1' || normalized === 'true' || normalized === 'yes') {
+    return true;
+  }
+  if (normalized === '0' || normalized === 'false' || normalized === 'no') {
+    return false;
+  }
+  return fallback;
 }
 
 function createClient(context: ModuleRuntimeContext): LifeGraphClient {
@@ -95,6 +116,8 @@ async function publishSyncSummary(
 export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}): LifeOSModule {
   const now = options.now ?? (() => new Date());
   const lastSyncAtMs = new Map<GoogleBridgeSubFeature, number>();
+  let feedbackSpeakerPromise: Promise<{ speak: (text: string) => Promise<void> } | null> | null =
+    null;
 
   async function runSync(
     context: ModuleRuntimeContext,
@@ -147,6 +170,27 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
         } else if (feature === 'gmail') {
           const count = await syncGmailUnreadMessages(context, client, accessToken);
           synchronized.gmail = count;
+        } else if (feature === 'drive') {
+          const count = await syncGoogleDriveFiles(context, client, accessToken);
+          synchronized.drive = count;
+        } else if (feature === 'contacts') {
+          const count = await syncGoogleContacts(context, client, accessToken);
+          synchronized.contacts = count;
+        } else if (feature === 'keep') {
+          const count = await syncGoogleKeepNotes(context, client, accessToken);
+          synchronized.keep = count;
+        } else if (feature === 'chat') {
+          const count = await syncGoogleChatMessages(context, client, accessToken);
+          synchronized.chat = count;
+        } else if (feature === 'meet') {
+          const count = await syncGoogleMeetEvents(context, client, accessToken, now());
+          synchronized.meet = count;
+        } else if (feature === 'docs') {
+          const count = await syncGoogleDocs(context, client, accessToken);
+          synchronized.docs = count;
+        } else if (feature === 'sheets') {
+          const count = await syncGoogleSheets(context, client, accessToken);
+          synchronized.sheets = count;
         } else {
           synchronized[feature] = 0;
           context.log(`[GoogleBridge] ${feature} is enabled but not implemented yet.`);
@@ -179,13 +223,74 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
     await runSync(context, String(event.data.source ?? 'manual_request'), requested, true);
   }
 
+  async function getFeedbackSpeaker(
+    context: ModuleRuntimeContext,
+  ): Promise<{ speak: (text: string) => Promise<void> } | null> {
+    const spokenFeedbackEnabled = normalizeBooleanFlag(
+      context.env.LIFEOS_GOOGLE_BRIDGE_SPOKEN_FEEDBACK,
+      true,
+    );
+    if (!spokenFeedbackEnabled) {
+      return null;
+    }
+    if (!feedbackSpeakerPromise) {
+      feedbackSpeakerPromise = (async () => {
+        try {
+          const voiceCore = (await import('@lifeos/voice-core')) as {
+            TextToSpeech?: new () => { speak: (text: string) => Promise<void> };
+          };
+          if (!voiceCore.TextToSpeech) {
+            return null;
+          }
+          return new voiceCore.TextToSpeech();
+        } catch {
+          return null;
+        }
+      })();
+    }
+    return feedbackSpeakerPromise;
+  }
+
+  async function publishUserFeedback(
+    context: ModuleRuntimeContext,
+    responseText: string,
+    action: string,
+    utterance: string,
+  ): Promise<void> {
+    try {
+      await context.publish(
+        Topics.lifeos.voiceCommandProcessed,
+        {
+          action,
+          responseText,
+          text: utterance,
+          source: 'google-bridge',
+          processedAt: now().toISOString(),
+        },
+        'google-bridge',
+      );
+    } catch (error: unknown) {
+      context.log(`[GoogleBridge] feedback publish degraded: ${normalizeErrorMessage(error)}`);
+    }
+
+    try {
+      const speaker = await getFeedbackSpeaker(context);
+      if (speaker) {
+        await speaker.speak(responseText);
+      }
+    } catch (error: unknown) {
+      context.log(`[GoogleBridge] spoken feedback degraded: ${normalizeErrorMessage(error)}`);
+    }
+  }
+
   return {
     id: 'google-bridge',
     async init(context: ModuleRuntimeContext): Promise<void> {
       const enabled = await getEnabledGoogleBridgeSubFeatures({ env: context.env });
+      const enabledSet = new Set(enabled);
       if (enabled.length === 0) {
         context.log(
-          '[GoogleBridge] Loaded with no sub-features enabled. Use: lifeos module enable google-bridge --sub calendar,tasks,gmail',
+          '[GoogleBridge] Loaded with no sub-features enabled. Use: lifeos module enable google-bridge --sub calendar,tasks,gmail,drive,contacts,keep,chat,meet,docs,sheets',
         );
       } else {
         context.log(`[GoogleBridge] Enabled sub-features: ${enabled.join(', ')}`);
@@ -202,6 +307,128 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
         'lifeos.bridge.google.sync.requested',
         async (event) => {
           await onSyncRequest(event, context);
+        },
+      );
+
+      await context.subscribe<Record<string, unknown>>(
+        Topics.lifeos.voiceIntentCalendarAdd,
+        async (event) => {
+          if (!enabledSet.has('calendar')) {
+            return;
+          }
+          let accessToken = '';
+          try {
+            accessToken = await getGoogleAccessToken({ env: context.env });
+          } catch (error: unknown) {
+            context.log(
+              `[GoogleBridge] calendar create auth degraded: ${normalizeErrorMessage(error)}`,
+            );
+            await context.publish(
+              'lifeos.bridge.google.calendar.create_failed',
+              {
+                reason: 'auth_unavailable',
+                requestedAt: now().toISOString(),
+              },
+              'google-bridge',
+            );
+            return;
+          }
+
+          try {
+            const created = await createGoogleCalendarEvent(context, accessToken, event.data);
+            if (!created) {
+              await publishUserFeedback(
+                context,
+                'I could not create that calendar event because required fields were missing.',
+                'google_calendar_create_invalid',
+                (typeof event.data.utterance === 'string' && event.data.utterance) || '',
+              );
+              return;
+            }
+            await publishUserFeedback(
+              context,
+              `Event "${created.title}" created in Google Calendar.`,
+              'google_calendar_created',
+              (typeof event.data.utterance === 'string' && event.data.utterance) || created.title,
+            );
+          } catch (error: unknown) {
+            context.log(`[GoogleBridge] calendar create degraded: ${normalizeErrorMessage(error)}`);
+            await context.publish(
+              'lifeos.bridge.google.calendar.create_failed',
+              {
+                reason: normalizeErrorMessage(error),
+                requestedAt: now().toISOString(),
+              },
+              'google-bridge',
+            );
+            await publishUserFeedback(
+              context,
+              'Failed to create the event in Google Calendar.',
+              'google_calendar_create_failed',
+              (typeof event.data.utterance === 'string' && event.data.utterance) || '',
+            );
+          }
+        },
+      );
+
+      await context.subscribe<Record<string, unknown>>(
+        Topics.lifeos.voiceIntentTaskAdd,
+        async (event) => {
+          if (!enabledSet.has('tasks')) {
+            return;
+          }
+          let accessToken = '';
+          try {
+            accessToken = await getGoogleAccessToken({ env: context.env });
+          } catch (error: unknown) {
+            context.log(
+              `[GoogleBridge] task create auth degraded: ${normalizeErrorMessage(error)}`,
+            );
+            await context.publish(
+              'lifeos.bridge.google.tasks.create_failed',
+              {
+                reason: 'auth_unavailable',
+                requestedAt: now().toISOString(),
+              },
+              'google-bridge',
+            );
+            return;
+          }
+
+          try {
+            const created = await createGoogleTaskFromVoice(context, accessToken, event.data);
+            if (!created) {
+              await publishUserFeedback(
+                context,
+                'I could not create that Google Task because the task title was missing.',
+                'google_tasks_create_invalid',
+                (typeof event.data.utterance === 'string' && event.data.utterance) || '',
+              );
+              return;
+            }
+            await publishUserFeedback(
+              context,
+              `Task "${created.title}" created in Google Tasks.`,
+              'google_tasks_created',
+              (typeof event.data.utterance === 'string' && event.data.utterance) || created.title,
+            );
+          } catch (error: unknown) {
+            context.log(`[GoogleBridge] task create degraded: ${normalizeErrorMessage(error)}`);
+            await context.publish(
+              'lifeos.bridge.google.tasks.create_failed',
+              {
+                reason: normalizeErrorMessage(error),
+                requestedAt: now().toISOString(),
+              },
+              'google-bridge',
+            );
+            await publishUserFeedback(
+              context,
+              'Failed to create the task in Google Tasks.',
+              'google_tasks_create_failed',
+              (typeof event.data.utterance === 'string' && event.data.utterance) || '',
+            );
+          }
         },
       );
 
