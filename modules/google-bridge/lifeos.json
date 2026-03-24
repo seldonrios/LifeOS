@@ -14,6 +14,7 @@
       "subscribe:lifeos.voice.command.processed",
       "publish:lifeos.bridge.google.calendar.updated",
       "publish:lifeos.bridge.google.tasks.updated",
+      "publish:lifeos.bridge.google.gmail.updated",
       "publish:lifeos.bridge.google.sync.completed"
     ]
   },

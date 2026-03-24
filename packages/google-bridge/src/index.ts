@@ -9,6 +9,7 @@ import {
 } from './config';
 import { authorizeGoogleBridge, getGoogleAccessToken } from './oauth';
 import { syncGoogleCalendar } from './sync/calendar';
+import { syncGmailUnreadMessages } from './sync/gmail';
 import { syncGoogleTasks } from './sync/tasks';
 
 export {
@@ -143,6 +144,9 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
         } else if (feature === 'tasks') {
           const count = await syncGoogleTasks(context, client, accessToken);
           synchronized.tasks = count;
+        } else if (feature === 'gmail') {
+          const count = await syncGmailUnreadMessages(context, client, accessToken);
+          synchronized.gmail = count;
         } else {
           synchronized[feature] = 0;
           context.log(`[GoogleBridge] ${feature} is enabled but not implemented yet.`);
@@ -181,7 +185,7 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
       const enabled = await getEnabledGoogleBridgeSubFeatures({ env: context.env });
       if (enabled.length === 0) {
         context.log(
-          '[GoogleBridge] Loaded with no sub-features enabled. Use: lifeos module enable google-bridge --sub calendar,tasks',
+          '[GoogleBridge] Loaded with no sub-features enabled. Use: lifeos module enable google-bridge --sub calendar,tasks,gmail',
         );
       } else {
         context.log(`[GoogleBridge] Enabled sub-features: ${enabled.join(', ')}`);
