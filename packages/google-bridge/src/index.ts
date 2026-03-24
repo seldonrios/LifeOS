@@ -1,3 +1,6 @@
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+
 import { Topics, type BaseEvent } from '@lifeos/event-bus';
 import type { LifeGraphClient } from '@lifeos/life-graph';
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
@@ -30,6 +33,10 @@ export {
 export { authorizeGoogleBridge } from './oauth';
 
 const DEFAULT_SYNC_INTERVAL_MS = 10 * 60 * 1000;
+const ERROR_ANNOUNCE_COOLDOWN_MS = 5 * 60 * 1000;
+const GOOGLE_BRIDGE_STATE_DIR = join('.lifeos', 'modules', 'google-bridge');
+const GOOGLE_BRIDGE_INIT_FLAG_FILE = 'initialized.flag';
+const GOOGLE_BRIDGE_STATUS_FILE = 'status.json';
 
 interface SyncRequestPayload {
   subFeatures?: unknown;
@@ -42,6 +49,70 @@ export interface GoogleBridgeModuleOptions {
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function resolveHomeDir(env: NodeJS.ProcessEnv): string {
+  const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
+  return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
+}
+
+function getGoogleBridgeStatePath(env: NodeJS.ProcessEnv, fileName: string): string {
+  return join(resolveHomeDir(env), GOOGLE_BRIDGE_STATE_DIR, fileName);
+}
+
+export async function readGoogleBridgeSyncStatus(env: NodeJS.ProcessEnv = process.env): Promise<{
+  requested: GoogleBridgeSubFeature[];
+  synchronized: Record<string, number>;
+  syncedAt: string;
+  source: string;
+} | null> {
+  const statusPath = getGoogleBridgeStatePath(env, GOOGLE_BRIDGE_STATUS_FILE);
+  try {
+    const parsed = JSON.parse(await readFile(statusPath, 'utf8')) as {
+      requested?: unknown;
+      synchronized?: unknown;
+      syncedAt?: unknown;
+      source?: unknown;
+    };
+    const requested = Array.isArray(parsed.requested)
+      ? normalizeFeatureArray(parsed.requested)
+      : [];
+    const synchronized =
+      parsed.synchronized && typeof parsed.synchronized === 'object'
+        ? (parsed.synchronized as Record<string, number>)
+        : {};
+    const syncedAt =
+      typeof parsed.syncedAt === 'string' && parsed.syncedAt.trim()
+        ? parsed.syncedAt
+        : new Date(0).toISOString();
+    const source =
+      typeof parsed.source === 'string' && parsed.source.trim() ? parsed.source : 'unknown';
+    return {
+      requested,
+      synchronized,
+      syncedAt,
+      source,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveSyncErrorFeedback(feature: GoogleBridgeSubFeature, error: unknown): string {
+  const message = normalizeErrorMessage(error).toLowerCase();
+  const featureLabel = feature.replace(/_/g, ' ');
+  if (message.includes('auth') || message.includes('unauthorized') || message.includes('401')) {
+    return `Google authentication expired for ${featureLabel}. Run "lifeos module authorize google-bridge" to reconnect.`;
+  }
+  if (
+    message.includes('enotfound') ||
+    message.includes('network') ||
+    message.includes('fetch failed') ||
+    message.includes('timed out')
+  ) {
+    return `Network is unavailable. I could not sync ${featureLabel}; using last known local data.`;
+  }
+  return `I could not sync ${featureLabel} right now. Try again later.`;
 }
 
 function normalizeBooleanFlag(value: string | undefined, fallback: boolean): boolean {
@@ -111,13 +182,36 @@ async function publishSyncSummary(
   },
 ): Promise<void> {
   await context.publish('lifeos.bridge.google.sync.completed', payload, 'google-bridge');
+  const statusPath = getGoogleBridgeStatePath(context.env, GOOGLE_BRIDGE_STATUS_FILE);
+  await mkdir(dirname(statusPath), { recursive: true });
+  await writeFile(statusPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
 export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}): LifeOSModule {
   const now = options.now ?? (() => new Date());
   const lastSyncAtMs = new Map<GoogleBridgeSubFeature, number>();
+  const lastErrorAnnouncementAtMs = new Map<GoogleBridgeSubFeature, number>();
   let feedbackSpeakerPromise: Promise<{ speak: (text: string) => Promise<void> } | null> | null =
     null;
+
+  async function ensureFirstRunWelcome(context: ModuleRuntimeContext): Promise<void> {
+    const flagPath = getGoogleBridgeStatePath(context.env, GOOGLE_BRIDGE_INIT_FLAG_FILE);
+    try {
+      await access(flagPath);
+      return;
+    } catch {
+      // first run
+    }
+
+    await publishUserFeedback(
+      context,
+      "Welcome to Google Bridge. You can now sync your calendar, tasks, Gmail and more with LifeOS. Say 'Hey LifeOS, sync my calendar' to get started.",
+      'google_bridge_welcome',
+      'google-bridge-init',
+    );
+    await mkdir(dirname(flagPath), { recursive: true });
+    await writeFile(flagPath, `${now().toISOString()}\n`, 'utf8');
+  }
 
   async function runSync(
     context: ModuleRuntimeContext,
@@ -200,6 +294,17 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
         context.log(
           `[GoogleBridge] ${feature} sync degraded (${reason}): ${normalizeErrorMessage(error)}`,
         );
+        const nowMs = now().getTime();
+        const lastAnnounced = lastErrorAnnouncementAtMs.get(feature) ?? 0;
+        if (nowMs - lastAnnounced >= ERROR_ANNOUNCE_COOLDOWN_MS) {
+          await publishUserFeedback(
+            context,
+            resolveSyncErrorFeedback(feature, error),
+            `google_${feature}_sync_failed`,
+            `${feature} sync`,
+          );
+          lastErrorAnnouncementAtMs.set(feature, nowMs);
+        }
       }
     }
 
@@ -288,6 +393,7 @@ export function createGoogleBridgeModule(options: GoogleBridgeModuleOptions = {}
     async init(context: ModuleRuntimeContext): Promise<void> {
       const enabled = await getEnabledGoogleBridgeSubFeatures({ env: context.env });
       const enabledSet = new Set(enabled);
+      await ensureFirstRunWelcome(context);
       if (enabled.length === 0) {
         context.log(
           '[GoogleBridge] Loaded with no sub-features enabled. Use: lifeos module enable google-bridge --sub calendar,tasks,gmail,drive,contacts,keep,chat,meet,docs,sheets',

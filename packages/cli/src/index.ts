@@ -5,6 +5,8 @@ import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
@@ -57,6 +59,7 @@ import {
   type NodeConfig,
 } from '@lifeos/mesh';
 import {
+  GOOGLE_BRIDGE_SUBFEATURES,
   authorizeGoogleBridgeModule,
   getEnabledGoogleBridgeSubFeatures,
   googleBridgeModule,
@@ -172,6 +175,8 @@ interface ModuleCommandOptions {
     | 'create'
     | 'validate'
     | 'list'
+    | 'status'
+    | 'setup'
     | 'enable'
     | 'disable'
     | 'install'
@@ -565,6 +570,8 @@ function normalizeModuleAction(action: string): ModuleCommandOptions['action'] |
     action === 'create' ||
     action === 'validate' ||
     action === 'list' ||
+    action === 'status' ||
+    action === 'setup' ||
     action === 'enable' ||
     action === 'disable' ||
     action === 'install' ||
@@ -636,6 +643,40 @@ function normalizeGoogleBridgeSubFeatures(raw: string | undefined): GoogleBridge
     return [];
   }
   return parseGoogleBridgeSubFeatures(raw);
+}
+
+function resolveHomeDir(env: NodeJS.ProcessEnv): string {
+  const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
+  return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
+}
+
+async function readGoogleBridgeStatusSnapshot(
+  env: NodeJS.ProcessEnv,
+): Promise<{ syncedAt: string; source: string } | null> {
+  const statusPath = join(
+    resolveHomeDir(env),
+    '.lifeos',
+    'modules',
+    'google-bridge',
+    'status.json',
+  );
+  try {
+    const parsed = JSON.parse(await readFile(statusPath, 'utf8')) as {
+      syncedAt?: unknown;
+      source?: unknown;
+    };
+    const syncedAt = typeof parsed.syncedAt === 'string' ? parsed.syncedAt.trim() : '';
+    if (!syncedAt) {
+      return null;
+    }
+    const source = typeof parsed.source === 'string' ? parsed.source.trim() : 'unknown';
+    return {
+      syncedAt,
+      source: source || 'unknown',
+    };
+  } catch {
+    return null;
+  }
 }
 
 function resolveVoiceDemoText(options: VoiceCommandOptions): string {
@@ -2006,6 +2047,77 @@ export async function runModuleCommand(
     return 0;
   }
 
+  if (options.action === 'status') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module status".\n`);
+      return 1;
+    }
+    const normalizedModuleName = moduleName.toLowerCase();
+    if (normalizedModuleName !== 'google-bridge') {
+      writeStdout(`Status not implemented for ${moduleName}\n`);
+      return 0;
+    }
+
+    const enabled = await getEnabledGoogleBridgeSubFeatures({ env });
+    const syncStatus = await readGoogleBridgeStatusSnapshot(env);
+    const lastSyncLabel = syncStatus?.syncedAt
+      ? new Date(syncStatus.syncedAt).toLocaleString()
+      : 'never';
+    writeStdout(chalk.bold('Google Bridge Status\n'));
+    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+    writeStdout(
+      `Enabled sub-features: ${enabled.length > 0 ? enabled.join(', ') : chalk.gray('none')}\n`,
+    );
+    writeStdout(`Last sync: ${lastSyncLabel}\n`);
+    if (syncStatus?.source) {
+      writeStdout(`Last source: ${syncStatus.source}\n`);
+    }
+    try {
+      const tts = dependencies.createTextToSpeech
+        ? dependencies.createTextToSpeech()
+        : new TextToSpeech();
+      await tts.speak(`Google Bridge is active with ${enabled.length} sub-features enabled.`);
+    } catch {
+      // status command remains useful without speech output
+    }
+    return 0;
+  }
+
+  if (options.action === 'setup') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module setup".\n`);
+      return 1;
+    }
+    const normalizedModuleName = moduleName.toLowerCase();
+    if (normalizedModuleName !== 'google-bridge') {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Setup is currently implemented for "google-bridge" only.\n`,
+      );
+      return 1;
+    }
+    try {
+      writeStdout('Starting Google Bridge setup...\n');
+      await authorizeGoogleBridgeModule(env);
+      await setOptionalModuleEnabled('google-bridge', true, { env });
+      await setEnabledGoogleBridgeSubFeatures(['calendar', 'tasks', 'gmail'], { env });
+      writeStdout(chalk.green('Google Bridge is ready with calendar, tasks, and Gmail enabled.\n'));
+      try {
+        const tts = dependencies.createTextToSpeech
+          ? dependencies.createTextToSpeech()
+          : new TextToSpeech();
+        await tts.speak(
+          'Google Bridge setup complete. Calendar, tasks, and Gmail are now enabled.',
+        );
+      } catch {
+        // setup remains successful even if speech output is unavailable
+      }
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
   if (options.action === 'enable' || options.action === 'disable') {
     if (!moduleName) {
       writeStderr(
@@ -2725,11 +2837,11 @@ function buildProgram(
   program
     .command('module')
     .description(
-      'Manage modules: create, validate, list, enable, disable, install, certify, authorize',
+      'Manage modules: create, validate, list, status, setup, enable, disable, install, certify, authorize',
     )
     .argument(
       '<action>',
-      'create | validate | list | enable | disable | install | certify | authorize',
+      'create | validate | list | status | setup | enable | disable | install | certify | authorize',
     )
     .argument('[name]', 'Module name or repository when required')
     .option('--sub <subfeatures>', 'Comma-separated sub-features (google-bridge only)')
@@ -2738,7 +2850,7 @@ function buildProgram(
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create, validate, list, enable, disable, install, certify, or authorize.\n`,
+          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create, validate, list, status, setup, enable, disable, install, certify, or authorize.\n`,
         );
         return;
       }
@@ -2747,7 +2859,7 @@ function buildProgram(
       if (commandOptions.sub && subFeatures.length === 0) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} --sub must include at least one valid google-bridge sub-feature (calendar,tasks,gmail,drive,contacts).\n`,
+          `${chalk.red.bold('Error:')} --sub must include at least one valid google-bridge sub-feature (${GOOGLE_BRIDGE_SUBFEATURES.join(',')}).\n`,
         );
         return;
       }
