@@ -57,6 +57,14 @@ import {
   type NodeConfig,
 } from '@lifeos/mesh';
 import {
+  authorizeGoogleBridgeModule,
+  getEnabledGoogleBridgeSubFeatures,
+  googleBridgeModule,
+  parseGoogleBridgeSubFeatures,
+  setEnabledGoogleBridgeSubFeatures,
+  type GoogleBridgeSubFeature,
+} from '@lifeos/google-bridge';
+import {
   MissingMicrophoneConsentError,
   TextToSpeech,
   UnsupportedVoicePlatformError,
@@ -101,6 +109,7 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   weather: weatherModule,
   news: newsModule,
   health: null,
+  'google-bridge': googleBridgeModule,
 };
 
 const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [reminderModule, syncModule];
@@ -159,8 +168,17 @@ interface ModulesCommandOptions {
 }
 
 interface ModuleCommandOptions {
-  action: 'create' | 'validate' | 'list' | 'enable' | 'disable' | 'install' | 'certify';
+  action:
+    | 'create'
+    | 'validate'
+    | 'list'
+    | 'enable'
+    | 'disable'
+    | 'install'
+    | 'certify'
+    | 'authorize';
   moduleName?: string;
+  subFeatures?: GoogleBridgeSubFeature[];
 }
 
 interface MarketplaceCommandOptions {
@@ -550,7 +568,8 @@ function normalizeModuleAction(action: string): ModuleCommandOptions['action'] |
     action === 'enable' ||
     action === 'disable' ||
     action === 'install' ||
-    action === 'certify'
+    action === 'certify' ||
+    action === 'authorize'
   ) {
     return action;
   }
@@ -612,6 +631,13 @@ function normalizeVoiceScenario(
   return undefined;
 }
 
+function normalizeGoogleBridgeSubFeatures(raw: string | undefined): GoogleBridgeSubFeature[] {
+  if (!raw) {
+    return [];
+  }
+  return parseGoogleBridgeSubFeatures(raw);
+}
+
 function resolveVoiceDemoText(options: VoiceCommandOptions): string {
   const trimmed = options.text.trim();
   if (trimmed.length > 0) {
@@ -648,6 +674,7 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       researchModule,
       weatherModule,
       newsModule,
+      googleBridgeModule,
       syncModule,
       orchestratorModule,
     ]
@@ -1994,10 +2021,98 @@ export async function runModuleCommand(
       );
       return 1;
     }
+    if (
+      options.subFeatures &&
+      options.subFeatures.length > 0 &&
+      normalizedModuleName !== 'google-bridge'
+    ) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} --sub is currently supported only for "google-bridge".\n`,
+      );
+      return 1;
+    }
     try {
+      if (normalizedModuleName === 'google-bridge') {
+        const requestedSubs = options.subFeatures ?? [];
+        if (options.action === 'enable') {
+          await setOptionalModuleEnabled('google-bridge', true, { env });
+          if (requestedSubs.length > 0) {
+            await setEnabledGoogleBridgeSubFeatures(requestedSubs, { env });
+            writeStdout(
+              chalk.green(
+                `Optional module "google-bridge" enabled with sub-features: ${requestedSubs.join(', ')}.\n`,
+              ),
+            );
+            return 0;
+          }
+          const existing = await getEnabledGoogleBridgeSubFeatures({ env });
+          if (existing.length === 0) {
+            await setEnabledGoogleBridgeSubFeatures(['calendar'], { env });
+            writeStdout(
+              chalk.green(
+                'Optional module "google-bridge" enabled with default sub-feature: calendar.\n',
+              ),
+            );
+            return 0;
+          }
+          writeStdout(
+            chalk.green(
+              `Optional module "google-bridge" enabled with existing sub-features: ${existing.join(', ')}.\n`,
+            ),
+          );
+          return 0;
+        }
+
+        if (requestedSubs.length > 0) {
+          const current = await getEnabledGoogleBridgeSubFeatures({ env });
+          const next = current.filter((feature) => !requestedSubs.includes(feature));
+          await setEnabledGoogleBridgeSubFeatures(next, { env });
+          if (next.length === 0) {
+            await setOptionalModuleEnabled('google-bridge', false, { env });
+            writeStdout(
+              chalk.green(
+                'Optional module "google-bridge" disabled (no sub-features remain enabled).\n',
+              ),
+            );
+            return 0;
+          }
+          writeStdout(
+            chalk.green(
+              `Disabled google-bridge sub-features: ${requestedSubs.join(', ')}. Remaining: ${next.join(', ')}.\n`,
+            ),
+          );
+          return 0;
+        }
+      }
+
       await setOptionalModuleEnabled(normalizedModuleName, options.action === 'enable', { env });
-      const status = options.action === 'enable' ? 'enabled' : 'disabled';
-      writeStdout(chalk.green(`Optional module "${normalizedModuleName}" ${status}.\n`));
+      writeStdout(
+        chalk.green(
+          `Optional module "${normalizedModuleName}" ${options.action === 'enable' ? 'enabled' : 'disabled'}.\n`,
+        ),
+      );
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
+  if (options.action === 'authorize') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module authorize".\n`);
+      return 1;
+    }
+    const normalizedModuleName = moduleName.toLowerCase();
+    if (normalizedModuleName !== 'google-bridge') {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Authorization is currently implemented for "google-bridge" only.\n`,
+      );
+      return 1;
+    }
+    try {
+      await authorizeGoogleBridgeModule(env);
+      writeStdout(chalk.green('Google bridge authorization complete.\n'));
       return 0;
     } catch (error: unknown) {
       writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -2017,6 +2132,12 @@ export async function runModuleCommand(
         MODULE_DEFINITIONS[installed.moduleId] !== null
       ) {
         await setOptionalModuleEnabled(installed.moduleId, true, { env });
+        if (installed.moduleId === 'google-bridge') {
+          const existing = await getEnabledGoogleBridgeSubFeatures({ env });
+          if (existing.length === 0) {
+            await setEnabledGoogleBridgeSubFeatures(['calendar'], { env });
+          }
+        }
       }
       writeStdout(chalk.green(`Installed ${installed.repo} (module: ${installed.moduleId}).\n`));
       return 0;
@@ -2597,15 +2718,30 @@ function buildProgram(
 
   program
     .command('module')
-    .description('Manage modules: create, validate, list, enable, disable, install, certify')
-    .argument('<action>', 'create | validate | list | enable | disable | install | certify')
+    .description(
+      'Manage modules: create, validate, list, enable, disable, install, certify, authorize',
+    )
+    .argument(
+      '<action>',
+      'create | validate | list | enable | disable | install | certify | authorize',
+    )
     .argument('[name]', 'Module name or repository when required')
-    .action(async (action: string, name: string | undefined) => {
+    .option('--sub <subfeatures>', 'Comma-separated sub-features (google-bridge only)')
+    .action(async (action: string, name: string | undefined, commandOptions) => {
       const normalizedAction = normalizeModuleAction(action);
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create, validate, list, enable, disable, install, or certify.\n`,
+          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create, validate, list, enable, disable, install, certify, or authorize.\n`,
+        );
+        return;
+      }
+
+      const subFeatures = normalizeGoogleBridgeSubFeatures(commandOptions.sub);
+      if (commandOptions.sub && subFeatures.length === 0) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} --sub must include at least one valid google-bridge sub-feature (calendar,tasks,gmail,drive,contacts).\n`,
         );
         return;
       }
@@ -2614,6 +2750,7 @@ function buildProgram(
         {
           action: normalizedAction,
           ...(name ? { moduleName: name } : {}),
+          ...(subFeatures.length > 0 ? { subFeatures } : {}),
         },
         dependencies,
       );

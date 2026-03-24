@@ -1411,6 +1411,73 @@ test('module enable accepts case-insensitive optional module names', async () =>
   assert.match(stdout.join(''), /Optional module "research" enabled/i);
 });
 
+test('module enable supports google-bridge sub-features', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-google-bridge-enable-'));
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['module', 'enable', 'google-bridge', '--sub', 'calendar,tasks'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /google-bridge/i);
+  assert.match(stdout.join(''), /calendar, tasks/i);
+
+  const config = JSON.parse(
+    await readFile(join(baseHome, '.lifeos', 'modules', 'google-bridge', 'config.json'), 'utf8'),
+  ) as {
+    enabled: string[];
+  };
+  assert.deepEqual(config.enabled, ['calendar', 'tasks']);
+});
+
+test('module disable supports google-bridge sub-features without disabling module', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-google-bridge-disable-sub-'));
+  const stdout: string[] = [];
+
+  const enableExit = await runCli(
+    ['module', 'enable', 'google-bridge', '--sub', 'calendar,tasks'],
+    {
+      env: { HOME: baseHome },
+      stdout: (message) => {
+        stdout.push(message);
+      },
+    },
+  );
+  assert.equal(enableExit, 0);
+
+  const disableExit = await runCli(['module', 'disable', 'google-bridge', '--sub', 'tasks'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(disableExit, 0);
+  assert.match(stdout.join(''), /Remaining: calendar/i);
+
+  const config = JSON.parse(
+    await readFile(join(baseHome, '.lifeos', 'modules', 'google-bridge', 'config.json'), 'utf8'),
+  ) as {
+    enabled: string[];
+  };
+  assert.deepEqual(config.enabled, ['calendar']);
+});
+
+test('module authorize rejects unsupported modules', async () => {
+  const stderr: string[] = [];
+  const exitCode = await runCli(['module', 'authorize', 'weather'], {
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /google-bridge/i);
+});
+
 test('module enable rejects optional modules without local runtime implementation', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-missing-'));
   const stderr: string[] = [];

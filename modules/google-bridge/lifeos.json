@@ -1,0 +1,27 @@
+{
+  "name": "google-bridge",
+  "version": "0.1.0",
+  "author": "seldonrios",
+  "description": "Unified bridge for Google Calendar, Tasks, Gmail, Drive, and Contacts",
+  "permissions": {
+    "graph": ["read", "append", "write"],
+    "network": ["googleapis"],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.tick",
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.bridge.google.sync.requested",
+      "subscribe:lifeos.voice.command.processed",
+      "publish:lifeos.bridge.google.calendar.updated",
+      "publish:lifeos.bridge.google.tasks.updated",
+      "publish:lifeos.bridge.google.sync.completed"
+    ]
+  },
+  "resources": {
+    "cpu": "medium",
+    "memory": "medium"
+  },
+  "requires": ["@lifeos/event-bus", "@lifeos/life-graph", "@lifeos/module-loader"],
+  "category": "bridge",
+  "tags": ["google", "calendar", "tasks", "oauth"]
+}

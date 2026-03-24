@@ -8,6 +8,9 @@
       "path": "./packages/event-bus"
     },
     {
+      "path": "./packages/google-bridge"
+    },
+    {
       "path": "./packages/cli"
     },
     {

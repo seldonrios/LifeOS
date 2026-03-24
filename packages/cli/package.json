@@ -23,6 +23,7 @@
     "@lifeos/calendar-module": "workspace:*",
     "@lifeos/core": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
+    "@lifeos/google-bridge": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/mesh": "workspace:*",

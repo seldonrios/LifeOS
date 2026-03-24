@@ -113,6 +113,9 @@ importers:
       '@lifeos/goal-engine':
         specifier: workspace:*
         version: link:../goal-engine
+      '@lifeos/google-bridge':
+        specifier: workspace:*
+        version: link:../google-bridge
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
@@ -211,6 +214,18 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/google-bridge:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
 
   packages/health: {}
 
