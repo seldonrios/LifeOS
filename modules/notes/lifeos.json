@@ -8,10 +8,11 @@
     "network": [],
     "voice": [],
     "events": [
-      "subscribe:lifeos.voice.intent.note_add",
-      "subscribe:lifeos.voice.intent.note_search",
+      "subscribe:lifeos.voice.intent.note.add",
+      "subscribe:lifeos.voice.intent.note.search",
+      "subscribe:agent.work.requested",
       "publish:lifeos.note.added",
-      "publish:lifeos.note.search_results"
+      "publish:lifeos.note.search.completed"
     ]
   },
   "resources": {

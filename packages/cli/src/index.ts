@@ -646,6 +646,17 @@ function normalizeGoogleBridgeSubFeatures(raw: string | undefined): GoogleBridge
   return parseGoogleBridgeSubFeatures(raw);
 }
 
+function toModuleIdFromRepo(repo: string): string {
+  const raw = repo.split('/')[1] ?? repo;
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/\.git$/i, '')
+    .replace(/[^a-z0-9-]+/g, '-')
+    .replace(/-module$/, '')
+    .replace(/^-+|-+$/g, '');
+}
+
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
   return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
@@ -2294,7 +2305,29 @@ export async function runModuleCommand(
       return 1;
     }
     try {
+      const candidateModuleId = toModuleIdFromRepo(moduleName);
+      const localManifestPath = join(baseCwd, 'modules', candidateModuleId, 'lifeos.json');
+      if (existsSync(localManifestPath)) {
+        const validation = await validateModuleManifest(candidateModuleId, baseCwd);
+        if (!validation.valid) {
+          writeStderr(
+            `${chalk.red.bold('Error:')} Local manifest validation failed for "${candidateModuleId}".\n`,
+          );
+          for (const error of validation.errors) {
+            writeStderr(`- ${error}\n`);
+          }
+          return 1;
+        }
+      }
+
       const installed = await installMarketplaceModule(moduleName, { env, baseDir: baseCwd });
+      if (!existsSync(localManifestPath)) {
+        writeStdout(
+          chalk.gray(
+            `Install recorded for ${installed.repo}. Clone or scaffold module sources to run local validation.\n`,
+          ),
+        );
+      }
       if (
         optionalModules.includes(installed.moduleId as (typeof optionalModules)[number]) &&
         MODULE_DEFINITIONS[installed.moduleId] !== null

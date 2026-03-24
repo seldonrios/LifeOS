@@ -15,6 +15,16 @@ LifeOS is an open-source project focused on **user-owned AI systems** that run o
 If you are new here, start with the CLI MVP.  
 You can go from clone to first working plan in a few minutes.
 
+## Module Marketplace
+
+Browse and install community modules from the registry:
+
+```bash
+pnpm lifeos marketplace list
+pnpm lifeos marketplace list --certified
+pnpm lifeos module install username/repo
+```
+
 ## ⚡ Quick Start (CLI MVP)
 
 ### 1) Install dependencies
@@ -204,7 +214,7 @@ Runtime modules:
 
 Modules that follow the official spec get this badge:
 
-![Works with LifeOS](https://github.com/seldonrios/LifeOS/blob/main/docs/badges/works-with-lifeos.svg)
+![Works with LifeOS](docs/badges/works-with-lifeos.svg)
 
 ## 🧭 Project Direction
 

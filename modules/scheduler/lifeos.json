@@ -8,9 +8,9 @@
     "network": [],
     "voice": [],
     "events": [
-      "subscribe:lifeos.voice.intent.task_add",
+      "subscribe:lifeos.voice.intent.task.add",
       "subscribe:lifeos.tick.overdue",
-      "publish:lifeos.scheduler.reschedule_suggested"
+      "publish:lifeos.task.reschedule.suggested"
     ]
   },
   "resources": {

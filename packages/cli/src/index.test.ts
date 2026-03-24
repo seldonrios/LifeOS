@@ -1624,6 +1624,42 @@ test('module install rejects malformed repository strings', async () => {
   assert.match(stderr.join(''), /<owner>\/<repo>/i);
 });
 
+test('module install rejects invalid local manifest when module exists in workspace', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-local-'));
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-cwd-'));
+  const stderr: string[] = [];
+  const moduleDir = join(baseDir, 'modules', 'research');
+  await mkdir(moduleDir, { recursive: true });
+  await writeFile(
+    join(moduleDir, 'lifeos.json'),
+    JSON.stringify({
+      name: 'Research Module',
+      version: 'bad-version',
+      author: '',
+      permissions: {
+        graph: ['read'],
+        network: [],
+        voice: [],
+        events: ['subscribe:lifeos.tick'],
+      },
+      requires: ['@lifeos/life-graph'],
+      category: 'custom',
+      tags: ['research'],
+    }),
+  );
+
+  const exitCode = await runCli(['module', 'install', 'octocat/research-module'], {
+    env: { HOME: baseHome },
+    cwd: () => baseDir,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Local manifest validation failed/i);
+});
+
 test('module certify requires installed repository when not in catalog', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-certify-'));
   const stderr: string[] = [];

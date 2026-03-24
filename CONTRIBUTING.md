@@ -31,6 +31,13 @@ Validate before submission:
 pnpm lifeos module validate my-new-module
 ```
 
+## How to publish a module to the Marketplace
+
+1. Use `pnpm lifeos module create my-module`
+2. Fill in `lifeos.json`
+3. Submit a PR to the main repo
+4. Maintainers review and certify with `pnpm lifeos module certify owner/repo`
+
 ## Certification Tiers
 
 - Tier 0: Community modules (auto-scanned)

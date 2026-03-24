@@ -10,7 +10,8 @@
     "events": [
       "subscribe:lifeos.tick.overdue",
       "subscribe:lifeos.task.completed",
-      "publish:lifeos.reminder.triggered"
+      "subscribe:task.scheduled",
+      "publish:lifeos.reminder.followup.created"
     ]
   },
   "resources": {

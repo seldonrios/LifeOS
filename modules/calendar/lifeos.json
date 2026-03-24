@@ -7,7 +7,11 @@
     "graph": ["read", "append"],
     "network": [],
     "voice": [],
-    "events": ["subscribe:lifeos.tick", "publish:lifeos.calendar.event"]
+    "events": [
+      "subscribe:lifeos.voice.intent.calendar.add",
+      "subscribe:lifeos.tick.overdue",
+      "publish:lifeos.calendar.event.added"
+    ]
   },
   "resources": {
     "cpu": "low",
