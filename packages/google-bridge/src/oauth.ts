@@ -164,21 +164,35 @@ async function refreshAccessToken(
   return refreshed;
 }
 
-function openExternal(url: string): void {
+function openExternal(url: string): boolean {
+  if ((process.env.LIFEOS_NO_BROWSER ?? '').trim() === '1') {
+    return false;
+  }
   const platform = process.platform;
-  if (platform === 'win32') {
-    const escaped = url.replace(/&/g, '^&');
-    spawn('cmd', ['/c', 'start', '""', escaped], {
-      detached: true,
-      stdio: 'ignore',
-    }).unref();
-    return;
+  try {
+    const launch = (command: string, args: string[]): boolean => {
+      const child = spawn(command, args, {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.once('error', () => {
+        return;
+      });
+      child.unref();
+      return true;
+    };
+
+    if (platform === 'win32') {
+      const escaped = url.replace(/&/g, '^&');
+      return launch('cmd', ['/c', 'start', '""', escaped]);
+    }
+    if (platform === 'darwin') {
+      return launch('open', [url]);
+    }
+    return launch('xdg-open', [url]);
+  } catch {
+    return false;
   }
-  if (platform === 'darwin') {
-    spawn('open', [url], { detached: true, stdio: 'ignore' }).unref();
-    return;
-  }
-  spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref();
 }
 
 function renderOAuthResponse(
@@ -310,8 +324,14 @@ export async function authorizeGoogleBridge(options: GoogleBridgeOAuthOptions = 
   authUrl.searchParams.set('prompt', 'consent');
   authUrl.searchParams.set('state', state);
 
-  console.log('Opening browser for Google OAuth authorization...');
-  openExternal(authUrl.toString());
+  const authUrlText = authUrl.toString();
+  const opened = openExternal(authUrlText);
+  if (opened) {
+    console.log('Opening browser for Google OAuth authorization...');
+  } else {
+    console.log('Open this URL to authorize Google Bridge:');
+    console.log(authUrlText);
+  }
 
   const code = await waitForOAuthCode(port, state);
   const exchanged = await exchangeAuthorizationCode(code, redirectUri, options);

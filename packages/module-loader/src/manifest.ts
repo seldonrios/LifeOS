@@ -19,6 +19,7 @@ export interface LifeOSModuleManifest {
   description?: string;
   permissions: LifeOSManifestPermissions;
   resources: LifeOSManifestResources;
+  subFeatures?: string[];
   requires: string[];
   category: string;
   tags: string[];
@@ -35,6 +36,7 @@ const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
+const SUB_FEATURE_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const CPU_TIERS = new Set(['low', 'medium', 'high']);
 const MEMORY_TIERS = new Set(['low', 'medium']);
 
@@ -95,6 +97,9 @@ function buildManifestCandidate(raw: unknown): LifeOSModuleManifest {
     ...(description ? { description } : {}),
     permissions: normalizePermissions(record.permissions),
     resources: normalizeResources(record.resources) ?? { cpu: 'low', memory: 'low' },
+    ...(Array.isArray(record.subFeatures)
+      ? { subFeatures: toStringArray(record.subFeatures) }
+      : {}),
     requires: toStringArray(record.requires),
     category: getString(record.category) ?? '',
     tags: toStringArray(record.tags),
@@ -150,6 +155,16 @@ export function validateLifeOSManifest(raw: unknown): LifeOSManifestValidationRe
   for (const tag of manifest.tags) {
     if (!TAG_PATTERN.test(tag)) {
       errors.push(`manifest.tags entry "${tag}" is invalid. Use lowercase kebab-case tags.`);
+    }
+  }
+
+  if (manifest.subFeatures) {
+    for (const subFeature of manifest.subFeatures) {
+      if (!SUB_FEATURE_PATTERN.test(subFeature)) {
+        errors.push(
+          `manifest.subFeatures entry "${subFeature}" is invalid. Use lowercase kebab-case names.`,
+        );
+      }
     }
   }
 

@@ -21,6 +21,7 @@
     "cpu": "medium",
     "memory": "medium"
   },
+  "subFeatures": ["calendar", "tasks", "gmail", "drive", "contacts"],
   "requires": ["@lifeos/event-bus", "@lifeos/life-graph", "@lifeos/module-loader"],
   "category": "bridge",
   "tags": ["google", "calendar", "tasks", "oauth"]

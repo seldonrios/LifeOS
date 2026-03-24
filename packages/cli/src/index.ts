@@ -1991,12 +1991,17 @@ export async function runModuleCommand(
   if (options.action === 'list') {
     const state = await readModuleState({ env });
     const rows = renderModuleStateRows(state.enabledOptionalModules);
+    const googleBridgeSubs = await getEnabledGoogleBridgeSubFeatures({ env });
     writeStdout(chalk.bold('LifeOS Modules\n'));
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     for (const row of rows) {
       const status = row.enabled ? chalk.green('enabled') : chalk.gray('disabled');
       const availability = row.available ? '' : chalk.yellow(' (not installed)');
-      writeStdout(`${row.id} [${row.tier}] ${status}${availability}\n`);
+      const suffix =
+        row.id === 'google-bridge' && row.enabled && googleBridgeSubs.length > 0
+          ? chalk.cyan(` (sub: ${googleBridgeSubs.join(', ')})`)
+          : '';
+      writeStdout(`${row.id} [${row.tier}] ${status}${availability}${suffix}\n`);
     }
     return 0;
   }
@@ -2083,6 +2088,7 @@ export async function runModuleCommand(
           );
           return 0;
         }
+        await setEnabledGoogleBridgeSubFeatures([], { env });
       }
 
       await setOptionalModuleEnabled(normalizedModuleName, options.action === 'enable', { env });

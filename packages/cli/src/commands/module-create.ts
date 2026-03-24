@@ -6,6 +6,7 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$
 const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
+const SUB_FEATURE_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const CPU_TIERS = new Set(['low', 'medium', 'high']);
 const MEMORY_TIERS = new Set(['low', 'medium']);
 
@@ -44,6 +45,7 @@ interface RawManifest {
   author: string;
   permissions: RawManifestPermissions;
   resources: RawManifestResources;
+  subFeatures?: string[];
   requires: string[];
   category: string;
   tags: string[];
@@ -126,6 +128,9 @@ function validateManifest(raw: unknown): string[] {
           cpu: '',
           memory: '',
         },
+    ...(Array.isArray(record.subFeatures)
+      ? { subFeatures: toStringArray(record.subFeatures) }
+      : {}),
     requires: toStringArray(record.requires),
     category: typeof record.category === 'string' ? record.category.trim() : '',
     tags: toStringArray(record.tags),
@@ -158,6 +163,11 @@ function validateManifest(raw: unknown): string[] {
   for (const tag of manifest.tags) {
     if (!TAG_PATTERN.test(tag)) {
       errors.push(`manifest.tags entry "${tag}" is invalid.`);
+    }
+  }
+  for (const subFeature of manifest.subFeatures ?? []) {
+    if (!SUB_FEATURE_PATTERN.test(subFeature)) {
+      errors.push(`manifest.subFeatures entry "${subFeature}" is invalid.`);
     }
   }
   for (const eventPermission of manifest.permissions.events) {

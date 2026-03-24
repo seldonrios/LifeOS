@@ -72,7 +72,7 @@ lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
 lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
-lifeos module [create|validate|list|enable|disable|install|certify] [name-or-repo]
+lifeos module [create|validate|list|enable|disable|install|certify|authorize] [name-or-repo] [--sub calendar,tasks,gmail,drive,contacts]
 lifeos marketplace [list|search] [term] [--json]
 lifeos mesh [join|status|assign|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
@@ -181,6 +181,7 @@ Active implementation packages:
 - `@lifeos/notes-module`
 - `@lifeos/weather-module`
 - `@lifeos/news-module`
+- `@lifeos/google-bridge`
 - `@lifeos/personality`
 - `@lifeos/orchestrator`
 - `@lifeos/sync-core`
@@ -188,8 +189,10 @@ Active implementation packages:
 Runtime modules:
 
 - baseline modules load by default: `scheduler`, `notes`, `calendar`, plus orchestrator-backed `personality` and `briefing`
-- optional modules can be enabled per node: `research`, `weather`, `news`, `health`
+- optional modules can be enabled per node: `research`, `weather`, `news`, `health`, `google-bridge`
 - use `lifeos module list`, `lifeos module enable <name>`, and `lifeos module disable <name>`
+- `google-bridge` supports feature-level toggles: `lifeos module enable google-bridge --sub calendar,tasks`
+- authorize Google access once: `lifeos module authorize google-bridge`
 - `reminder` listens to overdue tick/task events and creates follow-up plans
 - `calendar` persists voice-driven events to `calendarEvents`
 - `scheduler` applies overdue reschedule suggestions

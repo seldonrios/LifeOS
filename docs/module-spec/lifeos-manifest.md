@@ -24,6 +24,7 @@ This manifest is the security contract for module loading, certification, and ma
     "cpu": "low",
     "memory": "low"
   },
+  "subFeatures": ["calendar", "tasks"],
   "requires": ["@lifeos/voice-core", "@lifeos/life-graph"],
   "category": "health",
   "tags": ["habit", "fitness"]
@@ -41,6 +42,7 @@ Template reference:
 - `author`: non-empty owner identifier.
 - `permissions`: explicit requested capabilities.
 - `resources`: runtime hints used for scheduling and baseline safety (`cpu`, `memory`).
+- `subFeatures` (optional): bridge-specific feature toggles (`calendar`, `tasks`, etc.).
 - `requires`: required LifeOS package dependencies, each in `@lifeos/<pkg>` format.
 - `category`: lowercase kebab-case category.
 - `tags`: lowercase kebab-case labels.
