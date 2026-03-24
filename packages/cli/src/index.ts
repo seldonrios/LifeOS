@@ -2445,11 +2445,12 @@ export async function runMarketplaceCommand(
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     for (const entry of entries) {
       const certification = entry.certified
-        ? chalk.green('certified ✅ Works with LifeOS')
+        ? chalk.green('certified - Works with LifeOS')
         : chalk.gray('community');
       const installed = entry.installed ? chalk.cyan(' installed') : '';
+      const metadata = `category=${entry.category} resource=${entry.resourceHint}`;
       writeStdout(
-        `${entry.id} (${entry.repo}) [${certification}]${installed}\n${chalk.dim(entry.description)}\n`,
+        `${entry.id} (${entry.repo}) [${certification}]${installed}\n${chalk.dim(metadata)}\n${chalk.dim(entry.description)}\n`,
       );
     }
     return 0;

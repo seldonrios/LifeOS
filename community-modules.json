@@ -1,4 +1,5 @@
 {
+  "lastUpdated": "2026-03-24",
   "modules": [
     {
       "name": "google-bridge",
@@ -7,6 +8,7 @@
       "category": "bridge",
       "description": "Unified Google Workspace bridge for Calendar, Tasks, Gmail, Drive, Contacts, Keep, Chat, Meet, Docs, and Sheets.",
       "tags": ["google", "bridge", "calendar", "tasks", "gmail"],
+      "resourceHint": "medium",
       "subFeatures": [
         "calendar",
         "tasks",
@@ -26,7 +28,8 @@
       "certified": true,
       "category": "knowledge",
       "description": "Research assistant with local context and follow-up memory.",
-      "tags": ["research", "knowledge"]
+      "tags": ["research", "knowledge"],
+      "resourceHint": "high"
     },
     {
       "name": "weather",
@@ -34,7 +37,8 @@
       "certified": true,
       "category": "utilities",
       "description": "Offline-first weather snapshots and spoken forecasts.",
-      "tags": ["weather", "daily"]
+      "tags": ["weather", "daily"],
+      "resourceHint": "low"
     },
     {
       "name": "news",
@@ -42,7 +46,8 @@
       "certified": true,
       "category": "information",
       "description": "RSS-powered daily digest with local summarization fallback.",
-      "tags": ["news", "digest"]
+      "tags": ["news", "digest"],
+      "resourceHint": "medium"
     },
     {
       "name": "smart-home",
@@ -50,7 +55,8 @@
       "certified": false,
       "category": "automation",
       "description": "Bridge LifeOS intents to Home Assistant and MQTT devices.",
-      "tags": ["automation", "home"]
+      "tags": ["automation", "home"],
+      "resourceHint": "medium"
     }
   ]
 }

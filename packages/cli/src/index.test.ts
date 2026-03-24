@@ -1747,9 +1747,10 @@ test('marketplace commands read community-modules.json from cwd', async () => {
     },
   });
   assert.equal(exitCode, 0);
-  const payload = JSON.parse(stdout.join('')) as Array<{ id: string }>;
+  const payload = JSON.parse(stdout.join('')) as Array<{ id: string; resourceHint: string }>;
   assert.equal(payload.length, 1);
   assert.equal(payload[0]?.id, 'sample-module');
+  assert.equal(payload[0]?.resourceHint, 'medium');
 });
 
 test('marketplace refresh loads registry from file source and updates local catalog', async () => {
@@ -1796,9 +1797,15 @@ test('marketplace refresh loads registry from file source and updates local cata
     },
   });
   assert.equal(listExit, 0);
-  const listed = JSON.parse(listStdout.join('')) as Array<{ id: string }>;
+  const listed = JSON.parse(listStdout.join('')) as Array<{ id: string; resourceHint: string }>;
   assert.equal(listed.length, 1);
   assert.equal(listed[0]?.id, 'fresh-module');
+  assert.equal(listed[0]?.resourceHint, 'medium');
+
+  const persistedCatalog = JSON.parse(
+    await readFile(join(baseDir, 'community-modules.json'), 'utf8'),
+  ) as { lastUpdated?: string };
+  assert.equal(typeof persistedCatalog.lastUpdated, 'string');
 });
 
 test('marketplace search requires a term', async () => {

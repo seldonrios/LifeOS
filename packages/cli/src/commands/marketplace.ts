@@ -12,6 +12,7 @@ export interface MarketplaceEntry {
   certified: boolean;
   category: string;
   subFeatures: string[];
+  resourceHint: 'low' | 'medium' | 'high';
 }
 
 interface MarketplaceState {
@@ -44,6 +45,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     certified: true,
     category: 'knowledge',
     subFeatures: [],
+    resourceHint: 'high',
   },
   {
     id: 'weather',
@@ -53,6 +55,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     certified: true,
     category: 'utilities',
     subFeatures: [],
+    resourceHint: 'low',
   },
   {
     id: 'news',
@@ -62,6 +65,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     certified: true,
     category: 'information',
     subFeatures: [],
+    resourceHint: 'medium',
   },
   {
     id: 'google-bridge',
@@ -71,6 +75,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     certified: true,
     category: 'bridge',
     subFeatures: ['calendar', 'tasks', 'gmail', 'drive', 'contacts', 'keep'],
+    resourceHint: 'medium',
   },
   {
     id: 'smart-home',
@@ -80,6 +85,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
     certified: false,
     category: 'automation',
     subFeatures: [],
+    resourceHint: 'medium',
   },
 ];
 
@@ -94,9 +100,11 @@ interface CommunityModulesFileEntry {
   description?: unknown;
   tags?: unknown;
   subFeatures?: unknown;
+  resourceHint?: unknown;
 }
 
 interface CommunityModulesFile {
+  lastUpdated?: unknown;
   modules?: unknown;
 }
 
@@ -160,6 +168,17 @@ function normalizeDescription(value: unknown, fallback: string): string {
   return normalized.length > 0 ? normalized : fallback;
 }
 
+function normalizeResourceHint(value: unknown): 'low' | 'medium' | 'high' {
+  if (typeof value !== 'string') {
+    return 'medium';
+  }
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'low' || normalized === 'medium' || normalized === 'high') {
+    return normalized;
+  }
+  return 'medium';
+}
+
 function normalizeCatalogEntry(entry: CommunityModulesFileEntry): MarketplaceEntry | null {
   const name = typeof entry.name === 'string' ? entry.name.trim().toLowerCase() : '';
   const repo = typeof entry.repo === 'string' ? entry.repo.trim().toLowerCase() : '';
@@ -175,6 +194,7 @@ function normalizeCatalogEntry(entry: CommunityModulesFileEntry): MarketplaceEnt
     certified: entry.certified === true,
     category: normalizeCategory(entry.category),
     subFeatures: normalizeSubFeatures(entry.subFeatures),
+    resourceHint: normalizeResourceHint(entry.resourceHint),
   };
 }
 
@@ -204,7 +224,7 @@ function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
   const document =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as CommunityModulesFile) : {};
   const modules = Array.isArray(document.modules) ? document.modules : [];
-  return modules
+  const parsed = modules
     .map((entry) =>
       normalizeCatalogEntry(
         entry && typeof entry === 'object' && !Array.isArray(entry)
@@ -213,6 +233,13 @@ function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
       ),
     )
     .filter((entry): entry is MarketplaceEntry => entry !== null);
+  const unique = new Map<string, MarketplaceEntry>();
+  for (const entry of parsed) {
+    if (!unique.has(entry.id)) {
+      unique.set(entry.id, entry);
+    }
+  }
+  return Array.from(unique.values());
 }
 
 async function readCatalogFile(path: string): Promise<MarketplaceEntry[]> {
@@ -227,6 +254,7 @@ async function readCatalogFile(path: string): Promise<MarketplaceEntry[]> {
 async function writeCatalogFile(path: string, entries: MarketplaceEntry[]): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const payload = {
+    lastUpdated: new Date().toISOString().slice(0, 10),
     modules: entries.map((entry) => ({
       name: entry.id,
       repo: entry.repo,
@@ -234,6 +262,7 @@ async function writeCatalogFile(path: string, entries: MarketplaceEntry[]): Prom
       category: entry.category,
       description: entry.description,
       tags: entry.tags,
+      resourceHint: entry.resourceHint,
       ...(entry.subFeatures.length > 0 ? { subFeatures: entry.subFeatures } : {}),
     })),
   };
