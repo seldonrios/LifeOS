@@ -1,0 +1,15 @@
+{
+  "name": "voice",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Voice interaction and wake-word orchestration module",
+  "permissions": {
+    "graph": ["read"],
+    "network": [],
+    "voice": ["speak", "listen"],
+    "events": ["subscribe:lifeos.voice.command.received", "publish:lifeos.voice.command.processed"]
+  },
+  "requires": ["@lifeos/voice-core", "@lifeos/event-bus"],
+  "category": "assistant",
+  "tags": ["voice", "assistant"]
+}

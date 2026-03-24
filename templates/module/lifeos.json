@@ -1,0 +1,15 @@
+{
+  "name": "my-health-tracker",
+  "version": "0.1.0",
+  "author": "your-github-username",
+  "description": "Tracks daily steps and suggests adjustments",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": ["weather"],
+    "voice": ["speak"],
+    "events": ["subscribe:lifeos.tick", "publish:lifeos.health.update"]
+  },
+  "requires": ["@lifeos/voice-core", "@lifeos/life-graph"],
+  "category": "health",
+  "tags": ["habit", "fitness"]
+}

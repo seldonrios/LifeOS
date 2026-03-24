@@ -81,3 +81,7 @@ Current executable MVP targets are:
 - [v0.2.0 Ecosystem North Star Issue Draft](community/v0.2.0-ecosystem-north-star-issue.md)
 - [v0.2.0 Launch Thread Draft](community/v0.2.0-launch-thread.md)
 - [v0.2.0 Release Notes Draft](community/v0.2.0-release-notes.md)
+
+## Module Spec
+
+- [lifeos.json Manifest Spec](module-spec/lifeos-manifest.md)

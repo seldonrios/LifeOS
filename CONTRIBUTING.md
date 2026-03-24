@@ -19,6 +19,33 @@ ollama serve
 docker compose up -d nats
 ```
 
+## How to create a new module (recommended way)
+
+```bash
+pnpm lifeos module create my-new-module
+```
+
+Validate before submission:
+
+```bash
+pnpm lifeos module validate my-new-module
+```
+
+## Certification Tiers
+
+- Tier 0: Community modules (auto-scanned)
+- Tier 1: LifeOS Certified (manual review + signed manifest)
+- Tier 2: Community Verified
+
+## Rules for submission
+
+- Must include `lifeos.json` manifest
+- Must declare permissions
+- Must pass sandbox tests
+- Must use the official template
+
+Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
+
 ## Build a New Module
 
 Use `packages/calendar-module` as the reference template.

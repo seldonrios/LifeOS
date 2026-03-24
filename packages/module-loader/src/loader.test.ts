@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
+import { mkdir, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { mkdtemp } from 'node:fs/promises';
 
 import type { BaseEvent, ManagedEventBus } from '@lifeos/event-bus';
 
@@ -114,4 +118,204 @@ test('ModuleLoader close calls module dispose and closes event bus', async () =>
   assert.deepEqual(disposed, ['one']);
   assert.equal(eventBus.closed, true);
   assert.deepEqual(loader.getAll(), []);
+});
+
+test('ModuleLoader validates module permissions from lifeos.json when present', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'secure-module');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'secure-module',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: ['weather'],
+          voice: ['speak'],
+          events: ['subscribe:lifeos.tick'],
+        },
+        requires: ['@lifeos/voice-core'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loaded: string[] = [];
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await loader.load({
+    id: 'secure-module',
+    async init() {
+      loaded.push('secure-module');
+    },
+  });
+
+  assert.deepEqual(loaded, ['secure-module']);
+});
+
+test('ModuleLoader rejects unauthorized permissions in lifeos.json', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'danger-module');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'danger-module',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['drop_database'],
+          network: [],
+          voice: [],
+          events: ['publish:lifeos.tick'],
+        },
+        requires: ['@lifeos/voice-core'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'danger-module',
+      async init() {
+        return;
+      },
+    });
+  });
+});
+
+test('ModuleLoader rejects invalid module id before loading', async () => {
+  const eventBus = new MockEventBus();
+  const loader = new ModuleLoader({
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: '../escape',
+      async init() {
+        return;
+      },
+    });
+  });
+});
+
+test('ModuleLoader rejects manifest name mismatch', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'calendar-helper');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'different-name',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        requires: ['@lifeos/voice-core'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'calendar-helper',
+      async init() {
+        return;
+      },
+    });
+  });
+});
+
+test('ModuleLoader rejects overly broad publish event permission', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'broad-publisher');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'broad-publisher',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['publish:lifeos.>'],
+        },
+        requires: ['@lifeos/voice-core'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'broad-publisher',
+      async init() {
+        return;
+      },
+    });
+  });
 });

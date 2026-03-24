@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
@@ -1267,4 +1267,97 @@ test('modules load returns error for unknown module id', async () => {
 
   assert.equal(exitCode, 1);
   assert.match(stderr.join(''), /Unknown module "missing"/);
+});
+
+test('module create scaffolds a module with lifeos.json and source template', async () => {
+  const stdout: string[] = [];
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-create-'));
+
+  const exitCode = await runCli(['module', 'create', 'my-awesome-module'], {
+    env: { GITHUB_USER: 'octocat' },
+    cwd: () => baseDir,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Module my-awesome-module created/i);
+
+  const manifest = JSON.parse(
+    await readFile(join(baseDir, 'modules', 'my-awesome-module', 'lifeos.json'), 'utf8'),
+  ) as {
+    name: string;
+    author: string;
+  };
+  assert.equal(manifest.name, 'my-awesome-module');
+  assert.equal(manifest.author, 'octocat');
+});
+
+test('module validate rejects malformed manifest', async () => {
+  const stderr: string[] = [];
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-validate-'));
+  const moduleDir = join(baseDir, 'modules', 'bad-module');
+  await mkdir(moduleDir, { recursive: true });
+  await writeFile(
+    join(moduleDir, 'lifeos.json'),
+    JSON.stringify({
+      name: 'Bad Module',
+      version: 'not-semver',
+      author: '',
+      permissions: {
+        graph: ['read'],
+        network: [],
+        voice: [],
+        events: ['bad-format'],
+      },
+      requires: ['lifeos/voice-core'],
+      category: 'bad category',
+      tags: ['ok'],
+    }),
+  );
+
+  const exitCode = await runCli(['module', 'validate', 'bad-module'], {
+    cwd: () => baseDir,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Manifest invalid/i);
+});
+
+test('module validate rejects overly broad publish event permissions', async () => {
+  const stderr: string[] = [];
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-validate-'));
+  const moduleDir = join(baseDir, 'modules', 'broad-events');
+  await mkdir(moduleDir, { recursive: true });
+  await writeFile(
+    join(moduleDir, 'lifeos.json'),
+    JSON.stringify({
+      name: 'broad-events',
+      version: '0.1.0',
+      author: 'tester',
+      permissions: {
+        graph: ['read'],
+        network: [],
+        voice: [],
+        events: ['publish:lifeos.>'],
+      },
+      requires: ['@lifeos/voice-core'],
+      category: 'custom',
+      tags: ['ops'],
+    }),
+  );
+
+  const exitCode = await runCli(['module', 'validate', 'broad-events'], {
+    cwd: () => baseDir,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /publish permissions cannot contain "\*" or ">"/i);
 });

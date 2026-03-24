@@ -1,7 +1,8 @@
 # LifeOS
+
 ![LifeOS v0.1 Demo](https://i.imgur.com/QanyiXk.gif)
 
-**LifeOS** — Sovereign Personal AI Node  
+**LifeOS** — Sovereign Personal AI Node
 
 Your life. Your compute. Your rules.
 
@@ -71,6 +72,7 @@ lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>
 lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
 lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
+lifeos module [create|validate] <name>
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
@@ -223,6 +225,7 @@ Start here:
 - [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md)
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
 - [Contributing Guide](CONTRIBUTING.md)
+- [Module Manifest Spec](docs/module-spec/lifeos-manifest.md)
 - [Contributor Map](docs/community/contributor-map.md)
 
 Community launch docs:

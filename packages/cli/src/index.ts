@@ -55,6 +55,7 @@ import {
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
+import { createModuleScaffold, validateModuleManifest } from './commands/module-create';
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
@@ -122,6 +123,11 @@ interface EventsListenCommandOptions {
 interface ModulesCommandOptions {
   action: 'list' | 'load';
   moduleId?: string;
+}
+
+interface ModuleCommandOptions {
+  action: 'create' | 'validate';
+  moduleName: string;
 }
 
 interface VoiceCommandOptions {
@@ -483,6 +489,14 @@ function normalizeTaskAction(action: string): TaskCommandOptions['action'] | nul
 
 function normalizeModulesAction(action: string): ModulesCommandOptions['action'] | null {
   if (action === 'list' || action === 'load') {
+    return action;
+  }
+
+  return null;
+}
+
+function normalizeModuleAction(action: string): ModuleCommandOptions['action'] | null {
+  if (action === 'create' || action === 'validate') {
     return action;
   }
 
@@ -1773,6 +1787,45 @@ export async function runEventsListenCommand(
   }
 }
 
+export async function runModuleCommand(
+  options: ModuleCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  if (options.action === 'create') {
+    try {
+      const author = env.GITHUB_USER?.trim() || 'your-github-username';
+      const created = await createModuleScaffold(options.moduleName, {
+        baseDir: baseCwd,
+        author,
+      });
+      writeStdout(chalk.green(`Module ${created.moduleName} created.\n`));
+      writeStdout(chalk.gray(`Manifest: ${created.manifestPath}\n`));
+      writeStdout(chalk.gray(`Source: ${created.modulePath}\\src\\index.ts\n`));
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
+  const validation = await validateModuleManifest(options.moduleName, baseCwd);
+  if (validation.valid) {
+    writeStdout(chalk.green(`Manifest valid: ${validation.manifestPath}\n`));
+    return 0;
+  }
+
+  writeStderr(chalk.red(`Manifest invalid: ${validation.manifestPath}\n`));
+  for (const error of validation.errors) {
+    writeStderr(`- ${error}\n`);
+  }
+  return 1;
+}
+
 export async function runModulesCommand(
   options: ModulesCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -2142,6 +2195,31 @@ function buildProgram(
           topic: commandOptions.topic,
           outputJson: Boolean(commandOptions.json),
           verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('module')
+    .description('Create or validate marketplace module manifests')
+    .argument('<action>', 'create | validate')
+    .argument('<name>', 'Module name')
+    .action(async (action: string, name: string) => {
+      const normalizedAction = normalizeModuleAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create or validate.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runModuleCommand(
+        {
+          action: normalizedAction,
+          moduleName: name,
         },
         dependencies,
       );

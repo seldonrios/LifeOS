@@ -1,0 +1,15 @@
+{
+  "name": "vision-ingestion-lite",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Lightweight image and media ingestion module",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": [],
+    "events": ["subscribe:lifeos.tick", "publish:lifeos.vision.ingested"]
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "media",
+  "tags": ["vision", "ingestion"]
+}

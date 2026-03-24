@@ -1,0 +1,15 @@
+{
+  "name": "economics-lite",
+  "version": "0.1.0",
+  "author": "lifeos-core",
+  "description": "Lightweight economics and budget tracking module",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": [],
+    "events": ["subscribe:lifeos.tick", "publish:lifeos.economics.update"]
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "category": "finance",
+  "tags": ["economics", "budget"]
+}

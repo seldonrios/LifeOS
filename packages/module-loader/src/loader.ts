@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { access } from 'node:fs/promises';
+import { resolve } from 'node:path';
 
 import {
   createEventBusClient,
@@ -11,6 +13,10 @@ import {
   type CreateLifeGraphClientOptions,
   type LifeGraphClient,
 } from '@lifeos/life-graph';
+import { readLifeOSManifestFile } from './manifest';
+import { checkPermissions } from './permissions';
+
+const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 
 export interface ModuleRuntimeContext {
   env: NodeJS.ProcessEnv;
@@ -37,6 +43,7 @@ export interface LifeOSModule {
 
 export interface CreateModuleLoaderOptions {
   env?: NodeJS.ProcessEnv;
+  baseDir?: string;
   graphPath?: string;
   eventBus?: ManagedEventBus;
   eventBusOptions?: CreateEventBusClientOptions;
@@ -62,6 +69,7 @@ function createEventEnvelope<T extends Record<string, unknown>>(
 export class ModuleLoader {
   private readonly modules = new Map<string, LifeOSModule>();
   private readonly env: NodeJS.ProcessEnv;
+  private readonly baseDir: string;
   private readonly graphPath: string | undefined;
   private readonly eventBus: ManagedEventBus;
   private readonly createGraphClient: typeof createLifeGraphClient;
@@ -69,6 +77,7 @@ export class ModuleLoader {
 
   constructor(options: CreateModuleLoaderOptions = {}) {
     this.env = options.env ?? process.env;
+    this.baseDir = options.baseDir ?? process.cwd();
     this.graphPath = options.graphPath;
     this.createGraphClient = options.createLifeGraphClient ?? createLifeGraphClient;
     this.logger = options.logger ?? ((line: string) => console.log(line));
@@ -126,6 +135,47 @@ export class ModuleLoader {
   async load(module: LifeOSModule): Promise<void> {
     if (this.modules.has(module.id)) {
       return;
+    }
+
+    if (!MODULE_ID_PATTERN.test(module.id)) {
+      throw new Error(
+        `Module id "${module.id}" is invalid. Use lowercase kebab-case with 2-63 characters.`,
+      );
+    }
+
+    const manifestPath = resolve(this.baseDir, 'modules', module.id, 'lifeos.json');
+    try {
+      await access(manifestPath);
+      const manifestResult = await readLifeOSManifestFile(manifestPath);
+      if (!manifestResult.valid || !manifestResult.manifest) {
+        throw new Error(
+          `Module ${module.id} has invalid lifeos.json: ${manifestResult.errors.join('; ')}`,
+        );
+      }
+      if (manifestResult.manifest.name !== module.id) {
+        throw new Error(
+          `Module ${module.id} manifest name mismatch: expected "${module.id}", got "${manifestResult.manifest.name}"`,
+        );
+      }
+      const permissionResult = await checkPermissions(manifestResult.manifest.permissions, {
+        moduleId: module.id,
+        env: this.env,
+      });
+      if (!permissionResult.allowed) {
+        throw new Error(
+          `Module ${module.id} requested unauthorized permissions${permissionResult.reason ? `: ${permissionResult.reason}` : ''}`,
+        );
+      }
+      this.logger(`[ModuleLoader] ${module.id} permissions approved`);
+    } catch (error: unknown) {
+      const code = (error as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        this.logger(
+          `[ModuleLoader] ${module.id} has no lifeos.json manifest; skipping policy check`,
+        );
+      } else {
+        throw error;
+      }
     }
 
     const context = this.createContext();
