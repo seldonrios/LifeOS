@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
+import { pathToFileURL } from 'node:url';
 
 import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
 import type {
@@ -1675,6 +1676,23 @@ test('module certify requires installed repository when not in catalog', async (
   assert.match(stderr.join(''), /not installed/i);
 });
 
+test('module certify requires local module sources for automated checks', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-certify-local-'));
+  const emptyRepo = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-certify-empty-'));
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['module', 'certify', 'lifeos-community/research-module'], {
+    env: { HOME: baseHome },
+    cwd: () => emptyRepo,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /automated certification checks require local module sources/i);
+});
+
 test('marketplace search returns matching entries', async () => {
   const stdout: string[] = [];
   const exitCode = await runCli(['marketplace', 'search', 'research', '--json'], {
@@ -1732,6 +1750,55 @@ test('marketplace commands read community-modules.json from cwd', async () => {
   const payload = JSON.parse(stdout.join('')) as Array<{ id: string }>;
   assert.equal(payload.length, 1);
   assert.equal(payload[0]?.id, 'sample-module');
+});
+
+test('marketplace refresh loads registry from file source and updates local catalog', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-marketplace-refresh-'));
+  const sourcePath = join(baseDir, 'source-registry.json');
+  await writeFile(
+    sourcePath,
+    JSON.stringify(
+      {
+        modules: [
+          {
+            name: 'fresh-module',
+            repo: 'octocat/fresh-module',
+            certified: true,
+            category: 'custom',
+            tags: ['fresh'],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const refreshStdout: string[] = [];
+  const refreshExit = await runCli(
+    ['marketplace', 'refresh', pathToFileURL(sourcePath).href, '--json'],
+    {
+      cwd: () => baseDir,
+      stdout: (message) => {
+        refreshStdout.push(message);
+      },
+    },
+  );
+  assert.equal(refreshExit, 0);
+  const refreshPayload = JSON.parse(refreshStdout.join('')) as { count: number };
+  assert.equal(refreshPayload.count, 1);
+
+  const listStdout: string[] = [];
+  const listExit = await runCli(['marketplace', 'list', '--json'], {
+    cwd: () => baseDir,
+    stdout: (message) => {
+      listStdout.push(message);
+    },
+  });
+  assert.equal(listExit, 0);
+  const listed = JSON.parse(listStdout.join('')) as Array<{ id: string }>;
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0]?.id, 'fresh-module');
 });
 
 test('marketplace search requires a term', async () => {

@@ -1,5 +1,8 @@
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { validateModuleManifest } from './module-create';
 
 export interface MarketplaceEntry {
   id: string;
@@ -23,6 +26,13 @@ export interface MarketplaceOptions {
   baseDir?: string;
   catalogPath?: string;
   certifiedOnly?: boolean;
+  registryUrl?: string;
+}
+
+export interface MarketplaceRefreshResult {
+  source: string;
+  catalogPath: string;
+  count: number;
 }
 
 const DEFAULT_CATALOG: MarketplaceEntry[] = [
@@ -102,6 +112,10 @@ function normalizeRepo(repo: string): string {
     .toLowerCase();
 }
 
+function resolveBaseDir(options: MarketplaceOptions = {}): string {
+  return options.baseDir ?? process.cwd();
+}
+
 function normalizeRepoId(repo: string): string {
   const raw = repo.split('/')[1] ?? repo;
   return raw
@@ -168,29 +182,121 @@ function resolveCatalogPath(options: MarketplaceOptions = {}): string {
   if (options.catalogPath) {
     return options.catalogPath;
   }
-  const baseDir = options.baseDir ?? process.cwd();
+  const baseDir = resolveBaseDir(options);
   return join(baseDir, 'community-modules.json');
+}
+
+function resolveRegistryCachePath(options: MarketplaceOptions = {}): string {
+  const env = options.env ?? process.env;
+  return join(resolveHomeDir(env), '.lifeos', 'community-modules.cache.json');
+}
+
+function resolveRegistrySource(options: MarketplaceOptions = {}): string | null {
+  if (options.registryUrl?.trim()) {
+    return options.registryUrl.trim();
+  }
+  const env = options.env ?? process.env;
+  const fromEnv = env.LIFEOS_MARKETPLACE_REGISTRY_URL?.trim();
+  return fromEnv || null;
+}
+
+function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
+  const document =
+    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as CommunityModulesFile) : {};
+  const modules = Array.isArray(document.modules) ? document.modules : [];
+  return modules
+    .map((entry) =>
+      normalizeCatalogEntry(
+        entry && typeof entry === 'object' && !Array.isArray(entry)
+          ? (entry as CommunityModulesFileEntry)
+          : {},
+      ),
+    )
+    .filter((entry): entry is MarketplaceEntry => entry !== null);
+}
+
+async function readCatalogFile(path: string): Promise<MarketplaceEntry[]> {
+  try {
+    const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return parseCatalogDocument(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function writeCatalogFile(path: string, entries: MarketplaceEntry[]): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const payload = {
+    modules: entries.map((entry) => ({
+      name: entry.id,
+      repo: entry.repo,
+      certified: entry.certified,
+      category: entry.category,
+      description: entry.description,
+      tags: entry.tags,
+      ...(entry.subFeatures.length > 0 ? { subFeatures: entry.subFeatures } : {}),
+    })),
+  };
+  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
+async function readCatalogFromSource(source: string): Promise<MarketplaceEntry[]> {
+  const normalized = source.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  if (normalized.startsWith('file://')) {
+    const path = fileURLToPath(normalized);
+    return readCatalogFile(path);
+  }
+
+  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+    const response = await fetch(normalized, {
+      method: 'GET',
+      headers: {
+        accept: 'application/json',
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `registry request failed (${response.status}). Ensure the source URL returns community-modules.json.`,
+      );
+    }
+    const raw = (await response.json()) as unknown;
+    return parseCatalogDocument(raw);
+  }
+
+  return readCatalogFile(normalized);
 }
 
 async function readCatalog(options: MarketplaceOptions = {}): Promise<MarketplaceEntry[]> {
   const catalogPath = resolveCatalogPath(options);
-  try {
-    const raw = JSON.parse(await readFile(catalogPath, 'utf8')) as CommunityModulesFile;
-    const modules = Array.isArray(raw.modules) ? raw.modules : [];
-    const parsed = modules
-      .map((entry) =>
-        normalizeCatalogEntry(
-          entry && typeof entry === 'object' && !Array.isArray(entry)
-            ? (entry as CommunityModulesFileEntry)
-            : {},
-        ),
-      )
-      .filter((entry): entry is MarketplaceEntry => entry !== null);
-    if (parsed.length > 0) {
-      return parsed;
+  const local = await readCatalogFile(catalogPath);
+  if (local.length > 0) {
+    return local;
+  }
+
+  const source = resolveRegistrySource(options);
+  if (source) {
+    try {
+      const remote = await readCatalogFromSource(source);
+      if (remote.length > 0) {
+        await writeCatalogFile(catalogPath, remote);
+        await writeCatalogFile(resolveRegistryCachePath(options), remote);
+        return remote;
+      }
+    } catch {
+      const cached = await readCatalogFile(resolveRegistryCachePath(options));
+      if (cached.length > 0) {
+        return cached;
+      }
     }
-  } catch {
-    // fallback to built-in catalog
+  }
+
+  const cached = await readCatalogFile(resolveRegistryCachePath(options));
+  if (cached.length > 0) {
+    return cached;
   }
   return DEFAULT_CATALOG;
 }
@@ -254,6 +360,32 @@ export async function listMarketplaceEntries(
     return entries.filter((entry) => entry.certified);
   }
   return entries;
+}
+
+export async function refreshMarketplaceRegistry(
+  sourceOrUrl: string | undefined,
+  options: MarketplaceOptions = {},
+): Promise<MarketplaceRefreshResult> {
+  const source = sourceOrUrl?.trim() || resolveRegistrySource(options);
+  if (!source) {
+    throw new Error(
+      'Marketplace source URL is required. Provide one via `lifeos marketplace refresh <url>` or LIFEOS_MARKETPLACE_REGISTRY_URL.',
+    );
+  }
+
+  const entries = await readCatalogFromSource(source);
+  if (entries.length === 0) {
+    throw new Error('Marketplace source returned zero valid modules.');
+  }
+
+  const catalogPath = resolveCatalogPath(options);
+  await writeCatalogFile(catalogPath, entries);
+  await writeCatalogFile(resolveRegistryCachePath(options), entries);
+  return {
+    source,
+    catalogPath,
+    count: entries.length,
+  };
 }
 
 export async function searchMarketplaceEntries(
@@ -326,6 +458,31 @@ export async function certifyMarketplaceModule(
       `Repository "${normalizedRepo}" is not installed. Run "lifeos module install ${normalizedRepo}" first.`,
     );
   }
+
+  const moduleId = normalizeRepoId(normalizedRepo);
+  const baseDir = resolveBaseDir(options);
+  const moduleManifestPath = join(baseDir, 'modules', moduleId, 'lifeos.json');
+  const moduleSourcePath = join(baseDir, 'modules', moduleId, 'src', 'index.ts');
+  const moduleTestPath = join(baseDir, 'modules', moduleId, 'src', 'index.test.ts');
+  const badgePath = join(baseDir, 'docs', 'badges', 'works-with-lifeos.svg');
+  try {
+    await access(moduleManifestPath);
+    await access(moduleSourcePath);
+    await access(moduleTestPath);
+    await access(badgePath);
+  } catch {
+    throw new Error(
+      `Automated certification checks require local module sources at modules/${moduleId} with src/index.ts, src/index.test.ts, and docs/badges/works-with-lifeos.svg.`,
+    );
+  }
+
+  const validation = await validateModuleManifest(moduleId, baseDir);
+  if (!validation.valid) {
+    throw new Error(
+      `Certification checks failed for "${moduleId}": ${validation.errors.join('; ')}`,
+    );
+  }
+
   const nextCertified = new Set(state.certified);
   nextCertified.add(normalizedRepo);
   await writeMarketplaceState(

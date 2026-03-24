@@ -22,6 +22,7 @@ Browse and install community modules from the registry:
 ```bash
 pnpm lifeos marketplace list
 pnpm lifeos marketplace list --certified
+pnpm lifeos marketplace refresh https://example.com/community-modules.json
 pnpm lifeos module install username/repo
 ```
 
@@ -83,7 +84,7 @@ lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
 lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
 lifeos module [create|validate|list|status|setup|enable|disable|install|certify|authorize] [name-or-repo] [--sub calendar,tasks,gmail,drive,contacts]
-lifeos marketplace [list|search] [term] [--certified] [--json]
+lifeos marketplace [list|search|refresh] [term-or-url] [--certified] [--json]
 lifeos mesh [join|status|assign|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]

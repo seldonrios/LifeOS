@@ -84,6 +84,7 @@ import {
   certifyMarketplaceModule,
   installMarketplaceModule,
   listMarketplaceEntries,
+  refreshMarketplaceRegistry,
   searchMarketplaceEntries,
 } from './commands/marketplace';
 
@@ -187,7 +188,7 @@ interface ModuleCommandOptions {
 }
 
 interface MarketplaceCommandOptions {
-  action: 'list' | 'search';
+  action: 'list' | 'search' | 'refresh';
   term?: string;
   outputJson: boolean;
   certifiedOnly: boolean;
@@ -586,7 +587,7 @@ function normalizeModuleAction(action: string): ModuleCommandOptions['action'] |
 }
 
 function normalizeMarketplaceAction(action: string): MarketplaceCommandOptions['action'] | null {
-  if (action === 'list' || action === 'search') {
+  if (action === 'list' || action === 'search' || action === 'refresh') {
     return action;
   }
   return null;
@@ -2062,6 +2063,9 @@ export async function runModuleCommand(
       return 0;
     } catch (error: unknown) {
       writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      writeStderr(
+        `${chalk.yellow('Almost there! Check repository format and manifest health, then retry module install.\n')}`,
+      );
       return 1;
     }
   }
@@ -2081,6 +2085,9 @@ export async function runModuleCommand(
     for (const error of validation.errors) {
       writeStderr(`- ${error}\n`);
     }
+    writeStderr(
+      `${chalk.yellow('Almost there! Fix the items above and run: pnpm lifeos module validate <module-name>\n')}`,
+    );
     return 1;
   }
 
@@ -2316,6 +2323,9 @@ export async function runModuleCommand(
           for (const error of validation.errors) {
             writeStderr(`- ${error}\n`);
           }
+          writeStderr(
+            `${chalk.yellow('Almost there! Fix these issues and submit your module PR.\n')}`,
+          );
           return 1;
         }
       }
@@ -2355,7 +2365,11 @@ export async function runModuleCommand(
     }
     try {
       const certified = await certifyMarketplaceModule(moduleName, { env, baseDir: baseCwd });
-      writeStdout(chalk.green(`Certified ${certified.repo}.\n`));
+      writeStdout(
+        chalk.green(
+          `Certified ${certified.repo}. Automated checks passed (manifest, source, tests, badge).\n`,
+        ),
+      );
       return 0;
     } catch (error: unknown) {
       writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -2379,6 +2393,24 @@ export async function runMarketplaceCommand(
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
 
   try {
+    if (options.action === 'refresh') {
+      const refreshed = await refreshMarketplaceRegistry(options.term, {
+        env,
+        baseDir: baseCwd,
+      });
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(refreshed, null, 2)}\n`);
+        return 0;
+      }
+      writeStdout(
+        chalk.green(
+          `Marketplace registry refreshed from ${refreshed.source} (${refreshed.count} module${refreshed.count === 1 ? '' : 's'}).\n`,
+        ),
+      );
+      writeStdout(chalk.gray(`Catalog: ${refreshed.catalogPath}\n`));
+      return 0;
+    }
+
     if (options.action === 'search' && !(options.term ?? '').trim()) {
       writeStderr(
         `${chalk.red.bold('Error:')} Search term is required for "marketplace search".\n`,
@@ -2412,7 +2444,9 @@ export async function runMarketplaceCommand(
     writeStdout(chalk.bold('LifeOS Marketplace\n'));
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     for (const entry of entries) {
-      const certification = entry.certified ? chalk.green('certified') : chalk.gray('community');
+      const certification = entry.certified
+        ? chalk.green('certified ✅ Works with LifeOS')
+        : chalk.gray('community');
       const installed = entry.installed ? chalk.cyan(' installed') : '';
       writeStdout(
         `${entry.id} (${entry.repo}) [${certification}]${installed}\n${chalk.dim(entry.description)}\n`,
@@ -2970,8 +3004,8 @@ function buildProgram(
   program
     .command('marketplace')
     .description('Explore certified and community modules')
-    .argument('[action]', 'list | search', 'list')
-    .argument('[term]', 'Search term when action=search')
+    .argument('[action]', 'list | search | refresh', 'list')
+    .argument('[term]', 'Search term (search) or source URL/path (refresh)')
     .option('--certified', 'Show only certified modules')
     .option('--json', 'Output JSON only')
     .action(async (action: string, term: string | undefined, commandOptions) => {
@@ -2979,7 +3013,7 @@ function buildProgram(
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid marketplace action "${action}". Use list or search.\n`,
+          `${chalk.red.bold('Error:')} Invalid marketplace action "${action}". Use list, search, or refresh.\n`,
         );
         return;
       }
