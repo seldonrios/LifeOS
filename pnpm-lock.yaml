@@ -104,6 +104,9 @@ importers:
       '@lifeos/calendar-module':
         specifier: workspace:*
         version: link:../calendar-module
+      '@lifeos/core':
+        specifier: workspace:*
+        version: link:../core
       '@lifeos/event-bus':
         specifier: workspace:*
         version: link:../event-bus
@@ -113,6 +116,9 @@ importers:
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
+      '@lifeos/mesh':
+        specifier: workspace:*
+        version: link:../mesh
       '@lifeos/module-loader':
         specifier: workspace:*
         version: link:../module-loader
@@ -171,6 +177,8 @@ importers:
         specifier: ^3.23.8
         version: 3.25.76
 
+  packages/core: {}
+
   packages/dependency-engine:
     dependencies:
       '@lifeos/capability-registry':
@@ -217,6 +225,8 @@ importers:
       zod:
         specifier: ^3.23.8
         version: 3.25.76
+
+  packages/mesh: {}
 
   packages/module-cache: {}
 

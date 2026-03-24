@@ -8,6 +8,9 @@
   "include": ["src/**/*.ts"],
   "references": [
     {
+      "path": "../core"
+    },
+    {
       "path": "../event-bus"
     },
     {
@@ -15,6 +18,9 @@
     },
     {
       "path": "../life-graph"
+    },
+    {
+      "path": "../mesh"
     },
     {
       "path": "../module-loader"

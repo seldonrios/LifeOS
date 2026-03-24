@@ -1,7 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { createPrivateKey, createPublicKey, randomUUID, sign, verify } from 'node:crypto';
 
 import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
 import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph';
+import {
+  SyncTrustRegistry,
+  type SyncLocalKeyPair,
+  type SyncTrustRegistryLike,
+} from './trust-registry';
 
 const SYNC_VERSION = '0.1.0';
 const MAX_TRACKED_DELTAS = 2000;
@@ -13,6 +18,9 @@ export interface SyncDelta {
   timestamp: string;
   payload: BaseEvent<Record<string, unknown>>;
   version: string;
+  signature?: string;
+  signingPublicKey?: string;
+  signingAlgorithm?: 'ed25519';
 }
 
 export interface SyncDeviceSnapshot {
@@ -38,10 +46,55 @@ export interface SyncEngineOptions {
   client?: Pick<LifeGraphClient, 'mergeDelta'>;
   shouldBroadcast?: (event: BaseEvent<Record<string, unknown>>) => boolean;
   onIncomingDelta?: (delta: SyncDelta) => Promise<void> | void;
+  trustRegistry?: SyncTrustRegistryLike;
+  requireAuthentication?: boolean;
+  trustOnFirstUse?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function stableCanonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => stableCanonicalize(entry));
+  }
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(record)
+        .sort((left, right) => left.localeCompare(right))
+        .map((key) => [key, stableCanonicalize(record[key])]),
+    );
+  }
+  return value;
+}
+
+function serializeDeltaForSigning(delta: SyncDelta): string {
+  return JSON.stringify(
+    stableCanonicalize({
+      deltaId: delta.deltaId,
+      deviceId: delta.deviceId,
+      deviceName: delta.deviceName,
+      timestamp: delta.timestamp,
+      payload: delta.payload,
+      version: delta.version,
+    }),
+  );
+}
+
+function verifyDeltaSignature(delta: SyncDelta): boolean {
+  if (!delta.signature || !delta.signingPublicKey || delta.signingAlgorithm !== 'ed25519') {
+    return false;
+  }
+  try {
+    const publicKey = createPublicKey(delta.signingPublicKey);
+    const payload = Buffer.from(serializeDeltaForSigning(delta), 'utf8');
+    const signature = Buffer.from(delta.signature, 'base64');
+    return verify(null, payload, publicKey, signature);
+  } catch {
+    return false;
+  }
 }
 
 function toSyncDelta(value: unknown): SyncDelta | null {
@@ -89,6 +142,13 @@ function toSyncDelta(value: unknown): SyncDelta | null {
     timestamp: value.timestamp,
     payload: basePayload,
     version: value.version,
+    ...(typeof value.signature === 'string' && value.signature.trim().length > 0
+      ? { signature: value.signature.trim() }
+      : {}),
+    ...(typeof value.signingPublicKey === 'string' && value.signingPublicKey.trim().length > 0
+      ? { signingPublicKey: value.signingPublicKey.trim() }
+      : {}),
+    ...(value.signingAlgorithm === 'ed25519' ? { signingAlgorithm: 'ed25519' as const } : {}),
   };
 }
 
@@ -117,6 +177,9 @@ export class SyncEngine {
   private readonly logger: (message: string) => void;
   private readonly shouldBroadcast: (event: BaseEvent<Record<string, unknown>>) => boolean;
   private readonly onIncomingDelta: (delta: SyncDelta) => Promise<void>;
+  private readonly trustRegistry: SyncTrustRegistryLike;
+  private readonly requireAuthentication: boolean;
+  private readonly trustOnFirstUse: boolean;
   private readonly seenDeltaIds = new Set<string>();
   private readonly devices = new Map<string, SyncDeviceSnapshot>();
   private readonly stats: SyncEngineStats = {
@@ -126,6 +189,7 @@ export class SyncEngine {
   };
   private started = false;
   private active = false;
+  private localKeyPair: SyncLocalKeyPair | null = null;
 
   constructor(private readonly options: SyncEngineOptions) {
     this.eventBus = options.eventBus;
@@ -141,6 +205,17 @@ export class SyncEngine {
     this.onIncomingDelta = async (delta) => {
       await options.onIncomingDelta?.(delta);
     };
+    this.trustRegistry =
+      options.trustRegistry ??
+      new SyncTrustRegistry({
+        ...(options.env ? { env: options.env } : {}),
+      });
+    this.requireAuthentication =
+      options.requireAuthentication ??
+      (options.env?.LIFEOS_SYNC_REQUIRE_AUTH ?? '0').trim().toLowerCase() === '1';
+    this.trustOnFirstUse =
+      options.trustOnFirstUse ??
+      (options.env?.LIFEOS_SYNC_TOFU ?? '1').trim().toLowerCase() !== '0';
     this.devices.set(options.deviceId, {
       deviceId: options.deviceId,
       deviceName: options.deviceName,
@@ -176,6 +251,10 @@ export class SyncEngine {
     }
     this.started = true;
     this.active = true;
+    if (this.requireAuthentication) {
+      this.localKeyPair = await this.trustRegistry.getLocalKeyPair();
+      this.logger('[SyncEngine] sync authentication enabled (ed25519)');
+    }
 
     await this.eventBus.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
       if (!this.active) {
@@ -188,7 +267,11 @@ export class SyncEngine {
           this.logger('[SyncEngine] ignoring malformed sync delta');
           return;
         }
-        await this.handleIncomingDelta(delta);
+        try {
+          await this.handleIncomingDelta(delta);
+        } catch (error: unknown) {
+          this.logger(`[SyncEngine] incoming delta handler degraded: ${String(error)}`);
+        }
         return;
       }
 
@@ -219,6 +302,18 @@ export class SyncEngine {
       payload: event,
       version: SYNC_VERSION,
     };
+    if (this.requireAuthentication) {
+      const localKeyPair = this.localKeyPair ?? (await this.trustRegistry.getLocalKeyPair());
+      this.localKeyPair = localKeyPair;
+      const signature = sign(
+        null,
+        Buffer.from(serializeDeltaForSigning(delta), 'utf8'),
+        createPrivateKey(localKeyPair.privateKey),
+      );
+      delta.signingAlgorithm = 'ed25519';
+      delta.signingPublicKey = localKeyPair.publicKey;
+      delta.signature = signature.toString('base64');
+    }
 
     this.seenDeltaIds.add(delta.deltaId);
     trimSet(this.seenDeltaIds, MAX_TRACKED_DELTAS);
@@ -242,12 +337,82 @@ export class SyncEngine {
     });
   }
 
+  private async publishAudit(delta: SyncDelta, accepted: boolean, reason: string): Promise<void> {
+    try {
+      await this.eventBus.publish(Topics.lifeos.syncAuditLogged, {
+        id: randomUUID(),
+        type: Topics.lifeos.syncAuditLogged,
+        timestamp: this.now().toISOString(),
+        source: 'sync-core',
+        version: SYNC_VERSION,
+        data: {
+          deltaId: delta.deltaId,
+          deviceId: delta.deviceId,
+          deviceName: delta.deviceName,
+          accepted,
+          reason,
+        },
+        metadata: {
+          syncReplayed: true,
+          syncOriginDeviceId: delta.deviceId,
+        },
+      });
+    } catch (error: unknown) {
+      this.logger(`[SyncEngine] audit publish degraded: ${String(error)}`);
+    }
+  }
+
   async handleIncomingDelta(delta: SyncDelta): Promise<boolean> {
     if (!this.active || delta.deviceId === this.options.deviceId) {
       return false;
     }
     if (this.seenDeltaIds.has(delta.deltaId)) {
       return false;
+    }
+
+    if (this.requireAuthentication) {
+      if (delta.signingAlgorithm !== 'ed25519') {
+        this.logger(`[SyncEngine] rejected delta ${delta.deltaId}: unsupported signing algorithm`);
+        await this.publishAudit(delta, false, 'invalid_signing_algorithm');
+        return false;
+      }
+      if (!delta.signature || !delta.signingPublicKey) {
+        this.logger(`[SyncEngine] rejected delta ${delta.deltaId}: missing signature`);
+        await this.publishAudit(delta, false, 'missing_signature');
+        return false;
+      }
+      if (!verifyDeltaSignature(delta)) {
+        this.logger(`[SyncEngine] rejected delta ${delta.deltaId}: invalid signature`);
+        await this.publishAudit(delta, false, 'invalid_signature');
+        return false;
+      }
+
+      const knownPeer = await this.trustRegistry.getTrustedPeer(delta.deviceId);
+      if (knownPeer) {
+        if (knownPeer.publicKey !== delta.signingPublicKey) {
+          this.logger(
+            `[SyncEngine] rejected delta ${delta.deltaId}: peer key mismatch for ${delta.deviceId}`,
+          );
+          await this.publishAudit(delta, false, 'peer_key_mismatch');
+          return false;
+        }
+        await this.trustRegistry.upsertTrustedPeer(
+          delta.deviceId,
+          delta.signingPublicKey,
+          delta.deviceName,
+        );
+      } else if (this.trustOnFirstUse) {
+        await this.trustRegistry.upsertTrustedPeer(
+          delta.deviceId,
+          delta.signingPublicKey,
+          delta.deviceName,
+        );
+        this.logger(`[SyncEngine] trusted peer ${delta.deviceId} (TOFU)`);
+      } else {
+        this.logger(`[SyncEngine] rejected delta ${delta.deltaId}: untrusted peer`);
+        await this.publishAudit(delta, false, 'untrusted_peer');
+        return false;
+      }
     }
 
     this.logger(`[SyncEngine] syncing delta from ${delta.deviceId}`);
@@ -303,9 +468,11 @@ export class SyncEngine {
       };
       await this.eventBus.publish(replayedEvent.type, replayedEvent);
       this.stats.deltasReplayed += 1;
+      await this.publishAudit(delta, true, 'accepted');
       return true;
     } catch (error: unknown) {
       this.logger(`[SyncEngine] failed to merge delta: ${String(error)}`);
+      await this.publishAudit(delta, false, 'merge_failed');
       return false;
     }
   }

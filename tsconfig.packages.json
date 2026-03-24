@@ -2,6 +2,9 @@
   "files": [],
   "references": [
     {
+      "path": "./packages/core"
+    },
+    {
       "path": "./packages/event-bus"
     },
     {
@@ -12,6 +15,9 @@
     },
     {
       "path": "./packages/life-graph"
+    },
+    {
+      "path": "./packages/mesh"
     },
     {
       "path": "./packages/module-loader"

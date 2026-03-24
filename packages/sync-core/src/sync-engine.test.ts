@@ -1,14 +1,59 @@
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
 import { Topics, createEventBusClient, type BaseEvent } from '@lifeos/event-bus';
 
 import { SyncEngine } from './sync-engine';
+import type { SyncLocalKeyPair, SyncTrustRegistryLike, SyncTrustedPeer } from './trust-registry';
+
+class InMemoryTrustRegistry implements SyncTrustRegistryLike {
+  private readonly localKeyPair: SyncLocalKeyPair;
+  private readonly peers = new Map<string, SyncTrustedPeer>();
+
+  constructor(keyPair: SyncLocalKeyPair) {
+    this.localKeyPair = keyPair;
+  }
+
+  async getLocalKeyPair(): Promise<SyncLocalKeyPair> {
+    return this.localKeyPair;
+  }
+
+  async getTrustedPeer(deviceId: string): Promise<SyncTrustedPeer | null> {
+    return this.peers.get(deviceId) ?? null;
+  }
+
+  async upsertTrustedPeer(
+    deviceId: string,
+    publicKey: string,
+    deviceName?: string,
+  ): Promise<SyncTrustedPeer> {
+    const next: SyncTrustedPeer = {
+      deviceId,
+      publicKey,
+      deviceName: deviceName ?? 'unknown-device',
+      trustedAt: '2026-03-23T00:00:00.000Z',
+      lastSeenAt: '2026-03-23T00:00:00.000Z',
+    };
+    this.peers.set(deviceId, next);
+    return next;
+  }
+}
 
 const fallbackEnv = {
   LIFEOS_NATS_URL: 'nats://127.0.0.1:1',
 };
+
+function generateTestKeyPair(): SyncLocalKeyPair {
+  const keys = generateKeyPairSync('ed25519');
+  return {
+    algorithm: 'ed25519',
+    createdAt: '2026-03-23T00:00:00.000Z',
+    publicKey: keys.publicKey.export({ type: 'spki', format: 'pem' }).toString(),
+    privateKey: keys.privateKey.export({ type: 'pkcs8', format: 'pem' }).toString(),
+  };
+}
 
 function createEvent<T extends Record<string, unknown>>(
   type: string,
@@ -58,6 +103,9 @@ test('sync engine broadcasts delta and replays to remote device once', async () 
       },
     },
     shouldBroadcast: (event) => event.source === 'device-a',
+    requireAuthentication: true,
+    trustOnFirstUse: true,
+    trustRegistry: new InMemoryTrustRegistry(deviceAKeys),
   });
   const engineB = new SyncEngine({
     eventBus: eventBusB,
@@ -69,6 +117,9 @@ test('sync engine broadcasts delta and replays to remote device once', async () 
       },
     },
     shouldBroadcast: (event) => event.source === 'device-b',
+    requireAuthentication: true,
+    trustOnFirstUse: true,
+    trustRegistry: new InMemoryTrustRegistry(deviceBKeys),
   });
 
   await engineA.start();
@@ -117,6 +168,7 @@ test('sync engine ignores own delta payloads', async () => {
         return { merged: true, conflicts: [] };
       },
     },
+    requireAuthentication: false,
   });
   await engine.start();
 
@@ -154,6 +206,7 @@ test('sync engine calls mergeDelta when receiving remote delta', async () => {
         return { merged: true, conflicts: [] };
       },
     },
+    requireAuthentication: false,
   });
   await engine.start();
 
@@ -207,6 +260,7 @@ test('sync engine publishes sync conflict audit event when merge reports conflic
         };
       },
     },
+    requireAuthentication: false,
   });
   await engine.start();
 
@@ -231,3 +285,86 @@ test('sync engine publishes sync conflict audit event when merge reports conflic
   await engine.close();
   await eventBus.close();
 });
+
+test('sync engine rejects unsigned deltas when authentication is required', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-auth-required',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-local',
+    deviceName: 'Laptop',
+    requireAuthentication: true,
+    trustOnFirstUse: false,
+    trustRegistry: new InMemoryTrustRegistry(generateTestKeyPair()),
+    client: {
+      async mergeDelta() {
+        return { merged: true, conflicts: [] };
+      },
+    },
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-unsigned',
+    deviceId: 'device-remote',
+    deviceName: 'Phone',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(Topics.lifeos.noteAdded, { title: 'unsigned' }, 'device-remote'),
+  });
+
+  assert.equal(accepted, false);
+  assert.equal(engine.getStats().deltasReceived, 0);
+
+  await engine.close();
+  await eventBus.close();
+});
+
+test('sync engine rejects deltas with missing signing algorithm metadata', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-auth-algorithm',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const mergeCalls: unknown[] = [];
+  const keys = generateTestKeyPair();
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-local',
+    deviceName: 'Laptop',
+    requireAuthentication: true,
+    trustOnFirstUse: true,
+    trustRegistry: new InMemoryTrustRegistry(keys),
+    client: {
+      async mergeDelta(payload: unknown) {
+        mergeCalls.push(payload);
+        return { merged: true, conflicts: [] };
+      },
+    },
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-missing-alg',
+    deviceId: 'device-remote',
+    deviceName: 'Phone',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(Topics.lifeos.noteAdded, { title: 'x' }, 'device-remote'),
+    signature: 'invalid-signature',
+    signingPublicKey: keys.publicKey,
+  });
+
+  assert.equal(accepted, false);
+  assert.equal(mergeCalls.length, 0);
+
+  await engine.close();
+  await eventBus.close();
+});
+const deviceAKeys = generateTestKeyPair();
+const deviceBKeys = generateTestKeyPair();

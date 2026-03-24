@@ -1,14 +1,17 @@
 export * from './device-registry';
 export * from './sync-engine';
+export * from './trust-registry';
 
 import { DeviceRegistry, type DeviceRegistryOptions } from './device-registry';
 import { SyncEngine, type SyncEngineOptions } from './sync-engine';
+import { SyncTrustRegistry, type SyncTrustRegistryOptions } from './trust-registry';
 
 import type { LifeOSModule } from '@lifeos/module-loader';
 
 export interface SyncModuleOptions {
   deviceName?: string;
   deviceRegistryOptions?: DeviceRegistryOptions;
+  trustRegistryOptions?: SyncTrustRegistryOptions;
   syncEngineOptions?: Partial<Omit<SyncEngineOptions, 'eventBus' | 'deviceId' | 'deviceName'>>;
 }
 
@@ -47,6 +50,12 @@ export function createSyncModule(options: SyncModuleOptions = {}): LifeOSModule 
               },
         ),
         logger: (line) => context.log(`[SyncCore] ${line}`),
+        trustRegistry: new SyncTrustRegistry({
+          env: context.env,
+          ...(options.trustRegistryOptions ?? {}),
+        }),
+        requireAuthentication: (context.env.LIFEOS_SYNC_REQUIRE_AUTH ?? '1').trim() !== '0',
+        trustOnFirstUse: (context.env.LIFEOS_SYNC_TOFU ?? '1').trim() !== '0',
         onIncomingDelta: async (delta) => {
           await registry.touchDevice(delta.deviceId, delta.deviceName);
         },

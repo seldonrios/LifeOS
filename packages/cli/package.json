@@ -21,9 +21,11 @@
   },
   "dependencies": {
     "@lifeos/calendar-module": "workspace:*",
+    "@lifeos/core": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
+    "@lifeos/mesh": "workspace:*",
     "@lifeos/module-loader": "workspace:*",
     "@lifeos/news-module": "workspace:*",
     "@lifeos/notes-module": "workspace:*",

@@ -1361,3 +1361,193 @@ test('module validate rejects overly broad publish event permissions', async () 
   assert.equal(exitCode, 1);
   assert.match(stderr.join(''), /publish permissions cannot contain "\*" or ">"/i);
 });
+
+test('module enable/disable toggles optional module state', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-toggle-'));
+  const stdout: string[] = [];
+
+  const enableExit = await runCli(['module', 'enable', 'research'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(enableExit, 0);
+
+  const listOut: string[] = [];
+  const listExit = await runCli(['module', 'list'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      listOut.push(message);
+    },
+  });
+  assert.equal(listExit, 0);
+  assert.match(listOut.join(''), /research \[optional\].*enabled/i);
+
+  const disableExit = await runCli(['module', 'disable', 'research'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(disableExit, 0);
+});
+
+test('module enable accepts case-insensitive optional module names', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-case-'));
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['module', 'enable', 'Research'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Optional module "research" enabled/i);
+});
+
+test('module enable rejects optional modules without local runtime implementation', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-missing-'));
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['module', 'enable', 'health'], {
+    env: { HOME: baseHome },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /no local runtime implementation/i);
+});
+
+test('module install accepts github repo and auto-enables known optional module', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-'));
+  const stdout: string[] = [];
+
+  const installExit = await runCli(['module', 'install', 'octocat/research-module'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(installExit, 0);
+  assert.match(stdout.join(''), /Installed octocat\/research-module/i);
+
+  const listOut: string[] = [];
+  const listExit = await runCli(['module', 'list'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      listOut.push(message);
+    },
+  });
+  assert.equal(listExit, 0);
+  assert.match(listOut.join(''), /research \[optional\].*enabled/i);
+});
+
+test('module install rejects malformed repository strings', async () => {
+  const stderr: string[] = [];
+  const exitCode = await runCli(['module', 'install', 'not-a-valid-repo'], {
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /<owner>\/<repo>/i);
+});
+
+test('module certify requires installed repository when not in catalog', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-certify-'));
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['module', 'certify', 'octocat/custom-module'], {
+    env: { HOME: baseHome },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /not installed/i);
+});
+
+test('marketplace search returns matching entries', async () => {
+  const stdout: string[] = [];
+  const exitCode = await runCli(['marketplace', 'search', 'research', '--json'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as Array<{ id: string }>;
+  assert.ok(payload.some((entry) => entry.id === 'research'));
+});
+
+test('marketplace search requires a term', async () => {
+  const stderr: string[] = [];
+  const exitCode = await runCli(['marketplace', 'search'], {
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Search term is required/i);
+});
+
+test('mesh join, assign, and status commands persist node state', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-'));
+
+  const joinExit = await runCli(['mesh', 'join', 'heavy-server'], {
+    env: {
+      HOME: baseHome,
+      LIFEOS_MESH_ROLE: 'heavy-compute',
+      LIFEOS_MESH_CAPABILITIES: 'research,llm',
+    },
+  });
+  assert.equal(joinExit, 0);
+
+  const assignExit = await runCli(['mesh', 'assign', 'research', 'heavy-server'], {
+    env: { HOME: baseHome },
+  });
+  assert.equal(assignExit, 0);
+
+  const stdout: string[] = [];
+  const statusExit = await runCli(['mesh', 'status', '--json'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(statusExit, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    nodes: Array<{ nodeId: string }>;
+    assignments: Record<string, string>;
+  };
+  assert.ok(payload.nodes.some((node) => node.nodeId === 'heavy-server'));
+  assert.equal(payload.assignments.research, 'heavy-server');
+});
+
+test('mesh assign rejects capability that target node does not declare', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-capability-'));
+  const stderr: string[] = [];
+
+  const joinExit = await runCli(['mesh', 'join', 'fallback-node'], {
+    env: {
+      HOME: baseHome,
+      LIFEOS_MESH_ROLE: 'fallback',
+      LIFEOS_MESH_CAPABILITIES: 'voice,calendar',
+    },
+  });
+  assert.equal(joinExit, 0);
+
+  const assignExit = await runCli(['mesh', 'assign', 'research', 'fallback-node'], {
+    env: { HOME: baseHome },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+  assert.equal(assignExit, 1);
+  assert.match(stderr.join(''), /does not declare capability/i);
+});

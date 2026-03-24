@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/device-registry.test.ts src/sync-engine.test.ts"
+    "test": "tsx --test src/device-registry.test.ts src/trust-registry.test.ts src/sync-engine.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",

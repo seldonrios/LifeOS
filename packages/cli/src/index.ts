@@ -29,6 +29,12 @@ import {
 } from '@lifeos/life-graph';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
+  baselineModules,
+  optionalModules,
+  readModuleState,
+  setOptionalModuleEnabled,
+} from '@lifeos/core';
+import {
   interpretGoal,
   runTick,
   type InterpretGoalStage,
@@ -44,6 +50,13 @@ import { schedulerModule } from '@lifeos/scheduler-module';
 import { DeviceRegistry, SyncEngine, syncModule, type PairedDevice } from '@lifeos/sync-core';
 import { weatherModule } from '@lifeos/weather-module';
 import {
+  MeshRegistry,
+  readMeshState,
+  writeMeshState,
+  type NodeRole,
+  type NodeConfig,
+} from '@lifeos/mesh';
+import {
   MissingMicrophoneConsentError,
   TextToSpeech,
   UnsupportedVoicePlatformError,
@@ -56,6 +69,12 @@ import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
 import { createModuleScaffold, validateModuleManifest } from './commands/module-create';
+import {
+  certifyMarketplaceModule,
+  installMarketplaceModule,
+  listMarketplaceEntries,
+  searchMarketplaceEntries,
+} from './commands/marketplace';
 
 const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
@@ -71,6 +90,20 @@ const VOICE_DEMO_SCENARIOS = {
   briefing: 'Hey LifeOS, give me my daily briefing',
   proactive: 'Hey LifeOS, I prefer short answers',
 } as const;
+
+const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
+  scheduler: schedulerModule,
+  notes: notesModule,
+  calendar: calendarModule,
+  personality: orchestratorModule,
+  briefing: orchestratorModule,
+  research: researchModule,
+  weather: weatherModule,
+  news: newsModule,
+  health: null,
+};
+
+const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [reminderModule, syncModule];
 
 interface GoalCommandOptions {
   outputJson: boolean;
@@ -126,8 +159,22 @@ interface ModulesCommandOptions {
 }
 
 interface ModuleCommandOptions {
-  action: 'create' | 'validate';
-  moduleName: string;
+  action: 'create' | 'validate' | 'list' | 'enable' | 'disable' | 'install' | 'certify';
+  moduleName?: string;
+}
+
+interface MarketplaceCommandOptions {
+  action: 'list' | 'search';
+  term?: string;
+  outputJson: boolean;
+}
+
+interface MeshCommandOptions {
+  action: 'join' | 'status' | 'assign' | 'demo';
+  nodeId?: string;
+  capability?: string;
+  outputJson: boolean;
+  verbose: boolean;
 }
 
 interface VoiceCommandOptions {
@@ -496,10 +543,32 @@ function normalizeModulesAction(action: string): ModulesCommandOptions['action']
 }
 
 function normalizeModuleAction(action: string): ModuleCommandOptions['action'] | null {
-  if (action === 'create' || action === 'validate') {
+  if (
+    action === 'create' ||
+    action === 'validate' ||
+    action === 'list' ||
+    action === 'enable' ||
+    action === 'disable' ||
+    action === 'install' ||
+    action === 'certify'
+  ) {
     return action;
   }
 
+  return null;
+}
+
+function normalizeMarketplaceAction(action: string): MarketplaceCommandOptions['action'] | null {
+  if (action === 'list' || action === 'search') {
+    return action;
+  }
+  return null;
+}
+
+function normalizeMeshAction(action: string): MeshCommandOptions['action'] | null {
+  if (action === 'join' || action === 'status' || action === 'assign' || action === 'demo') {
+    return action;
+  }
   return null;
 }
 
@@ -575,14 +644,70 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       reminderModule,
       calendarModule,
       schedulerModule,
-      researchModule,
       notesModule,
+      researchModule,
       weatherModule,
       newsModule,
       syncModule,
       orchestratorModule,
     ]
   );
+}
+
+function dedupeModules(modules: LifeOSModule[]): LifeOSModule[] {
+  const byId = new Map<string, LifeOSModule>();
+  for (const module of modules) {
+    byId.set(module.id, module);
+  }
+  return Array.from(byId.values());
+}
+
+function renderModuleStateRows(enabledOptionalModules: string[]): Array<{
+  id: string;
+  tier: 'baseline' | 'optional';
+  enabled: boolean;
+  available: boolean;
+}> {
+  const enabledSet = new Set(enabledOptionalModules);
+  const baselineRows = baselineModules.map((id) => ({
+    id,
+    tier: 'baseline' as const,
+    enabled: true,
+    available: MODULE_DEFINITIONS[id] !== null,
+  }));
+  const optionalRows = optionalModules.map((id) => ({
+    id,
+    tier: 'optional' as const,
+    enabled: enabledSet.has(id),
+    available: MODULE_DEFINITIONS[id] !== null,
+  }));
+  return [...baselineRows, ...optionalRows];
+}
+
+async function resolveBootModulesFromState(env: NodeJS.ProcessEnv): Promise<LifeOSModule[]> {
+  const state = await readModuleState({ env });
+  const runtimeIds = [...baselineModules, ...state.enabledOptionalModules];
+  const modules: LifeOSModule[] = [];
+
+  for (const moduleId of runtimeIds) {
+    const resolved = MODULE_DEFINITIONS[moduleId];
+    if (resolved) {
+      modules.push(resolved);
+    }
+  }
+
+  for (const module of ALWAYS_ON_RUNTIME_MODULES) {
+    modules.push(module);
+  }
+
+  return dedupeModules(modules);
+}
+
+function parseNodeRole(rawRole: string | undefined): NodeRole {
+  if (rawRole === 'primary' || rawRole === 'fallback' || rawRole === 'heavy-compute') {
+    return rawRole;
+  }
+  return 'fallback';
 }
 
 function buildClientOptions(
@@ -1795,11 +1920,16 @@ export async function runModuleCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const moduleName = options.moduleName?.trim();
 
   if (options.action === 'create') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module create".\n`);
+      return 1;
+    }
     try {
       const author = env.GITHUB_USER?.trim() || 'your-github-username';
-      const created = await createModuleScaffold(options.moduleName, {
+      const created = await createModuleScaffold(moduleName, {
         baseDir: baseCwd,
         author,
       });
@@ -1813,17 +1943,280 @@ export async function runModuleCommand(
     }
   }
 
-  const validation = await validateModuleManifest(options.moduleName, baseCwd);
-  if (validation.valid) {
-    writeStdout(chalk.green(`Manifest valid: ${validation.manifestPath}\n`));
+  if (options.action === 'validate') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module validate".\n`);
+      return 1;
+    }
+    const validation = await validateModuleManifest(moduleName, baseCwd);
+    if (validation.valid) {
+      writeStdout(chalk.green(`Manifest valid: ${validation.manifestPath}\n`));
+      return 0;
+    }
+
+    writeStderr(chalk.red(`Manifest invalid: ${validation.manifestPath}\n`));
+    for (const error of validation.errors) {
+      writeStderr(`- ${error}\n`);
+    }
+    return 1;
+  }
+
+  if (options.action === 'list') {
+    const state = await readModuleState({ env });
+    const rows = renderModuleStateRows(state.enabledOptionalModules);
+    writeStdout(chalk.bold('LifeOS Modules\n'));
+    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+    for (const row of rows) {
+      const status = row.enabled ? chalk.green('enabled') : chalk.gray('disabled');
+      const availability = row.available ? '' : chalk.yellow(' (not installed)');
+      writeStdout(`${row.id} [${row.tier}] ${status}${availability}\n`);
+    }
     return 0;
   }
 
-  writeStderr(chalk.red(`Manifest invalid: ${validation.manifestPath}\n`));
-  for (const error of validation.errors) {
-    writeStderr(`- ${error}\n`);
+  if (options.action === 'enable' || options.action === 'disable') {
+    if (!moduleName) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Module name is required for "module ${options.action}".\n`,
+      );
+      return 1;
+    }
+    const normalizedModuleName = moduleName.toLowerCase();
+    if (!optionalModules.includes(normalizedModuleName as (typeof optionalModules)[number])) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} "${moduleName}" is not an optional module. Optional modules: ${optionalModules.join(', ')}.\n`,
+      );
+      return 1;
+    }
+    if (MODULE_DEFINITIONS[normalizedModuleName] === null) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Optional module "${normalizedModuleName}" has no local runtime implementation yet.\n`,
+      );
+      return 1;
+    }
+    try {
+      await setOptionalModuleEnabled(normalizedModuleName, options.action === 'enable', { env });
+      const status = options.action === 'enable' ? 'enabled' : 'disabled';
+      writeStdout(chalk.green(`Optional module "${normalizedModuleName}" ${status}.\n`));
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
   }
+
+  if (options.action === 'install') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Repository is required for "module install".\n`);
+      return 1;
+    }
+    try {
+      const installed = await installMarketplaceModule(moduleName, { env });
+      if (
+        optionalModules.includes(installed.moduleId as (typeof optionalModules)[number]) &&
+        MODULE_DEFINITIONS[installed.moduleId] !== null
+      ) {
+        await setOptionalModuleEnabled(installed.moduleId, true, { env });
+      }
+      writeStdout(chalk.green(`Installed ${installed.repo} (module: ${installed.moduleId}).\n`));
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
+  if (options.action === 'certify') {
+    if (!moduleName) {
+      writeStderr(`${chalk.red.bold('Error:')} Repository is required for "module certify".\n`);
+      return 1;
+    }
+    try {
+      const certified = await certifyMarketplaceModule(moduleName, { env });
+      writeStdout(chalk.green(`Certified ${certified.repo}.\n`));
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
+  writeStderr(
+    `${chalk.red.bold('Error:')} Unsupported module action "${String(options.action)}".\n`,
+  );
   return 1;
+}
+
+export async function runMarketplaceCommand(
+  options: MarketplaceCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  try {
+    if (options.action === 'search' && !(options.term ?? '').trim()) {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Search term is required for "marketplace search".\n`,
+      );
+      return 1;
+    }
+
+    const entries =
+      options.action === 'search'
+        ? await searchMarketplaceEntries(options.term ?? '', { env })
+        : await listMarketplaceEntries({ env });
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(entries, null, 2)}\n`);
+      return 0;
+    }
+
+    if (entries.length === 0) {
+      writeStdout('No marketplace modules matched your query.\n');
+      return 0;
+    }
+
+    writeStdout(chalk.bold('LifeOS Marketplace\n'));
+    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+    for (const entry of entries) {
+      const certification = entry.certified ? chalk.green('certified') : chalk.gray('community');
+      const installed = entry.installed ? chalk.cyan(' installed') : '';
+      writeStdout(
+        `${entry.id} (${entry.repo}) [${certification}]${installed}\n${chalk.dim(entry.description)}\n`,
+      );
+    }
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
+export async function runMeshCommand(
+  options: MeshCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    const state = await readMeshState({ env });
+    const registry = new MeshRegistry(state);
+
+    if (options.action === 'join') {
+      if (!options.nodeId) {
+        writeStderr(`${chalk.red.bold('Error:')} Node id is required for "mesh join".\n`);
+        return 1;
+      }
+      const nodeId = options.nodeId.trim().toLowerCase();
+      const role = parseNodeRole(env.LIFEOS_MESH_ROLE?.trim());
+      const capabilities = (env.LIFEOS_MESH_CAPABILITIES?.trim() || 'voice,calendar,tasks')
+        .split(',')
+        .map((item) => item.trim().toLowerCase())
+        .filter((item) => item.length > 0);
+      const normalizedCapabilities =
+        capabilities.length > 0 ? capabilities : ['voice', 'calendar', 'tasks'];
+      const node: NodeConfig = {
+        nodeId,
+        role,
+        capabilities: normalizedCapabilities,
+      };
+      registry.join(node);
+      await writeMeshState(registry.toState(), { env });
+      writeStdout(chalk.green(`Node "${nodeId}" joined mesh as ${role}.\n`));
+      return 0;
+    }
+
+    if (options.action === 'assign') {
+      if (!options.capability || !options.nodeId) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Usage: lifeos mesh assign <capability> <node-id>\n`,
+        );
+        return 1;
+      }
+      registry.assign(options.capability, options.nodeId);
+      await writeMeshState(registry.toState(), { env });
+      writeStdout(
+        chalk.green(
+          `Assigned capability "${options.capability.toLowerCase()}" to node "${options.nodeId.toLowerCase()}".\n`,
+        ),
+      );
+      return 0;
+    }
+
+    if (options.action === 'demo') {
+      registry.join({
+        nodeId: 'laptop',
+        role: 'primary',
+        capabilities: ['voice', 'calendar', 'tasks'],
+      });
+      registry.join({
+        nodeId: 'heavy-server',
+        role: 'heavy-compute',
+        capabilities: ['research', 'llm'],
+      });
+      registry.assign('research', 'heavy-server');
+      const assigned = registry.resolve('research');
+      const payload = {
+        nodes: registry.listNodes(),
+        assignments: registry.toState().assignments,
+        delegatedTo: assigned?.nodeId ?? null,
+      };
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+      } else {
+        writeStdout(chalk.bold('LifeOS Mesh Demo\n'));
+        writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+        writeStdout(`Nodes: ${payload.nodes.map((node) => node.nodeId).join(', ')}\n`);
+        writeStdout(`research -> ${payload.delegatedTo}\n`);
+      }
+      return 0;
+    }
+
+    const nodes = registry.listNodes();
+    const payload = {
+      nodes,
+      assignments: registry.toState().assignments,
+    };
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+      return 0;
+    }
+
+    writeStdout(chalk.bold('LifeOS Mesh Status\n'));
+    writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+    if (nodes.length === 0) {
+      writeStdout('No nodes have joined yet.\n');
+    } else {
+      for (const node of nodes) {
+        writeStdout(
+          `${node.nodeId} [${node.role}] capabilities=${node.capabilities.join(', ') || 'none'}\n`,
+        );
+      }
+    }
+    const assignments = Object.entries(payload.assignments);
+    if (assignments.length > 0) {
+      writeStdout(chalk.dim('Assignments:\n'));
+      for (const [capability, nodeId] of assignments) {
+        writeStdout(`${capability} -> ${nodeId}\n`);
+      }
+    }
+    verboseLog(`mesh_nodes=${nodes.length}`);
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
 }
 
 export async function runModulesCommand(
@@ -2203,15 +2596,15 @@ function buildProgram(
 
   program
     .command('module')
-    .description('Create or validate marketplace module manifests')
-    .argument('<action>', 'create | validate')
-    .argument('<name>', 'Module name')
-    .action(async (action: string, name: string) => {
+    .description('Manage modules: create, validate, list, enable, disable, install, certify')
+    .argument('<action>', 'create | validate | list | enable | disable | install | certify')
+    .argument('[name]', 'Module name or repository when required')
+    .action(async (action: string, name: string | undefined) => {
       const normalizedAction = normalizeModuleAction(action);
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create or validate.\n`,
+          `${chalk.red.bold('Error:')} Invalid module action "${action}". Use create, validate, list, enable, disable, install, or certify.\n`,
         );
         return;
       }
@@ -2219,12 +2612,76 @@ function buildProgram(
       const commandExitCode = await runModuleCommand(
         {
           action: normalizedAction,
-          moduleName: name,
+          ...(name ? { moduleName: name } : {}),
         },
         dependencies,
       );
       setExitCode(commandExitCode);
     });
+
+  program
+    .command('marketplace')
+    .description('Explore certified and community modules')
+    .argument('[action]', 'list | search', 'list')
+    .argument('[term]', 'Search term when action=search')
+    .option('--json', 'Output JSON only')
+    .action(async (action: string, term: string | undefined, commandOptions) => {
+      const normalizedAction = normalizeMarketplaceAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid marketplace action "${action}". Use list or search.\n`,
+        );
+        return;
+      }
+      const commandExitCode = await runMarketplaceCommand(
+        {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          ...(term ? { term } : {}),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('mesh')
+    .description('Manage multi-node mesh: join, status, assign, demo')
+    .argument('[action]', 'join | status | assign | demo', 'status')
+    .argument('[arg1]', 'Node id for join, capability for assign')
+    .argument('[arg2]', 'Node id for assign')
+    .option('--json', 'Output JSON only')
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(
+      async (
+        action: string,
+        arg1: string | undefined,
+        arg2: string | undefined,
+        commandOptions,
+      ) => {
+        const normalizedAction = normalizeMeshAction(action);
+        if (!normalizedAction) {
+          setExitCode(1);
+          writeStderr(
+            `${chalk.red.bold('Error:')} Invalid mesh action "${action}". Use join, status, assign, or demo.\n`,
+          );
+          return;
+        }
+        const commandExitCode = await runMeshCommand(
+          {
+            action: normalizedAction,
+            outputJson: Boolean(commandOptions.json),
+            verbose: Boolean(commandOptions.verbose),
+            ...(normalizedAction === 'join' && arg1 ? { nodeId: arg1 } : {}),
+            ...(normalizedAction === 'assign' && arg1 ? { capability: arg1 } : {}),
+            ...(normalizedAction === 'assign' && arg2 ? { nodeId: arg2 } : {}),
+          },
+          dependencies,
+        );
+        setExitCode(commandExitCode);
+      },
+    );
 
   program
     .command('modules')
@@ -2305,17 +2762,8 @@ async function main(): Promise<void> {
     runtimeLoader = createModuleLoader(loaderOptions);
 
     try {
-      await runtimeLoader.loadMany([
-        reminderModule,
-        calendarModule,
-        schedulerModule,
-        researchModule,
-        notesModule,
-        weatherModule,
-        newsModule,
-        syncModule,
-        orchestratorModule,
-      ]);
+      const bootModules = await resolveBootModulesFromState(process.env);
+      await runtimeLoader.loadMany(bootModules);
     } catch {
       await runtimeLoader.close();
       runtimeLoader = null;
