@@ -48,13 +48,20 @@ fn merge_settings(current: DesktopSettings, update: SettingsUpdate) -> DesktopSe
 
 fn sanitize_model(value: &str) -> String {
     let trimmed = value.trim();
-    if trimmed.is_empty() || trimmed.len() > 64 {
+    if trimmed.is_empty() || trimmed.len() > 256 {
+        return "llama3.1:8b".to_string();
+    }
+
+    if trimmed.starts_with('/') || trimmed.ends_with('/') || trimmed.contains("//") {
         return "llama3.1:8b".to_string();
     }
 
     if trimmed
         .chars()
-        .all(|char| char.is_ascii_alphanumeric() || "._-:".contains(char))
+        .all(|char| char.is_ascii_alphanumeric() || "._-:/".contains(char))
+        && trimmed
+            .split('/')
+            .all(|segment| !segment.is_empty() && segment != "." && segment != "..")
     {
         return trimmed.to_string();
     }
@@ -163,6 +170,9 @@ mod tests {
     fn sanitize_model_allows_supported_characters() {
         let value = sanitize_model("mistral:7b-instruct");
         assert_eq!(value, "mistral:7b-instruct");
+
+        let namespaced = sanitize_model("registry/library/gemma3:12b");
+        assert_eq!(namespaced, "registry/library/gemma3:12b");
     }
 
     #[test]

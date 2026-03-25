@@ -1,17 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listOllamaModels, readSettings, writeSettings } from '../ipc';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 
 export function Settings(): JSX.Element {
+  const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: readSettings,
   });
+  const current = settingsQuery.data;
   const modelsQuery = useQuery({
-    queryKey: ['settings', 'models'],
+    queryKey: ['settings', 'models', current?.ollamaHost ?? null],
     queryFn: listOllamaModels,
+    enabled: Boolean(current),
     staleTime: 60_000,
   });
 
@@ -25,13 +28,12 @@ export function Settings(): JSX.Element {
 
   const saveMutation = useMutation({
     mutationFn: writeSettings,
-    onSuccess: () => {
+    onSuccess: (savedSettings) => {
       setHasUnsavedChanges(false);
-      void settingsQuery.refetch();
+      queryClient.setQueryData(['settings'], savedSettings);
+      void queryClient.invalidateQueries({ queryKey: ['settings', 'models'] });
     },
   });
-
-  const current = settingsQuery.data;
 
   useEffect(() => {
     if (!current) {
@@ -67,6 +69,13 @@ export function Settings(): JSX.Element {
     setHasUnsavedChanges(false);
   };
 
+  const markDirty = (): void => {
+    if (saveMutation.isSuccess || saveMutation.isError) {
+      saveMutation.reset();
+    }
+    setHasUnsavedChanges(true);
+  };
+
   if (settingsQuery.isLoading) {
     return <Spinner label="Loading settings..." />;
   }
@@ -80,6 +89,12 @@ export function Settings(): JSX.Element {
   const currentModelMissing = hasLiveModels && !liveModels.includes(current.model);
   const modelSelectValue = modelsQuery.isLoading ? '__loading__' : hasLiveModels ? draftModel : '__unreachable__';
   const modelSelectDisabled = modelsQuery.isLoading || !hasLiveModels;
+  const saveButtonDisabled = saveMutation.isPending || !hasUnsavedChanges;
+  const saveStatus = saveMutation.isPending
+    ? 'Saving settings...'
+    : saveMutation.isSuccess
+      ? 'Settings saved.'
+      : null;
 
   return (
     <div className="settings-layout">
@@ -92,7 +107,7 @@ export function Settings(): JSX.Element {
           disabled={modelSelectDisabled}
           onChange={(event) => {
             setDraftModel(event.target.value);
-            setHasUnsavedChanges(true);
+            markDirty();
           }}
         >
           {modelsQuery.isLoading ? (
@@ -123,7 +138,7 @@ export function Settings(): JSX.Element {
           value={draftHost}
           onChange={(event) => {
             setDraftHost(event.target.value);
-            setHasUnsavedChanges(true);
+            markDirty();
           }}
         />
 
@@ -133,7 +148,7 @@ export function Settings(): JSX.Element {
           value={draftNats}
           onChange={(event) => {
             setDraftNats(event.target.value);
-            setHasUnsavedChanges(true);
+            markDirty();
           }}
         />
 
@@ -145,16 +160,23 @@ export function Settings(): JSX.Element {
             checked={voiceEnabled}
             onChange={(event) => {
               setVoiceEnabled(event.target.checked);
-              setHasUnsavedChanges(true);
+              markDirty();
             }}
           />
         </label>
+
+        {saveMutation.isError ? <ErrorBanner message="Unable to save settings." /> : null}
+        {saveStatus ? (
+          <p className="muted" role="status" aria-live="polite">
+            {saveStatus}
+          </p>
+        ) : null}
 
         <div className="row gap-sm">
           <button
             className="primary-btn"
             type="button"
-            disabled={saveMutation.isPending}
+            disabled={saveButtonDisabled}
             onClick={() => {
               void saveMutation.mutateAsync({
                 model: draftModel,

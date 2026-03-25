@@ -56,10 +56,11 @@ const MAX_REQUEST_BYTES = 32_768;
 const MAX_ID_LENGTH = 128;
 const MAX_GOAL_LENGTH = 4_000;
 const MAX_MODULE_ID_LENGTH = 128;
-const MAX_MODEL_LENGTH = 64;
+const MAX_MODEL_LENGTH = 256;
 const OLLAMA_TAGS_TIMEOUT_MS = 5_000;
 const MAX_OLLAMA_RESPONSE_BYTES = 2 * 1024 * 1024;
 const MAX_OLLAMA_MODELS = 100;
+const MODEL_IDENTIFIER_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
 
 const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'graph_summary',
@@ -96,10 +97,22 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string)
 
 function normalizeModel(value: unknown): string {
   const model = String(value ?? 'llama3.1:8b').trim();
-  if (!model || model.length > MAX_MODEL_LENGTH || /[^a-zA-Z0-9._:-]/.test(model)) {
+  if (!isValidModelIdentifier(model)) {
     return 'llama3.1:8b';
   }
   return model;
+}
+
+function isValidModelIdentifier(model: string): boolean {
+  if (model.length === 0 || model.length > MAX_MODEL_LENGTH || !MODEL_IDENTIFIER_PATTERN.test(model)) {
+    return false;
+  }
+
+  if (model.startsWith('/') || model.endsWith('/') || model.includes('//')) {
+    return false;
+  }
+
+  return model.split('/').every((segment) => segment.length > 0 && segment !== '.' && segment !== '..');
 }
 
 function normalizeModuleId(value: unknown): string {
@@ -329,20 +342,18 @@ async function readOllamaModelNames(ollamaHost: string): Promise<string[]> {
       models?: Array<{ name?: unknown }>;
     };
 
-    if (!Array.isArray(payload.models) || payload.models.length > MAX_OLLAMA_MODELS) {
+    if (!Array.isArray(payload.models)) {
       return [];
     }
 
-    return [...new Set(
-      payload.models
-        .map((item) => String(item?.name ?? '').trim())
-        .filter(
-          (name) =>
-            name.length > 0 &&
-            name.length <= MAX_MODEL_LENGTH &&
-            !/[^a-zA-Z0-9._:-]/.test(name),
-        ),
-    )];
+    return [
+      ...new Set(
+        payload.models
+          .slice(0, MAX_OLLAMA_MODELS)
+          .map((item) => String(item?.name ?? '').trim())
+          .filter((name) => isValidModelIdentifier(name)),
+      ),
+    ];
   } catch {
     return [];
   } finally {

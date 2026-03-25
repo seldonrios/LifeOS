@@ -32,7 +32,7 @@ test('processRequest returns Ollama model names for settings_models', async () =
 
   globalThis.fetch = (async (input) => {
     assert.equal(String(input), 'http://127.0.0.1:11434/api/tags');
-    return new Response(JSON.stringify({ models: [{ name: 'llama3.1:8b' }, { name: 'qwen3:8b' }] }), {
+    return new Response(JSON.stringify({ models: [{ name: 'llama3.1:8b' }, { name: 'library/qwen3:8b' }] }), {
       status: 200,
       headers: { 'content-type': 'application/json' },
     });
@@ -41,7 +41,7 @@ test('processRequest returns Ollama model names for settings_models', async () =
   try {
     const response = await processRequest(JSON.stringify({ id: 'models-1', command: 'settings_models' }));
     assert.equal(response.error, undefined);
-    assert.deepEqual(response.result, { models: ['llama3.1:8b', 'qwen3:8b'] });
+    assert.deepEqual(response.result, { models: ['llama3.1:8b', 'library/qwen3:8b'] });
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -84,7 +84,7 @@ test('processRequest rejects oversized settings_models responses', async () => {
   }
 });
 
-test('processRequest rejects settings_models responses with too many models', async () => {
+test('processRequest truncates settings_models responses with too many models', async () => {
   const originalFetch = globalThis.fetch;
 
   globalThis.fetch = (async () =>
@@ -101,7 +101,11 @@ test('processRequest rejects settings_models responses with too many models', as
   try {
     const response = await processRequest(JSON.stringify({ id: 'models-4', command: 'settings_models' }));
     assert.equal(response.error, undefined);
-    assert.deepEqual(response.result, { models: [] });
+    const result = response.result as { models: string[] };
+    assert.equal(Array.isArray(result.models), true);
+    assert.equal(result.models.length, 100);
+    assert.equal(result.models[0], 'model-0');
+    assert.equal(result.models.at(-1), 'model-99');
   } finally {
     globalThis.fetch = originalFetch;
   }

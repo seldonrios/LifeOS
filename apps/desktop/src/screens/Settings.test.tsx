@@ -138,4 +138,92 @@ describe('Settings', () => {
     const modelSelect = (await screen.findByLabelText('Model')) as HTMLSelectElement;
     expect(modelSelect.value).toBe('gemma3:12b');
   });
+
+  it('refreshes model options after saving a new Ollama host', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue({
+      model: 'llama3.1:8b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+    vi.mocked(ipc.listOllamaModels)
+      .mockResolvedValueOnce(['llama3.1:8b'])
+      .mockResolvedValueOnce(['qwen3:8b']);
+    vi.mocked(ipc.writeSettings).mockResolvedValue({
+      model: 'qwen3:8b',
+      ollamaHost: 'http://localhost:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+
+    renderWithQueryClient();
+
+    const hostInput = (await screen.findByLabelText('Ollama host')) as HTMLInputElement;
+    fireEvent.change(hostInput, { target: { value: 'http://localhost:11434' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(ipc.writeSettings).mock.calls[0]?.[0]).toEqual({
+        model: 'llama3.1:8b',
+        ollamaHost: 'http://localhost:11434',
+        natsUrl: 'nats://127.0.0.1:4222',
+        voiceEnabled: true,
+      });
+      expect(vi.mocked(ipc.listOllamaModels).mock.calls.length).toBeGreaterThan(1);
+    });
+
+    expect(await screen.findByDisplayValue('qwen3:8b')).toBeInTheDocument();
+  });
+
+  it('disables save until there are unsaved changes', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue({
+      model: 'llama3.1:8b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'qwen3:8b']);
+
+    renderWithQueryClient();
+
+    const saveButton = await screen.findByRole('button', { name: 'Save Settings' });
+    expect(saveButton).toBeDisabled();
+
+    const hostInput = (await screen.findByLabelText('Ollama host')) as HTMLInputElement;
+    fireEvent.change(hostInput, { target: { value: 'http://localhost:11434' } });
+
+    expect(saveButton).not.toBeDisabled();
+  });
+
+  it('supports namespace-style Ollama model identifiers', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue({
+      model: 'library/qwen3:8b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['library/qwen3:8b', 'llama3.1:8b']);
+    vi.mocked(ipc.writeSettings).mockResolvedValue({
+      model: 'library/qwen3:8b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: false,
+    });
+
+    renderWithQueryClient();
+
+    expect(await screen.findByDisplayValue('library/qwen3:8b')).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByLabelText('Voice assistant'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(ipc.writeSettings).mock.calls[0]?.[0]).toEqual({
+        model: 'library/qwen3:8b',
+        ollamaHost: 'http://127.0.0.1:11434',
+        natsUrl: 'nats://127.0.0.1:4222',
+        voiceEnabled: false,
+      });
+    });
+  });
 });
