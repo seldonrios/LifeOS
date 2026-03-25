@@ -12,12 +12,20 @@
     ".": {
       "types": "./src/index.ts",
       "default": "./src/index.ts"
+    },
+    "./types": {
+      "types": "./src/types.ts",
+      "default": "./src/types.ts"
+    },
+    "./errors": {
+      "types": "./src/errors.ts",
+      "default": "./src/errors.ts"
     }
   },
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -b",
-    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts"
+    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts"
   },
   "dependencies": {
     "@lifeos/calendar-module": "workspace:*",

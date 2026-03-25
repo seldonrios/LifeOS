@@ -25,9 +25,7 @@ import {
   type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphClient,
-  type LifeGraphReviewInsights,
   type LifeGraphReviewPeriod,
-  type LifeGraphSummary,
 } from '@lifeos/life-graph';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
@@ -36,12 +34,7 @@ import {
   readModuleState,
   setOptionalModuleEnabled,
 } from '@lifeos/core';
-import {
-  interpretGoal,
-  runTick,
-  type InterpretGoalStage,
-  type TickResult,
-} from '@lifeos/goal-engine';
+import { interpretGoal, runTick, type InterpretGoalStage } from '@lifeos/goal-engine';
 import { calendarModule } from '@lifeos/calendar-module';
 import { newsModule } from '@lifeos/news-module';
 import { notesModule } from '@lifeos/notes-module';
@@ -73,12 +66,33 @@ import {
   UnsupportedVoicePlatformError,
   consent,
   createVoiceCore,
-  type IntentOutcome,
   type VoiceCoreOptions,
 } from '@lifeos/voice-core';
+import { normalizeErrorMessage, toFriendlyCliError } from './errors';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
+import type {
+  DemoCommandOptions,
+  EventsListenCommandOptions,
+  GoalCommandOptions,
+  MarketplaceCommandOptions,
+  MemoryCommandOptions,
+  MeshCommandOptions,
+  ModuleCommandOptions,
+  ModulesCommandOptions,
+  ResearchCommandOptions,
+  ReviewCommandOptions,
+  RunCliDependencies,
+  SpinnerLike,
+  StatusCommandOptions,
+  SyncCommandOptions,
+  TaskCommandOptions,
+  TickCommandOptions,
+  VoiceCommandOptions,
+  VoiceDemoScenario,
+  VoiceRuntimeController,
+} from './types';
 import { createModuleScaffold, validateModuleManifest } from './commands/module-create';
 import {
   certifyMarketplaceModule,
@@ -92,7 +106,7 @@ const DEFAULT_MODEL = 'llama3.1:8b';
 const CLI_VERSION = '0.1.0';
 const DEFAULT_VOICE_PUBLISH_TIMEOUT_MS = 1500;
 const DEFAULT_VOICE_CLOSE_TIMEOUT_MS = 3000;
-const VOICE_DEMO_SCENARIOS = {
+const VOICE_DEMO_SCENARIOS: Record<VoiceDemoScenario, string> = {
   task: 'Hey LifeOS, add a task to buy milk',
   calendar: 'Hey LifeOS, schedule dentist appointment next Tuesday at 10am',
   research: 'Hey LifeOS, research quantum computing breakthroughs this year',
@@ -117,136 +131,6 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
 };
 
 const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [reminderModule, syncModule];
-
-interface GoalCommandOptions {
-  outputJson: boolean;
-  save: boolean;
-  model: string;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface StatusCommandOptions {
-  outputJson: boolean;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface ReviewCommandOptions {
-  outputJson: boolean;
-  graphPath: string;
-  period: LifeGraphReviewPeriod;
-  verbose: boolean;
-}
-
-interface TaskCommandOptions {
-  action: 'list' | 'complete' | 'next';
-  taskId?: string;
-  outputJson: boolean;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface TickCommandOptions {
-  outputJson: boolean;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface DemoCommandOptions {
-  goal: string;
-  model: string;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface EventsListenCommandOptions {
-  topic: string;
-  outputJson: boolean;
-  verbose: boolean;
-}
-
-interface ModulesCommandOptions {
-  action: 'list' | 'load';
-  moduleId?: string;
-}
-
-interface ModuleCommandOptions {
-  action:
-    | 'create'
-    | 'validate'
-    | 'list'
-    | 'status'
-    | 'setup'
-    | 'enable'
-    | 'disable'
-    | 'install'
-    | 'certify'
-    | 'authorize';
-  moduleName?: string;
-  subFeatures?: GoogleBridgeSubFeature[];
-}
-
-interface MarketplaceCommandOptions {
-  action: 'list' | 'search' | 'refresh';
-  term?: string;
-  outputJson: boolean;
-  certifiedOnly: boolean;
-}
-
-interface MeshCommandOptions {
-  action: 'join' | 'status' | 'assign' | 'demo';
-  nodeId?: string;
-  capability?: string;
-  outputJson: boolean;
-  verbose: boolean;
-}
-
-interface VoiceCommandOptions {
-  mode: 'start' | 'demo' | 'consent' | 'calendar' | 'briefing';
-  text: string;
-  scenario?: keyof typeof VOICE_DEMO_SCENARIOS;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface SyncCommandOptions {
-  action: 'pair' | 'devices' | 'demo';
-  deviceName?: string;
-  outputJson: boolean;
-  verbose: boolean;
-}
-
-interface MemoryCommandOptions {
-  action: 'status';
-  outputJson: boolean;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface ResearchCommandOptions {
-  query: string;
-  graphPath: string;
-  verbose: boolean;
-}
-
-interface SpinnerLike {
-  start(): SpinnerLike;
-  succeed(text?: string): SpinnerLike;
-  fail(text?: string): SpinnerLike;
-  stop(): SpinnerLike;
-}
-
-interface VoiceRuntimeController {
-  start(): Promise<void>;
-  runDemo(text: string): Promise<IntentOutcome | null>;
-  close(): Promise<void>;
-  getWakePhrase(): string;
-}
-
-interface SpeechOutput {
-  speak(text: string): Promise<void>;
-}
 
 type RuntimeEventHandler = (event: BaseEvent<unknown>) => Promise<void>;
 
@@ -310,64 +194,6 @@ class LocalRuntimeEventBus implements ManagedEventBus {
 
 function createLocalRuntimeEventBus(): ManagedEventBus {
   return new LocalRuntimeEventBus();
-}
-
-export interface RunCliDependencies {
-  env?: NodeJS.ProcessEnv;
-  now?: () => Date;
-  cwd?: () => string;
-  interpretGoal?: (
-    input: string,
-    options: {
-      model?: string;
-      host?: string;
-      now: Date;
-      onStage?: (stage: InterpretGoalStage) => void;
-    },
-  ) => Promise<GoalPlan>;
-  appendGoalPlan?: (
-    entry: {
-      input: string;
-      plan: GoalPlan;
-      id?: string;
-      createdAt?: string;
-    },
-    graphPath?: string,
-  ) => Promise<GoalPlanRecord<GoalPlan>>;
-  getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
-  generateReview?: (
-    period: LifeGraphReviewPeriod,
-    graphPath?: string,
-  ) => Promise<LifeGraphReviewInsights>;
-  createLifeGraphClient?: (
-    options?: Parameters<typeof createLifeGraphClient>[0],
-  ) => LifeGraphClient;
-  runTick?: (options: {
-    graphPath?: string;
-    env?: NodeJS.ProcessEnv;
-    now?: Date;
-    client?: Pick<LifeGraphClient, 'loadGraph'>;
-    logger?: (message: string) => void;
-  }) => Promise<TickResult>;
-  createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
-  grantVoiceConsent?: () => Promise<void>;
-  createTextToSpeech?: () => SpeechOutput;
-  createVoiceCore?: (options: VoiceCoreOptions) => VoiceRuntimeController;
-  createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
-  moduleLoader?: ModuleLoader;
-  defaultModules?: LifeOSModule[];
-  waitForSignal?: () => Promise<void>;
-  stdout?: (message: string) => void;
-  stderr?: (message: string) => void;
-  fileExists?: (path: string) => boolean;
-  createSpinner?: (text: string) => SpinnerLike;
-  voicePublishTimeoutMs?: number;
-  voiceCloseTimeoutMs?: number;
-}
-
-interface FriendlyCliError {
-  message: string;
-  guidance?: string;
 }
 
 function resolveBaseCwd(env: NodeJS.ProcessEnv, cwdProvider?: () => string): string {
@@ -484,14 +310,6 @@ function mapStageToVerboseLine(stage: InterpretGoalStage): string {
   return stageLines[stage];
 }
 
-function normalizeErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message.trim().length > 0) {
-    return error.message;
-  }
-
-  return 'Unknown error.';
-}
-
 function withTimeout<T>(
   operation: Promise<T>,
   timeoutMs: number,
@@ -513,38 +331,6 @@ function withTimeout<T>(
       },
     );
   });
-}
-
-function toFriendlyCliError(error: unknown, model: string): FriendlyCliError {
-  const message = normalizeErrorMessage(error);
-
-  if (
-    /fetch failed|econnrefused|enotfound|connect econn|network error|connection refused/i.test(
-      message,
-    )
-  ) {
-    return {
-      message: 'Ollama is not reachable.',
-      guidance: ['Quick fix:', '  ollama serve', `  ollama pull ${model}`].join('\n'),
-    };
-  }
-
-  if (/model.+not found|try pulling/i.test(message)) {
-    return {
-      message: `Model "${model}" is not available in Ollama.`,
-      guidance: `Run:\n  ollama pull ${model}`,
-    };
-  }
-
-  if (/failed after 3 attempts|could not parse or repair json|invalid life graph/i.test(message)) {
-    return {
-      message: 'Model output did not match the expected goal-plan schema.',
-      guidance:
-        'Try re-running with a clearer goal statement. Use --verbose to inspect safe parse diagnostics.',
-    };
-  }
-
-  return { message };
 }
 
 function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
@@ -628,14 +414,12 @@ function normalizeSyncAction(action: string): SyncCommandOptions['action'] | nul
   return null;
 }
 
-function normalizeVoiceScenario(
-  scenario: string | undefined,
-): keyof typeof VOICE_DEMO_SCENARIOS | undefined {
+function normalizeVoiceScenario(scenario: string | undefined): VoiceDemoScenario | undefined {
   if (!scenario) {
     return undefined;
   }
   if (scenario in VOICE_DEMO_SCENARIOS) {
-    return scenario as keyof typeof VOICE_DEMO_SCENARIOS;
+    return scenario as VoiceDemoScenario;
   }
   return undefined;
 }
@@ -1040,7 +824,11 @@ export async function runGoalCommand(
     return 0;
   } catch (error: unknown) {
     spinner?.fail(chalk.red('Failed to process goal.'));
-    const friendly = toFriendlyCliError(error, options.model);
+    const friendly = toFriendlyCliError(error, {
+      command: 'goal',
+      graphPath: options.graphPath,
+      model: options.model,
+    });
     writeStderr(`${chalk.red.bold('Error:')} ${friendly.message}\n`);
     if (friendly.guidance) {
       writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
@@ -1135,10 +923,14 @@ export async function runReviewCommand(
     writeStdout(`${printReviewInsights(insights)}\n`);
     return 0;
   } catch (error: unknown) {
-    const message = normalizeErrorMessage(error);
-    writeStderr(`${chalk.red.bold('Error:')} ${message}\n`);
-    if (/fetch failed|econnrefused|connection refused/i.test(message)) {
-      writeStderr(`${chalk.yellow('Quick fix:\n  ollama serve\n  ollama pull llama3.1:8b')}\n`);
+    const friendly = toFriendlyCliError(error, {
+      command: 'review',
+      graphPath: options.graphPath,
+      model: DEFAULT_MODEL,
+    });
+    writeStderr(`${chalk.red.bold('Error:')} ${friendly.message}\n`);
+    if (friendly.guidance) {
+      writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
     }
     if (options.verbose && error instanceof Error) {
       writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
@@ -3124,6 +2916,9 @@ export async function runCli(
 
   return exitCode;
 }
+
+export * from './types';
+export { normalizeErrorMessage, toFriendlyCliError };
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
