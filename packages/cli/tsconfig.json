@@ -44,7 +44,7 @@
       "path": "../news-module"
     },
     {
-      "path": "../email-summarizer-module"
+      "path": "../../modules/email-summarizer"
     },
     {
       "path": "../orchestrator"

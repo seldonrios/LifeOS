@@ -194,7 +194,7 @@ importers:
         version: link:../core
       '@lifeos/email-summarizer-module':
         specifier: workspace:*
-        version: link:../email-summarizer-module
+        version: link:../../modules/email-summarizer
       '@lifeos/event-bus':
         specifier: workspace:*
         version: link:../event-bus
@@ -282,7 +282,7 @@ importers:
         specifier: workspace:*
         version: link:../capability-registry
 
-  packages/email-summarizer-module:
+  packages/email-summarizer-module-legacy:
     dependencies:
       '@lifeos/event-bus':
         specifier: workspace:*

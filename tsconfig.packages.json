@@ -44,7 +44,7 @@
       "path": "./packages/news-module"
     },
     {
-      "path": "./packages/email-summarizer-module"
+      "path": "./modules/email-summarizer"
     },
     {
       "path": "./packages/personality"

@@ -328,7 +328,6 @@ test('voice support detection returns true for macOS', async () => {
           },
         }) as Response,
       confirmPrompt: async ({ message }) => {
-        confirmCalls += 1;
         if (message.includes('enable voice now')) {
           return true;
         }
@@ -498,7 +497,11 @@ test('model pull timeout terminates the child process', async () => {
             );
           },
           kill: (signal?: NodeJS.Signals | number) => {
-            killCalls.push({ signal });
+            if (signal === undefined) {
+              killCalls.push({});
+            } else {
+              killCalls.push({ signal });
+            }
             return true;
           },
         };
@@ -508,5 +511,7 @@ test('model pull timeout terminates the child process', async () => {
   );
 
   assert.ok(killCalls.length > 0, 'process.kill() should be called when model pull times out');
-  assert.deepEqual(killCalls[0].signal, 'SIGTERM', 'timeout should send SIGTERM to child process');
+  const firstKill = killCalls[0];
+  assert.ok(firstKill, 'expected a kill call record');
+  assert.deepEqual(firstKill.signal, 'SIGTERM', 'timeout should send SIGTERM to child process');
 });

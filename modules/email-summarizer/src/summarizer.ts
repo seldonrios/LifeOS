@@ -7,6 +7,9 @@ const DEFAULT_MODEL = 'llama3.1:8b';
 const MAX_BODY_CHARS_PER_MESSAGE = 3000;
 const MAX_BATCH = 5;
 const FALLBACK_SUMMARY_CHARS = 120;
+const MAX_MODEL_CHARS = 120;
+const MAX_SUMMARY_CHARS = 400;
+const REQUEST_TIMEOUT_MS = 20_000;
 
 interface OllamaResponse {
   message?: {
@@ -22,14 +25,68 @@ function getString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function sanitizeText(value: string, maxChars: number): string {
+  return value
+    .replace(/[\u0000-\u001F\u007F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxChars);
+}
+
+function resolveEndpoint(env: NodeJS.ProcessEnv): string {
+  const rawHost = env.OLLAMA_HOST?.trim() || DEFAULT_OLLAMA_HOST;
+  try {
+    const parsed = new URL(rawHost);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error('unsupported protocol');
+    }
+    parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return `${parsed.toString().replace(/\/+$/, '')}/api/chat`;
+  } catch {
+    return `${DEFAULT_OLLAMA_HOST}/api/chat`;
+  }
+}
+
+function resolveModel(env: NodeJS.ProcessEnv): string {
+  const preferred =
+    env.LIFEOS_EMAIL_MODEL?.trim() || env.LIFEOS_VOICE_MODEL?.trim() || DEFAULT_MODEL;
+  const safe = sanitizeText(preferred, MAX_MODEL_CHARS);
+  return safe.length > 0 ? safe : DEFAULT_MODEL;
+}
+
+async function fetchWithTimeout(
+  fetchFn: SummarizerFetch,
+  input: string,
+  init: RequestInit,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetchFn(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } catch (error: unknown) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('summarizer request timed out');
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function buildPrompt(messages: RawMessage[]): string {
   const lines = messages.map((message, index) => {
-    const body = message.body.slice(0, MAX_BODY_CHARS_PER_MESSAGE);
+    const body = sanitizeText(message.body, MAX_BODY_CHARS_PER_MESSAGE);
+    const subject = sanitizeText(message.subject, 200);
+    const from = sanitizeText(message.from, 200);
+    const messageId = sanitizeText(message.messageId, 260);
     return [
       `Email ${index + 1}`,
-      `Subject: ${message.subject}`,
-      `From: ${message.from}`,
-      `MessageId: ${message.messageId}`,
+      `Subject: ${subject}`,
+      `From: ${from}`,
+      `MessageId: ${messageId}`,
       `Body: ${body}`,
     ].join('\n');
   });
@@ -42,7 +99,7 @@ function fallback(messages: RawMessage[]): SummarizedMessage[] {
     from: message.from,
     messageId: message.messageId,
     receivedAt: message.receivedAt,
-    summary: message.body.slice(0, FALLBACK_SUMMARY_CHARS),
+    summary: sanitizeText(message.body, FALLBACK_SUMMARY_CHARS),
     accountLabel: message.accountLabel,
     read: false,
   }));
@@ -61,7 +118,8 @@ function parseSummaries(messages: RawMessage[], content: string): SummarizedMess
     }
     const row = item as Record<string, unknown>;
     const messageId = getString(row.messageId);
-    const summary = getString(row.summary);
+    const summaryRaw = getString(row.summary);
+    const summary = summaryRaw ? sanitizeText(summaryRaw, MAX_SUMMARY_CHARS) : null;
     if (messageId && summary) {
       byId.set(messageId, summary);
     }
@@ -72,7 +130,7 @@ function parseSummaries(messages: RawMessage[], content: string): SummarizedMess
     from: message.from,
     messageId: message.messageId,
     receivedAt: message.receivedAt,
-    summary: byId.get(message.messageId) || message.body.slice(0, FALLBACK_SUMMARY_CHARS),
+    summary: byId.get(message.messageId) || sanitizeText(message.body, FALLBACK_SUMMARY_CHARS),
     accountLabel: message.accountLabel,
     read: false,
   }));
@@ -87,15 +145,14 @@ export async function summarizeMessages(
     return [];
   }
 
-  const host = env.OLLAMA_HOST?.trim() || DEFAULT_OLLAMA_HOST;
-  const model = env.LIFEOS_EMAIL_MODEL?.trim() || env.LIFEOS_VOICE_MODEL?.trim() || DEFAULT_MODEL;
-  const endpoint = `${host.replace(/\/+$/, '')}/api/chat`;
+  const model = resolveModel(env);
+  const endpoint = resolveEndpoint(env);
 
   const all: SummarizedMessage[] = [];
   for (let index = 0; index < messages.length; index += MAX_BATCH) {
     const batch = messages.slice(index, index + MAX_BATCH);
     try {
-      const response = await fetchFn(endpoint, {
+      const response = await fetchWithTimeout(fetchFn, endpoint, {
         method: 'POST',
         headers: {
           'content-type': 'application/json',

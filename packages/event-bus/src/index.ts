@@ -97,7 +97,7 @@ function validateEvent<T>(event: unknown): BaseEvent<T> {
     throw new Error('Event must have a non-empty source');
   }
 
-  return candidate as BaseEvent<T>;
+  return candidate as unknown as BaseEvent<T>;
 }
 
 function toErrorMessage(error: unknown): string {

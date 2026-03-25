@@ -4,6 +4,11 @@ import { dirname, join } from 'node:path';
 import type { ImapCredentials } from './events';
 
 const FILE_NAME = 'email-accounts.json';
+const MAX_CREDENTIALS = 25;
+const MAX_HOST_CHARS = 255;
+const MAX_LABEL_CHARS = 80;
+const MAX_USER_CHARS = 254;
+const MAX_PASS_CHARS = 2048;
 
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const home = env.HOME?.trim() || env.USERPROFILE?.trim();
@@ -36,8 +41,40 @@ function getString(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
-  const trimmed = value.trim();
+  const trimmed = value.replace(/[\u0000-\u001F\u007F]/g, ' ').trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function safeHost(value: unknown): string | null {
+  const host = getString(value);
+  if (!host || host.length > MAX_HOST_CHARS || /\s/.test(host)) {
+    return null;
+  }
+  return host;
+}
+
+function safeLabel(value: unknown): string | null {
+  const label = getString(value);
+  if (!label || label.length > MAX_LABEL_CHARS) {
+    return null;
+  }
+  return label;
+}
+
+function safeUser(value: unknown): string | null {
+  const user = getString(value);
+  if (!user || user.length > MAX_USER_CHARS) {
+    return null;
+  }
+  return user;
+}
+
+function safePass(value: unknown): string | null {
+  const pass = getString(value);
+  if (!pass || pass.length > MAX_PASS_CHARS) {
+    return null;
+  }
+  return pass;
 }
 
 function normalizeOne(entry: unknown): ImapCredentials | null {
@@ -45,10 +82,10 @@ function normalizeOne(entry: unknown): ImapCredentials | null {
     return null;
   }
   const candidate = entry as Record<string, unknown>;
-  const host = getString(candidate.host);
-  const user = getString((candidate.auth as Record<string, unknown> | undefined)?.user);
-  const pass = getString((candidate.auth as Record<string, unknown> | undefined)?.pass);
-  const label = getString(candidate.label);
+  const host = safeHost(candidate.host);
+  const user = safeUser((candidate.auth as Record<string, unknown> | undefined)?.user);
+  const pass = safePass((candidate.auth as Record<string, unknown> | undefined)?.pass);
+  const label = safeLabel(candidate.label);
   if (!host || !user || !pass || !label) {
     return null;
   }
@@ -74,9 +111,23 @@ export async function readCredentials(env: NodeJS.ProcessEnv): Promise<ImapCrede
     if (!Array.isArray(parsed)) {
       return [];
     }
-    return parsed
+    const normalized = parsed
       .map((entry) => normalizeOne(entry))
       .filter((entry): entry is ImapCredentials => entry !== null);
+    const seen = new Set<string>();
+    const unique: ImapCredentials[] = [];
+    for (const entry of normalized) {
+      const key = `${entry.label.toLowerCase()}::${entry.host.toLowerCase()}::${entry.auth.user.toLowerCase()}`;
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      unique.push(entry);
+      if (unique.length >= MAX_CREDENTIALS) {
+        break;
+      }
+    }
+    return unique;
   } catch {
     return [];
   }
