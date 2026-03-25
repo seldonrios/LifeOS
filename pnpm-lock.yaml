@@ -94,6 +94,39 @@ importers:
         specifier: ^3.1.1
         version: 3.2.4(@types/node@22.19.15)(jsdom@26.1.0)
 
+  modules/email-summarizer:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../../packages/life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../../packages/module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../../packages/voice-core
+      imapflow:
+        specifier: ^1.0.186
+        version: 1.2.17
+
+  modules/habit-streak:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/life-graph':
+        specifier: workspace:*
+        version: link:../../packages/life-graph
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../../packages/module-loader
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../../packages/voice-core
+
   packages/agent-mesh:
     dependencies:
       '@lifeos/event-bus':
@@ -171,6 +204,9 @@ importers:
       '@lifeos/google-bridge':
         specifier: workspace:*
         version: link:../google-bridge
+      '@lifeos/habit-streak-module':
+        specifier: workspace:*
+        version: link:../../modules/habit-streak
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph

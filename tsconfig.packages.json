@@ -63,6 +63,9 @@
     },
     {
       "path": "./packages/voice-core"
+    },
+    {
+      "path": "./modules/habit-streak"
     }
   ]
 }

@@ -59,6 +59,24 @@
       "resourceHint": "low"
     },
     {
+      "name": "habit-streak",
+      "repo": "lifeos-community/habit-streak",
+      "certified": false,
+      "category": "productivity",
+      "description": "Track daily habits and streaks. Voice check-in. Milestone celebrations.",
+      "tags": ["habit", "streak", "tracking", "daily"],
+      "resourceHint": "low"
+    },
+    {
+      "name": "email-summarizer",
+      "repo": "lifeos-community/email-summarizer",
+      "certified": false,
+      "category": "productivity",
+      "description": "Fetch and summarize unread emails locally via IMAP. No cloud required.",
+      "tags": ["email", "imap", "summarizer", "inbox"],
+      "resourceHint": "medium"
+    },
+    {
       "name": "smart-home",
       "repo": "lifeos-community/smart-home-module",
       "certified": false,

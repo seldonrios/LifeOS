@@ -32,6 +32,7 @@
     "@lifeos/core": "workspace:*",
     "@lifeos/email-summarizer-module": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
+    "@lifeos/habit-streak-module": "workspace:*",
     "@lifeos/google-bridge": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/life-graph": "workspace:*",

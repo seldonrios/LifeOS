@@ -1,0 +1,32 @@
+{
+  "name": "habit-streak",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Track daily habits, preserve streaks, and surface milestone celebrations with local-first graph storage.",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.voice.intent.habit.create",
+      "subscribe:lifeos.voice.intent.habit.checkin",
+      "subscribe:lifeos.voice.intent.habit.status",
+      "publish:lifeos.habit.checkin.recorded",
+      "publish:lifeos.habit.streak.milestone",
+      "publish:lifeos.orchestrator.suggestion"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": [
+    "@lifeos/life-graph",
+    "@lifeos/event-bus",
+    "@lifeos/module-loader",
+    "@lifeos/voice-core"
+  ],
+  "category": "productivity",
+  "tags": ["habit", "streak", "tracking", "daily"]
+}

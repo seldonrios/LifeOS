@@ -60,6 +60,8 @@ Marketplace catalog: `community-modules.json` (root).
 
 Use `packages/calendar-module` as the reference template.
 
+For contributor-friendly community modules, `modules/habit-streak` is the recommended reference implementation: zero external dependencies, no LLM calls, and pure graph-based local logic.
+
 1. Create `packages/<your-module>/` with `package.json`, `tsconfig.json`, and `src/index.ts`.
 2. Implement `LifeOSModule` from `@lifeos/module-loader`.
 3. Subscribe to one or more `eventBus` topics.

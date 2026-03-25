@@ -1,2 +1,7 @@
 #!/usr/bin/env sh
-pnpm lint-staged
+
+if [ "$TRAYCER_GIT_AUTOMATION" = "1" ]; then
+	pnpm lint-staged --no-stash
+else
+	pnpm lint-staged
+fi

@@ -11,6 +11,7 @@ export const optionalModules = [
   'weather',
   'news',
   'email-summarizer',
+  'habit-streak',
   'health',
   'google-bridge',
 ] as const;

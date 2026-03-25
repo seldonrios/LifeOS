@@ -1412,6 +1412,32 @@ test('module enable accepts case-insensitive optional module names', async () =>
   assert.match(stdout.join(''), /Optional module "research" enabled/i);
 });
 
+test('module enable habit-streak succeeds', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-habit-streak-'));
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['module', 'enable', 'habit-streak'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Optional module "habit-streak" enabled/i);
+
+  const listOut: string[] = [];
+  const listExit = await runCli(['module', 'list'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      listOut.push(message);
+    },
+  });
+
+  assert.equal(listExit, 0);
+  assert.match(listOut.join(''), /habit-streak \[optional\].*enabled/i);
+});
+
 test('module enable supports google-bridge sub-features', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-google-bridge-enable-'));
   const stdout: string[] = [];
@@ -1971,4 +1997,154 @@ test('mesh assign rejects capability that target node does not declare', async (
   });
   assert.equal(assignExit, 1);
   assert.match(stderr.join(''), /does not declare capability/i);
+});
+
+test('init command completes successfully with no existing graph', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'lifeos-init-nograph-'));
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const spinnerRecorder = createSpinnerRecorder();
+
+  const exitCode = await runCli(['init'], {
+    env: { HOME: workspaceRoot },
+    cwd: () => workspaceRoot,
+    now: () => new Date('2026-03-25T10:00:00.000Z'),
+    fileExists: () => false,
+    fetchFn: async () =>
+      ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { models: [{ name: 'llama3.1:8b' }] };
+        },
+      }) as Response,
+    selectPrompt: async () => 'llama3.1:8b',
+    confirmPrompt: async () => false,
+    checkboxPrompt: async () => [],
+    inputPrompt: async () => 'Prepare for the quarterly board meeting',
+    interpretGoal: async () => samplePlan(),
+    appendGoalPlan: async () => ({
+      id: 'goal_init_1',
+      createdAt: '2026-03-25T10:00:00.000Z',
+      input: 'Prepare for the quarterly board meeting',
+      plan: samplePlan(),
+    }),
+    setOptionalModuleEnabled: async () => undefined,
+    createSpinner: () => spinnerRecorder.spinner,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+    platform: 'linux',
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /LifeOS is ready/);
+});
+
+test('init command with existing graph exits cleanly when user declines re-init', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['init'], {
+    env: { LIFEOS_GRAPH_PATH: '/repo/life-graph.json' },
+    cwd: () => '/repo',
+    fileExists: () => true,
+    getGraphSummary: async () => sampleSummary(),
+    confirmPrompt: async () => false,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /already have a life graph/);
+});
+
+test('init --force bypasses the existing-graph guard', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'lifeos-init-force-'));
+  const confirmMessages: string[] = [];
+  const spinnerRecorder = createSpinnerRecorder();
+
+  const exitCode = await runCli(['init', '--force'], {
+    env: { HOME: workspaceRoot },
+    cwd: () => workspaceRoot,
+    now: () => new Date('2026-03-25T10:00:00.000Z'),
+    fileExists: () => true,
+    fetchFn: async () =>
+      ({
+        ok: true,
+        status: 200,
+        async json() {
+          return { models: [{ name: 'llama3.1:8b' }] };
+        },
+      }) as Response,
+    confirmPrompt: async ({ message }) => {
+      confirmMessages.push(message);
+      return false;
+    },
+    selectPrompt: async () => 'llama3.1:8b',
+    checkboxPrompt: async () => [],
+    inputPrompt: async () => 'Prepare for the quarterly board meeting',
+    interpretGoal: async () => samplePlan(),
+    appendGoalPlan: async () => ({
+      id: 'goal_init_force_1',
+      createdAt: '2026-03-25T10:00:00.000Z',
+      input: 'Prepare for the quarterly board meeting',
+      plan: samplePlan(),
+    }),
+    setOptionalModuleEnabled: async () => undefined,
+    createSpinner: () => spinnerRecorder.spinner,
+    platform: 'linux',
+  });
+
+  assert.equal(exitCode, 0);
+  assert.ok(
+    !confirmMessages.some((msg) => msg.includes('Re-run setup')),
+    'Guard confirm should not be triggered when --force is set',
+  );
+});
+
+test('init command returns exit code 1 when Ollama is unreachable after retry', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['init'], {
+    env: {},
+    fileExists: () => false,
+    fetchFn: async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:11434');
+    },
+    confirmPrompt: async () => true,
+    stdout: () => undefined,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Ollama is not reachable/i);
+});
+
+test('init --verbose emits [verbose] diagnostics to stderr', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['init', '--verbose'], {
+    env: {},
+    fileExists: () => false,
+    fetchFn: async () => {
+      throw new Error('connect ECONNREFUSED 127.0.0.1:11434');
+    },
+    confirmPrompt: async () => true,
+    stdout: () => undefined,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  const output = stderr.join('');
+  assert.match(output, /\[verbose\] graph_path=/);
+  assert.match(output, /\[verbose\] base_cwd=/);
+  assert.match(output, /\[verbose\] platform=/);
 });

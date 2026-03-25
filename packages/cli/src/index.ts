@@ -52,6 +52,7 @@ import {
   writeCredentials,
   type ImapCredentials,
 } from '@lifeos/email-summarizer-module';
+import { habitStreakModule } from '@lifeos/habit-streak-module';
 import {
   MeshRegistry,
   readMeshState,
@@ -136,6 +137,7 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   weather: weatherModule,
   news: newsModule,
   'email-summarizer': emailSummarizerModule,
+  'habit-streak': habitStreakModule,
   health: null,
   'google-bridge': googleBridgeModule,
 };

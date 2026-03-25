@@ -1,0 +1,22 @@
+{
+  "extends": "../../packages/tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "outDir": "./dist"
+  },
+  "include": ["src/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/event-bus"
+    },
+    {
+      "path": "../../packages/life-graph"
+    },
+    {
+      "path": "../../packages/module-loader"
+    },
+    {
+      "path": "../../packages/voice-core"
+    }
+  ]
+}
