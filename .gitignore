@@ -20,6 +20,7 @@ HARDENING_PASS_SUMMARY.md
 
 # Rust / Tauri build output
 apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/binaries/lifeos-sidecar*
 
 # Test run artifacts
 test-output.txt

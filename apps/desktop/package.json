@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tauri dev",
+    "dev:msvc": "cmd /c scripts\\dev-msvc.cmd",
+    "dev:msvc:tauri-only": "set LIFEOS_SKIP_WEB=1&& cmd /c scripts\\dev-msvc.cmd",
     "dev:before-tauri": "pnpm run sidecar:build && pnpm run dev:web",
     "dev:web": "vite",
     "build": "tauri build",
@@ -12,6 +14,8 @@
     "build:web": "vite build",
     "sidecar:build": "pnpm --dir sidecar build",
     "sidecar:package": "pnpm --dir sidecar build:release",
+    "sidecar:package:msvc": "node ./scripts/package-msvc-sidecar.mjs",
+    "sidecar:package:linux": "node ./scripts/package-linux-sidecar.mjs",
     "typecheck": "tsc --noEmit",
     "test": "pnpm run test:web && pnpm run test:sidecar && pnpm run test:rust",
     "test:web": "vitest run",
@@ -23,7 +27,8 @@
     "@tanstack/react-query": "^5.75.7",
     "@tauri-apps/api": "^2.4.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-force-graph-2d": "^1.29.1"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.4.1",

@@ -1,0 +1,81 @@
+name: Desktop Sidecar Packaging
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - apps/desktop/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+  pull_request:
+    paths:
+      - apps/desktop/**
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+
+jobs:
+  package-linux-sidecar:
+    name: Package Linux Sidecar
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build sidecar source
+        run: pnpm --filter @lifeos/desktop run sidecar:build
+
+      - name: Package Linux sidecar
+        run: pnpm --filter @lifeos/desktop run sidecar:package:linux
+
+      - name: Verify Linux artifact exists
+        run: test -f apps/desktop/src-tauri/binaries/lifeos-sidecar-x86_64-unknown-linux-gnu
+
+  package-windows-sidecar:
+    name: Package Windows Sidecar
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build sidecar source
+        run: pnpm --filter @lifeos/desktop run sidecar:build
+
+      - name: Package Windows sidecar
+        run: pnpm --filter @lifeos/desktop run sidecar:package:msvc
+
+      - name: Verify Windows artifact exists
+        shell: pwsh
+        run: |
+          $artifact = "apps/desktop/src-tauri/binaries/lifeos-sidecar-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $artifact)) {
+            Write-Error "Missing artifact: $artifact"
+            exit 1
+          }

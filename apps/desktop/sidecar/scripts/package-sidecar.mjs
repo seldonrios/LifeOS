@@ -1,7 +1,7 @@
 import { copyFile, mkdir, rm } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import { execSync } from 'node:child_process';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const sidecarRoot = resolve(scriptDir, '..');
@@ -10,22 +10,22 @@ const baseBinaryPath = resolve(binariesDir, 'lifeos-sidecar');
 
 const TARGETS = {
   windows: {
-    pkgTarget: 'node20-win-x64',
+    pkgTarget: 'node18-win-x64',
     tauriTriple: 'x86_64-pc-windows-msvc',
     extension: '.exe',
   },
   linux: {
-    pkgTarget: 'node20-linux-x64',
+    pkgTarget: 'node18-linux-x64',
     tauriTriple: 'x86_64-unknown-linux-gnu',
     extension: '',
   },
   macosX64: {
-    pkgTarget: 'node20-macos-x64',
+    pkgTarget: 'node18-macos-x64',
     tauriTriple: 'x86_64-apple-darwin',
     extension: '',
   },
   macosArm64: {
-    pkgTarget: 'node20-macos-arm64',
+    pkgTarget: 'node18-macos-arm64',
     tauriTriple: 'aarch64-apple-darwin',
     extension: '',
   },
@@ -69,6 +69,27 @@ function buildOutputPath(targetKey) {
   return `${baseBinaryPath}-${target.tauriTriple}${target.extension}`;
 }
 
+function runPkg(outputPath, pkgTarget) {
+  const args = `dist/index.js --target ${pkgTarget} --output "${outputPath}"`;
+
+  try {
+    execSync(`pnpm exec pkg ${args}`, {
+      cwd: sidecarRoot,
+      stdio: 'inherit',
+      shell: true,
+    });
+    return;
+  } catch {
+    // Fall back to on-demand pkg resolution when workspace deps are not fully installed.
+  }
+
+  execSync(`pnpm dlx pkg@5.8.1 ${args}`, {
+    cwd: sidecarRoot,
+    stdio: 'inherit',
+    shell: true,
+  });
+}
+
 async function main() {
   const requestedTargets = resolveRequestedTargetKeys();
   await mkdir(binariesDir, { recursive: true });
@@ -79,22 +100,7 @@ async function main() {
     await rm(outputPath, { force: true });
 
     const target = TARGETS[targetKey];
-    execFileSync(
-      process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm',
-      [
-        'exec',
-        'pkg',
-        'dist/index.js',
-        '--target',
-        target.pkgTarget,
-        '--output',
-        outputPath,
-      ],
-      {
-        cwd: sidecarRoot,
-        stdio: 'inherit',
-      },
-    );
+    runPkg(outputPath, target.pkgTarget);
 
     outputs.push(outputPath);
   }
