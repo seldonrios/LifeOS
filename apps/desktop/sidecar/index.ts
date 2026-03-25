@@ -22,7 +22,8 @@ type RpcCommand =
   | 'module_disable'
   | 'marketplace_list'
   | 'settings_read'
-  | 'settings_write';
+  | 'settings_write'
+  | 'settings_models';
 
 interface RpcRequest {
   id?: string;
@@ -56,6 +57,9 @@ const MAX_ID_LENGTH = 128;
 const MAX_GOAL_LENGTH = 4_000;
 const MAX_MODULE_ID_LENGTH = 128;
 const MAX_MODEL_LENGTH = 64;
+const OLLAMA_TAGS_TIMEOUT_MS = 5_000;
+const MAX_OLLAMA_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_OLLAMA_MODELS = 100;
 
 const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'graph_summary',
@@ -68,6 +72,7 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'marketplace_list',
   'settings_read',
   'settings_write',
+  'settings_models',
 ]);
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -258,6 +263,93 @@ async function writeSettingsFile(update: Partial<DesktopSettings>): Promise<Desk
   return merged;
 }
 
+async function readResponseTextWithinLimit(response: Response, maxBytes: number): Promise<string> {
+  const declaredLength = Number.parseInt(response.headers.get('content-length') ?? '', 10);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new Error(`Response exceeds ${maxBytes} bytes.`);
+  }
+
+  if (!response.body) {
+    return '';
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let totalBytes = 0;
+  let text = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) {
+        break;
+      }
+
+      totalBytes += value.byteLength;
+      if (totalBytes > maxBytes) {
+        throw new Error(`Response exceeds ${maxBytes} bytes.`);
+      }
+
+      text += decoder.decode(value, { stream: true });
+    }
+
+    text += decoder.decode();
+    return text;
+  } finally {
+    reader.releaseLock();
+  }
+}
+
+async function readOllamaModelNames(ollamaHost: string): Promise<string[]> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => {
+    controller.abort();
+  }, OLLAMA_TAGS_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(`${ollamaHost}/api/tags`, {
+      method: 'GET',
+      signal: controller.signal,
+      headers: {
+        accept: 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      return [];
+    }
+
+    const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+    if (!contentType.includes('application/json') && !contentType.includes('+json')) {
+      return [];
+    }
+
+    const responseText = await readResponseTextWithinLimit(response, MAX_OLLAMA_RESPONSE_BYTES);
+    const payload = JSON.parse(responseText) as {
+      models?: Array<{ name?: unknown }>;
+    };
+
+    if (!Array.isArray(payload.models) || payload.models.length > MAX_OLLAMA_MODELS) {
+      return [];
+    }
+
+    return [...new Set(
+      payload.models
+        .map((item) => String(item?.name ?? '').trim())
+        .filter(
+          (name) =>
+            name.length > 0 &&
+            name.length <= MAX_MODEL_LENGTH &&
+            !/[^a-zA-Z0-9._:-]/.test(name),
+        ),
+    )];
+  } catch {
+    return [];
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function executeCommand(request: RpcRequest): Promise<unknown> {
   switch (request.command) {
     case 'graph_summary': {
@@ -415,6 +507,13 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         natsUrl: request.args?.natsUrl as string | undefined,
         voiceEnabled: request.args?.voiceEnabled as boolean | undefined,
       });
+    }
+
+    case 'settings_models': {
+      const settings = await readSettingsFile();
+      return {
+        models: await readOllamaModelNames(settings.ollamaHost),
+      };
     }
 
     default:

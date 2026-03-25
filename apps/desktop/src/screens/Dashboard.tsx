@@ -41,13 +41,14 @@ export function Dashboard(): JSX.Element {
         <h3>TODAY'S BRIEFING</h3>
         {tasks.length === 0 ? (
           <p>
-            {getGreeting()}. Your Life Graph is ready. Use <strong>Goal Builder</strong> to plan
-            your first goal, or say <em>&ldquo;Plan my week&rdquo;</em> to get started.
+            {getGreeting()}. Your workspace is ready. Use <strong>Goal Builder</strong> to create
+            your first plan, or say <em>&ldquo;Plan my week&rdquo;</em> to get a transparent, step-by-step
+            draft.
           </p>
         ) : (
           <p>
-            {getGreeting()}. Top task: <strong>{topTask?.title ?? 'No urgent tasks'}</strong>. Stay
-            focused and keep momentum with your active goals.
+            {getGreeting()}. Top task: <strong>{topTask?.title ?? 'No urgent tasks'}</strong>. Mark
+            tasks done as you go to keep your graph progress accurate and easy to trust.
           </p>
         )}
       </section>
@@ -55,7 +56,7 @@ export function Dashboard(): JSX.Element {
       <section className="card">
         <h3>OPEN TASKS</h3>
         {tasks.length === 0 ? (
-          <p className="muted">No open tasks yet. Generate a goal plan to get started.</p>
+          <p className="muted">No open tasks yet. Generate a goal plan and tasks will appear here.</p>
         ) : null}
         {tasks.map((task) => (
           <div className="task-row" key={task.id}>
@@ -79,7 +80,7 @@ export function Dashboard(): JSX.Element {
       <section className="card">
         <h3>ACTIVE FOCUS</h3>
         {activeGoals.length === 0 ? (
-          <p className="muted">No active goals. Build your first plan in Goal Builder.</p>
+          <p className="muted">No active goals yet. Build your first plan in Goal Builder.</p>
         ) : (
           activeGoals.map((goal) => (
             <div className="task-row" key={goal.id}>
@@ -93,7 +94,7 @@ export function Dashboard(): JSX.Element {
       </section>
 
       <button className="voice-btn" type="button">
-        Talk to LifeOS
+        Talk to LifeOS for a guided walkthrough
       </button>
     </div>
   );

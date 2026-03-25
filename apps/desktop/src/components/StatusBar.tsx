@@ -7,9 +7,10 @@ interface StatusBarProps {
 export function StatusBar({ model, graphSummary, modulesSummary }: StatusBarProps): JSX.Element {
   return (
     <footer className="statusbar">
-      <span>Model: {model}</span>
+      <span>Assistant model: {model}</span>
       <span>{graphSummary}</span>
       <span>{modulesSummary}</span>
+      <span className="muted">Tip: open Settings to change model or endpoints.</span>
     </footer>
   );
 }

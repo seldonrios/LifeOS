@@ -20,6 +20,10 @@ function getTimeGreeting(): string {
   return 'Welcome back';
 }
 
+function isDesktopRuntime(): boolean {
+  return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
 const SCREEN_META: Record<ScreenId, { title: string }> = {
   dashboard: { title: 'Dashboard' },
   graph: { title: 'Life Graph' },
@@ -55,14 +59,28 @@ export function App(): JSX.Element {
   }, [modulesQuery.data]);
 
   const activeModel = settingsQuery.data?.model ?? 'llama3.1:8b';
+  const runtimeMode = isDesktopRuntime() ? 'Desktop runtime' : 'Preview mode';
+  const runtimeHint = isDesktopRuntime()
+    ? 'Connected to your local services and data.'
+    : 'Showing safe preview data until desktop services are available.';
+  const runtimeStatus = graphQuery.isLoading || modulesQuery.isLoading || settingsQuery.isLoading
+    ? 'Syncing workspace data'
+    : 'Workspace data ready';
 
   return (
     <div className="app-shell">
       <Sidebar active={activeScreen} onSelect={setActiveScreen} />
       <div className="main-shell">
         <header className="topbar">
-          <h1>{screenTitle}</h1>
-          <span className="status-pill">Runtime online</span>
+          <div className="topbar-copy">
+            <h1>{screenTitle}</h1>
+            <p className="topbar-subtitle">
+              {runtimeMode}. {runtimeHint}
+            </p>
+          </div>
+          <span className="status-pill" title={runtimeHint}>
+            {runtimeStatus}
+          </span>
         </header>
 
         <main className="screen-area">{renderScreen(activeScreen)}</main>

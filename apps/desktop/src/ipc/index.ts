@@ -4,6 +4,24 @@ export interface GraphSummary {
   totalGoals: number;
   totalPlans: number;
   activeGoals?: Array<{ id: string; title?: string; completedTasks?: number; totalTasks?: number }>;
+  goalLinks?: Array<{
+    source?: string;
+    target?: string;
+    sourceId?: string;
+    targetId?: string;
+    relation?: string;
+    relationship?: string;
+    type?: string;
+  }>;
+  relationships?: Array<{
+    source?: string;
+    target?: string;
+    sourceId?: string;
+    targetId?: string;
+    relation?: string;
+    relationship?: string;
+    type?: string;
+  }>;
   updatedAt?: string;
 }
 
@@ -144,6 +162,10 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     } as T;
   }
 
+  if (command === 'settings_models') {
+    return { models: ['llama3.1:8b', 'qwen3:8b'] } as T;
+  }
+
   throw new Error(`No mock available for command: ${command}`);
 }
 
@@ -185,4 +207,15 @@ export async function readSettings(): Promise<LifeOsSettings> {
 
 export async function writeSettings(next: Partial<LifeOsSettings>): Promise<LifeOsSettings> {
   return invokeOrMock<LifeOsSettings>('settings_write', next);
+}
+
+export async function listOllamaModels(): Promise<string[]> {
+  const result = await invokeOrMock<{ models?: unknown }>('settings_models');
+  if (!result || !Array.isArray(result.models)) {
+    return [];
+  }
+
+  return result.models
+    .map((item) => String(item ?? '').trim())
+    .filter((item) => item.length > 0);
 }

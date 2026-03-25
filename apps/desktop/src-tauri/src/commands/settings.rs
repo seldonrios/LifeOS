@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -135,6 +136,11 @@ pub async fn settings_write(update: SettingsUpdate) -> Result<DesktopSettings, S
 
     persist_settings(&merged)?;
     Ok(merged)
+}
+
+#[tauri::command]
+pub async fn settings_models() -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("settings_models", json!({}))
 }
 
 #[cfg(test)]

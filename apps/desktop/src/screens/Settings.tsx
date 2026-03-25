@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { readSettings, writeSettings } from '../ipc';
+import { listOllamaModels, readSettings, writeSettings } from '../ipc';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 
@@ -8,6 +8,11 @@ export function Settings(): JSX.Element {
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: readSettings,
+  });
+  const modelsQuery = useQuery({
+    queryKey: ['settings', 'models'],
+    queryFn: listOllamaModels,
+    staleTime: 60_000,
   });
 
   const [draftModel, setDraftModel] = useState('llama3.1:8b');
@@ -70,6 +75,12 @@ export function Settings(): JSX.Element {
     return <ErrorBanner message="Unable to load settings." />;
   }
 
+  const liveModels = modelsQuery.data ?? [];
+  const hasLiveModels = liveModels.length > 0;
+  const currentModelMissing = hasLiveModels && !liveModels.includes(current.model);
+  const modelSelectValue = modelsQuery.isLoading ? '__loading__' : hasLiveModels ? draftModel : '__unreachable__';
+  const modelSelectDisabled = modelsQuery.isLoading || !hasLiveModels;
+
   return (
     <div className="settings-layout">
       <section className="settings-section">
@@ -77,14 +88,33 @@ export function Settings(): JSX.Element {
         <label htmlFor="settings-model">Model</label>
         <select
           id="settings-model"
-          value={draftModel}
+          value={modelSelectValue}
+          disabled={modelSelectDisabled}
           onChange={(event) => {
             setDraftModel(event.target.value);
             setHasUnsavedChanges(true);
           }}
         >
-          <option value="llama3.1:8b">llama3.1:8b</option>
-          <option value="mistral:7b">mistral:7b</option>
+          {modelsQuery.isLoading ? (
+            <option value="__loading__" disabled>
+              Loading models...
+            </option>
+          ) : hasLiveModels ? (
+            <>
+              {currentModelMissing ? (
+                <option value={current.model}>{`⚠️ ${current.model} (saved, not installed)`}</option>
+              ) : null}
+              {liveModels.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
+            </>
+          ) : (
+            <option value="__unreachable__" disabled>
+              Ollama not reachable - check host
+            </option>
+          )}
         </select>
 
         <label htmlFor="settings-host">Ollama host</label>

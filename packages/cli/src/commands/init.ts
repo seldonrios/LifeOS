@@ -53,6 +53,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   research: 'Research assistant with local memory',
   weather: 'Offline-first weather snapshots',
   news: 'RSS-powered daily digest',
+  'habit-streak': 'Daily habit tracking and streak milestones',
   health: 'Health metric tracking',
   'email-summarizer': 'AI-summarized email digest (IMAP)',
   'google-bridge': 'Google Calendar & Gmail integration',

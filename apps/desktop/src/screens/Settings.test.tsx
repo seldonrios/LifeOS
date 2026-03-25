@@ -8,6 +8,7 @@ import * as ipc from '../ipc';
 vi.mock('../ipc', () => ({
   readSettings: vi.fn(),
   writeSettings: vi.fn(),
+  listOllamaModels: vi.fn(),
 }));
 
 function renderWithQueryClient(): void {
@@ -34,6 +35,7 @@ describe('Settings', () => {
       natsUrl: 'nats://127.0.0.1:4222',
       voiceEnabled: true,
     });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'mistral:7b']);
 
     renderWithQueryClient();
 
@@ -51,6 +53,7 @@ describe('Settings', () => {
       natsUrl: 'nats://127.0.0.1:4222',
       voiceEnabled: true,
     });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'mistral:7b']);
     vi.mocked(ipc.writeSettings).mockResolvedValue({
       model: 'mistral:7b',
       ollamaHost: 'http://localhost:11434',
@@ -90,6 +93,7 @@ describe('Settings', () => {
       natsUrl: 'nats://127.0.0.1:4222',
       voiceEnabled: true,
     });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b']);
 
     renderWithQueryClient();
 
@@ -101,5 +105,37 @@ describe('Settings', () => {
     await waitFor(() => {
       expect(hostInput.value).toBe('http://127.0.0.1:11434');
     });
+  });
+
+  it('disables model selection when Ollama models cannot be loaded', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue({
+      model: 'llama3.1:8b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue([]);
+
+    renderWithQueryClient();
+
+    const modelSelect = (await screen.findByLabelText('Model')) as HTMLSelectElement;
+    expect(modelSelect).toBeDisabled();
+    expect(await screen.findByRole('option', { name: 'Ollama not reachable - check host' })).toBeInTheDocument();
+  });
+
+  it('shows stale saved model when not present in live Ollama list', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue({
+      model: 'gemma3:12b',
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+    });
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'qwen3:8b']);
+
+    renderWithQueryClient();
+
+    expect(await screen.findByRole('option', { name: '⚠️ gemma3:12b (saved, not installed)' })).toBeInTheDocument();
+    const modelSelect = (await screen.findByLabelText('Model')) as HTMLSelectElement;
+    expect(modelSelect.value).toBe('gemma3:12b');
   });
 });

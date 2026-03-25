@@ -114,7 +114,10 @@ test('init retries Ollama detection, saves config, enables modules, and runs fir
     { moduleId: 'research', enabled: true },
     { moduleId: 'weather', enabled: false },
     { moduleId: 'news', enabled: true },
+    { moduleId: 'email-summarizer', enabled: false },
+    { moduleId: 'habit-streak', enabled: false },
     { moduleId: 'health', enabled: false },
+    { moduleId: 'google-bridge', enabled: false },
   ]);
   assert.match(stdout.join(''), /Welcome to LifeOS/);
   assert.match(stdout.join(''), /LifeOS is ready\./);

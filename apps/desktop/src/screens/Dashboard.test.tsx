@@ -8,6 +8,7 @@ import * as ipc from '../ipc';
 vi.mock('../ipc', () => ({
   listTasks: vi.fn(),
   completeTask: vi.fn(),
+  getGraphSummary: vi.fn(),
 }));
 
 function renderWithQueryClient(): void {
@@ -32,11 +33,12 @@ describe('Dashboard', () => {
       { id: 'task-1', title: 'Prepare board slides', dueDate: 'Fri' },
       { id: 'task-2', title: 'Review Q1 budget', dueDate: 'Overdue' },
     ]);
+    vi.mocked(ipc.getGraphSummary).mockResolvedValue({ totalGoals: 0, totalPlans: 0, activeGoals: [] });
 
     renderWithQueryClient();
 
     expect(await screen.findByText("TODAY'S BRIEFING")).toBeInTheDocument();
-    expect(await screen.findByText('Prepare board slides')).toBeInTheDocument();
+    expect((await screen.findAllByText('Prepare board slides')).length).toBeGreaterThanOrEqual(1);
     expect(await screen.findByText('Review Q1 budget')).toBeInTheDocument();
   });
 
@@ -45,10 +47,11 @@ describe('Dashboard', () => {
       { id: 'task-1', title: 'Prepare board slides', dueDate: 'Fri' },
     ]);
     vi.mocked(ipc.completeTask).mockResolvedValue({ result: { taskId: 'task-1' } });
+    vi.mocked(ipc.getGraphSummary).mockResolvedValue({ totalGoals: 0, totalPlans: 0, activeGoals: [] });
 
     renderWithQueryClient();
 
-    const doneButton = await screen.findByRole('button', { name: 'Fri' });
+    const doneButton = (await screen.findAllByRole('button', { name: 'Mark done' }))[0];
     fireEvent.click(doneButton);
 
     await waitFor(() => {
