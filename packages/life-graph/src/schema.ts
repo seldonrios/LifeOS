@@ -81,6 +81,40 @@ export const NewsDigestSchema = z
   })
   .strict();
 
+export const EmailDigestSchema = z
+  .object({
+    id: z.string().uuid(),
+    subject: z.string().trim().min(1),
+    from: z.string().trim().min(1),
+    summary: z.string().trim().min(1),
+    messageId: z.string().trim().min(1),
+    receivedAt: IsoDateTimeSchema,
+    read: z.boolean().default(false),
+    accountLabel: z.string().trim().min(1),
+  })
+  .strict();
+
+export const HealthMetricEntrySchema = z
+  .object({
+    id: z.string().trim().min(1),
+    metric: z.string().trim().min(1),
+    value: z.number().finite(),
+    unit: z.string().trim().min(1),
+    note: z.string().trim().min(1).optional(),
+    loggedAt: IsoDateTimeSchema,
+  })
+  .strict();
+
+export const HealthDailyStreakSchema = z
+  .object({
+    id: z.string().trim().min(1),
+    metric: z.string().trim().min(1),
+    currentStreak: z.number().int().min(0),
+    longestStreak: z.number().int().min(0),
+    lastLoggedDate: DateOnlySchema,
+  })
+  .strict();
+
 export const MemoryEntrySchema = z
   .object({
     id: z.string().uuid(),
@@ -118,6 +152,9 @@ export const LifeGraphDocumentSchema = z
     researchResults: z.array(ResearchResultSchema).default([]),
     weatherSnapshots: z.array(WeatherSnapshotSchema).default([]),
     newsDigests: z.array(NewsDigestSchema).default([]),
+    emailDigests: z.array(EmailDigestSchema).default([]),
+    healthMetricEntries: z.array(HealthMetricEntrySchema).default([]),
+    healthDailyStreaks: z.array(HealthDailyStreakSchema).default([]),
     memory: z.array(MemoryEntrySchema).default([]),
   })
   .strict();

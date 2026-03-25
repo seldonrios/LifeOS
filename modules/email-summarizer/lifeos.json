@@ -1,0 +1,24 @@
+{
+  "name": "email-summarizer",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Fetch and summarize unread emails locally via IMAP. No cloud required.",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": ["imap"],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.voice.intent.email.summarize",
+      "subscribe:lifeos.voice.intent.briefing",
+      "publish:lifeos.email.digest.ready",
+      "publish:lifeos.orchestrator.suggestion"
+    ]
+  },
+  "resources": {
+    "cpu": "medium",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus", "@lifeos/voice-core"],
+  "category": "productivity",
+  "tags": ["email", "imap", "summarizer", "inbox"]
+}

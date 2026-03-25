@@ -233,6 +233,57 @@ test('news intent publishes dedicated news topic', async () => {
   ]);
 });
 
+test('email summarize intent publishes dedicated email topic', async () => {
+  const publishCalls: string[] = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic) => {
+      publishCalls.push(topic);
+    },
+    classifyIntent: async () => ({
+      intent: 'email_summarize',
+      payload: { account: 'work', limit: 5 },
+    }),
+  });
+
+  const outcome = await router.handleCommand('summarize my work inbox');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(publishCalls, [
+    Topics.lifeos.voiceIntentEmailSummarize,
+    Topics.agent.workRequested,
+    Topics.lifeos.voiceCommandProcessed,
+  ]);
+});
+
+test('email summarize intent without explicit account omits account from payload', async () => {
+  const publishedData: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishedData.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'email_summarize',
+      payload: { limit: 10 },
+    }),
+  });
+
+  const outcome = await router.handleCommand('summarize my inbox');
+  assert.equal(outcome.handled, true);
+  const emailPayload = publishedData.find(
+    (entry) => entry.topic === 'lifeos.voice.intent.email.summarize',
+  );
+  assert.ok(emailPayload, 'email payload published');
+  assert.equal(
+    emailPayload?.data.account,
+    undefined,
+    'account should be undefined when not provided',
+  );
+  assert.equal(emailPayload?.data.limit, 10, 'limit should be preserved');
+  assert.ok(emailPayload?.data.utterance, 'utterance should be present');
+  assert.ok(emailPayload?.data.requestedAt, 'requestedAt should be present');
+});
 test('briefing intent publishes dedicated briefing topic', async () => {
   const publishCalls: string[] = [];
   const router = new IntentRouter({
@@ -254,6 +305,114 @@ test('briefing intent publishes dedicated briefing topic', async () => {
     Topics.agent.workRequested,
     Topics.lifeos.voiceCommandProcessed,
   ]);
+});
+
+test('health log intent publishes dedicated health log topic', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'health_log' as never,
+      payload: { metric: 'steps', value: 8200, unit: 'count' },
+    }),
+  });
+
+  const outcome = await router.handleCommand('log 8200 steps');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentHealthLog, Topics.lifeos.voiceCommandProcessed],
+  );
+  assert.equal(publishCalls[0]?.data.metric, 'steps');
+  assert.equal(publishCalls[0]?.data.value, 8200);
+});
+
+test('health query intent publishes dedicated health query topic', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => ({
+      intent: 'health_query' as never,
+      payload: { metric: 'sleep', period: 14 },
+    }),
+  });
+
+  const outcome = await router.handleCommand('show sleep in the last 14 days');
+  assert.equal(outcome.handled, true);
+  assert.equal(outcome.action, 'agent_work_requested');
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentHealthQuery, Topics.lifeos.voiceCommandProcessed],
+  );
+  assert.equal(publishCalls[0]?.data.metric, 'sleep');
+  assert.equal(publishCalls[0]?.data.period, 14);
+});
+
+test('health log fallback detects numeric sleep pattern when classifier unavailable', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('I slept 7.5 hours');
+  assert.equal(outcome.handled, true);
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentHealthLog, Topics.lifeos.voiceCommandProcessed],
+  );
+});
+
+test('health log fallback detects numeric weight pattern when classifier unavailable', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('weight 72 kg');
+  assert.equal(outcome.handled, true);
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentHealthLog, Topics.lifeos.voiceCommandProcessed],
+  );
+});
+
+test('health log fallback detects numeric heart rate pattern when classifier unavailable', async () => {
+  const publishCalls: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const router = new IntentRouter({
+    client: {} as never,
+    publish: async (topic, data) => {
+      publishCalls.push({ topic, data });
+    },
+    classifyIntent: async () => {
+      throw new Error('classifier unavailable');
+    },
+  });
+
+  const outcome = await router.handleCommand('heart rate 65 bpm');
+  assert.equal(outcome.handled, true);
+  assert.deepEqual(
+    publishCalls.map((entry) => entry.topic),
+    [Topics.lifeos.voiceIntentHealthLog, Topics.lifeos.voiceCommandProcessed],
+  );
 });
 
 test('preference intent publishes dedicated preference topic', async () => {

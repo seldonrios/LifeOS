@@ -14,6 +14,9 @@ import type {
   LifeGraphMemoryEntry,
   LifeGraphMemorySearchOptions,
   LifeGraphMemorySearchResult,
+  LifeGraphEmailDigest,
+  LifeGraphHealthDailyStreak,
+  LifeGraphHealthMetricEntry,
   LifeGraphUpdate,
   LifeGraphNewsDigest,
   LifeGraphNote,
@@ -97,6 +100,9 @@ const MAX_NOTES = 4000;
 const MAX_RESEARCH_RESULTS = 1500;
 const MAX_WEATHER_SNAPSHOTS = 500;
 const MAX_NEWS_DIGESTS = 1200;
+const MAX_EMAIL_DIGESTS = 2500;
+const MAX_HEALTH_METRIC_ENTRIES = 20_000;
+const MAX_HEALTH_DAILY_STREAKS = 2000;
 const MAX_MEMORY_ENTRIES = 10_000;
 const MAX_MEMORY_CONTENT_CHARS = 6000;
 const MAX_MEMORY_RELATED = 24;
@@ -120,6 +126,11 @@ const MAX_NEWS_TITLE_CHARS = 220;
 const MAX_NEWS_SUMMARY_CHARS = 5000;
 const MAX_NEWS_SOURCES = 20;
 const MAX_NEWS_SOURCE_CHARS = 240;
+const MAX_EMAIL_SUBJECT_CHARS = 240;
+const MAX_EMAIL_FROM_CHARS = 240;
+const MAX_EMAIL_SUMMARY_CHARS = 5000;
+const MAX_EMAIL_MESSAGE_ID_CHARS = 320;
+const MAX_EMAIL_ACCOUNT_LABEL_CHARS = 80;
 const MAX_NOTE_SEARCH_RESULTS = 50;
 
 function getString(value: unknown): string | null {
@@ -203,6 +214,20 @@ function parseLimit(params: QueryParams): number | null {
 
 function parsePlanId(params: QueryParams): string | null {
   return getString(params?.planId);
+}
+
+function parseMetricFilter(params: QueryParams): string | null {
+  const metric = getString(params?.metric);
+  return metric ? metric.toLowerCase().replace(/\s+/g, '_') : null;
+}
+
+function parseSinceDays(params: QueryParams): number | null {
+  const sinceDays = getOptionalNumber(params?.sinceDays ?? params?.period);
+  if (sinceDays === null) {
+    return null;
+  }
+  const normalized = Math.trunc(sinceDays);
+  return normalized > 0 ? normalized : null;
 }
 
 function parsePositiveInteger(value: unknown): number | null {
@@ -390,6 +415,72 @@ function normalizeNewsInput(
     summary: normalizeStringField(digest.summary, 'No summary available.', MAX_NEWS_SUMMARY_CHARS),
     sources: sources.length > 0 ? sources : ['local-cache'],
     read: typeof digest.read === 'boolean' ? digest.read : false,
+  };
+}
+
+function normalizeEmailDigestInput(
+  digest:
+    | (Omit<LifeGraphEmailDigest, 'id'> & Partial<Pick<LifeGraphEmailDigest, 'id'>>)
+    | LifeGraphEmailDigest,
+  nowIso: string,
+): LifeGraphEmailDigest {
+  return {
+    id: getString(digest.id) ?? randomUUID(),
+    subject: normalizeStringField(digest.subject, 'Email digest', MAX_EMAIL_SUBJECT_CHARS),
+    from: normalizeStringField(digest.from, 'Unknown sender', MAX_EMAIL_FROM_CHARS),
+    summary: normalizeStringField(digest.summary, 'No summary available.', MAX_EMAIL_SUMMARY_CHARS),
+    messageId: normalizeStringField(digest.messageId, randomUUID(), MAX_EMAIL_MESSAGE_ID_CHARS),
+    receivedAt: normalizeIsoTimestamp(digest.receivedAt, nowIso),
+    read: typeof digest.read === 'boolean' ? digest.read : false,
+    accountLabel: normalizeStringField(
+      digest.accountLabel,
+      'default',
+      MAX_EMAIL_ACCOUNT_LABEL_CHARS,
+    ),
+  };
+}
+
+function normalizeDateOnly(value: unknown, fallbackIso: string): string {
+  const candidate = getString(value);
+  if (candidate && /^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
+    return candidate;
+  }
+  return fallbackIso.slice(0, 10);
+}
+
+function normalizeHealthMetricInput(
+  entry: Record<string, unknown>,
+  nowIso: string,
+): LifeGraphHealthMetricEntry {
+  return {
+    id: getString(entry.id) ?? getString(entry.entryId) ?? randomUUID(),
+    metric: normalizeStringField(entry.metric, 'metric', 80).toLowerCase().replace(/\s+/g, '_'),
+    value: getOptionalNumber(entry.value) ?? 0,
+    unit: normalizeStringField(entry.unit, 'count', 40).toLowerCase().replace(/\s+/g, '_'),
+    ...(getString(entry.note) ? { note: clampText(getString(entry.note) ?? '', 300) } : {}),
+    loggedAt: normalizeIsoTimestamp(entry.loggedAt, nowIso),
+  };
+}
+
+function normalizeHealthDailyStreakInput(
+  streak: Record<string, unknown>,
+  nowIso: string,
+): LifeGraphHealthDailyStreak {
+  const currentStreak = Math.max(0, Math.trunc(getOptionalNumber(streak.currentStreak) ?? 0));
+  const longestStreak = Math.max(
+    currentStreak,
+    Math.max(0, Math.trunc(getOptionalNumber(streak.longestStreak) ?? currentStreak)),
+  );
+  return {
+    id:
+      getString(streak.id) ??
+      `health_streak_${normalizeStringField(streak.metric, 'metric', 80)
+        .toLowerCase()
+        .replace(/\s+/g, '_')}`,
+    metric: normalizeStringField(streak.metric, 'metric', 80).toLowerCase().replace(/\s+/g, '_'),
+    currentStreak,
+    longestStreak,
+    lastLoggedDate: normalizeDateOnly(streak.lastLoggedDate ?? streak.date, nowIso),
   };
 }
 
@@ -804,6 +895,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           researchResults: graph.researchResults ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
           newsDigests: graph.newsDigests ?? [],
+          emailDigests: graph.emailDigests ?? [],
           memory: graph.memory ?? [],
         },
         resolvedGraphPath,
@@ -827,6 +919,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
           newsDigests: graph.newsDigests ?? [],
+          emailDigests: graph.emailDigests ?? [],
           memory: graph.memory ?? [],
         },
         resolvedGraphPath,
@@ -866,6 +959,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           researchResults: graph.researchResults ?? [],
           newsDigests: graph.newsDigests ?? [],
+          emailDigests: graph.emailDigests ?? [],
           memory: graph.memory ?? [],
         },
         resolvedGraphPath,
@@ -898,6 +992,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           notes: graph.notes ?? [],
           researchResults: graph.researchResults ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
+          emailDigests: graph.emailDigests ?? [],
           memory: graph.memory ?? [],
         },
         resolvedGraphPath,
@@ -914,6 +1009,28 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           topicQuery ? `${entry.title} ${entry.summary}`.toLowerCase().includes(topicQuery) : true,
         );
       return matches[0] ?? null;
+    },
+
+    async appendEmailDigest(digest) {
+      const nowIso = new Date().toISOString();
+      const graph = await manager.load(resolvedGraphPath);
+      const normalized = normalizeEmailDigestInput(digest, nowIso);
+      const emailDigests = [...(graph.emailDigests ?? []), normalized].slice(-MAX_EMAIL_DIGESTS);
+      await manager.save(
+        {
+          ...graph,
+          updatedAt: nowIso,
+          emailDigests,
+          calendarEvents: graph.calendarEvents ?? [],
+          notes: graph.notes ?? [],
+          researchResults: graph.researchResults ?? [],
+          weatherSnapshots: graph.weatherSnapshots ?? [],
+          newsDigests: graph.newsDigests ?? [],
+          memory: graph.memory ?? [],
+        },
+        resolvedGraphPath,
+      );
+      return normalized;
     },
 
     async searchNotes(query, options: LifeGraphNoteSearchOptions = {}) {
@@ -952,6 +1069,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           researchResults: graph.researchResults ?? [],
           weatherSnapshots: graph.weatherSnapshots ?? [],
           newsDigests: graph.newsDigests ?? [],
+          emailDigests: graph.emailDigests ?? [],
         },
         resolvedGraphPath,
       );
@@ -1014,6 +1132,9 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       let researchResults = [...(graph.researchResults ?? [])];
       let weatherSnapshots = [...(graph.weatherSnapshots ?? [])];
       let newsDigests = [...(graph.newsDigests ?? [])];
+      let emailDigests = [...(graph.emailDigests ?? [])];
+      let healthMetricEntries = [...(graph.healthMetricEntries ?? [])];
+      let healthDailyStreaks = [...(graph.healthDailyStreaks ?? [])];
       let memory = [...(graph.memory ?? [])];
 
       const incomingPlanRecords = toArrayOfRecords(payload.goals ?? payload.plans);
@@ -1098,6 +1219,45 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       newsDigests = mergedNews.items.slice(-MAX_NEWS_DIGESTS);
       conflicts.push(...mergedNews.conflicts);
 
+      const incomingEmail = toArrayOfRecords(payload.emailDigests).map((entry) =>
+        normalizeEmailDigestInput(entry as unknown as LifeGraphEmailDigest, nowIso),
+      );
+      const mergedEmail = mergeByIdLastWriteWins(
+        emailDigests,
+        incomingEmail,
+        'emailDigests',
+        (item) => parseIsoOrZero(item.receivedAt),
+        (item) => item.receivedAt,
+      );
+      emailDigests = mergedEmail.items.slice(-MAX_EMAIL_DIGESTS);
+      conflicts.push(...mergedEmail.conflicts);
+
+      const incomingHealthMetrics = toArrayOfRecords(payload.healthMetricEntries).map((entry) =>
+        normalizeHealthMetricInput(entry, nowIso),
+      );
+      const mergedHealthMetrics = mergeByIdLastWriteWins(
+        healthMetricEntries,
+        incomingHealthMetrics,
+        'healthMetricEntries',
+        (item) => parseIsoOrZero(item.loggedAt),
+        (item) => item.loggedAt,
+      );
+      healthMetricEntries = mergedHealthMetrics.items.slice(-MAX_HEALTH_METRIC_ENTRIES);
+      conflicts.push(...mergedHealthMetrics.conflicts);
+
+      const incomingHealthStreaks = toArrayOfRecords(payload.healthDailyStreaks).map((entry) =>
+        normalizeHealthDailyStreakInput(entry, nowIso),
+      );
+      const mergedHealthStreaks = mergeByIdLastWriteWins(
+        healthDailyStreaks,
+        incomingHealthStreaks,
+        'healthDailyStreaks',
+        (item) => parseIsoOrZero(`${item.lastLoggedDate}T00:00:00.000Z`),
+        (item) => `${item.lastLoggedDate}T00:00:00.000Z`,
+      );
+      healthDailyStreaks = mergedHealthStreaks.items.slice(-MAX_HEALTH_DAILY_STREAKS);
+      conflicts.push(...mergedHealthStreaks.conflicts);
+
       const incomingMemory = toArrayOfRecords(payload.memory).map((entry) =>
         normalizeMemoryInput(entry as unknown as LifeGraphMemoryEntry, nowIso, {
           forceLocalEmbedding: true,
@@ -1180,6 +1340,33 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           );
           newsDigests = singleNewsMerge.items.slice(-MAX_NEWS_DIGESTS);
           conflicts.push(...singleNewsMerge.conflicts);
+        } else if (
+          eventType === 'lifeos.health.metric.logged' ||
+          eventType === 'lifeos.voice.intent.health.log'
+        ) {
+          const singleHealthMetricMerge = mergeByIdLastWriteWins(
+            healthMetricEntries,
+            [normalizeHealthMetricInput(eventData, nowIso)],
+            'healthMetricEntries',
+            (item) => parseIsoOrZero(item.loggedAt),
+            (item) => item.loggedAt,
+          );
+          healthMetricEntries = singleHealthMetricMerge.items.slice(-MAX_HEALTH_METRIC_ENTRIES);
+          conflicts.push(...singleHealthMetricMerge.conflicts);
+        } else if (eventType === 'lifeos.health.streak.updated') {
+          const singleHealthStreakMerge = mergeByIdLastWriteWins(
+            healthDailyStreaks,
+            [normalizeHealthDailyStreakInput(eventData, nowIso)],
+            'healthDailyStreaks',
+            (item) => parseIsoOrZero(`${item.lastLoggedDate}T00:00:00.000Z`),
+            (item) => `${item.lastLoggedDate}T00:00:00.000Z`,
+          );
+          healthDailyStreaks = singleHealthStreakMerge.items.slice(-MAX_HEALTH_DAILY_STREAKS);
+          conflicts.push(...singleHealthStreakMerge.conflicts);
+        } else if (eventType === 'lifeos.email.digest.ready') {
+          // Metadata-only notification event: {count, accountLabel, digestIds, summarizedAt}
+          // Email digests are already persisted by email-summarizer module via persistEmailDigests().
+          // Skip node creation for this event type to avoid malformed digest records.
         }
       }
 
@@ -1193,6 +1380,9 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           researchResults,
           weatherSnapshots,
           newsDigests,
+          emailDigests,
+          healthMetricEntries,
+          healthDailyStreaks,
           memory,
         },
         resolvedGraphPath,
@@ -1236,6 +1426,34 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         return applyLimit(tasks, limit) as T[];
       }
 
+      if (normalizedQuery === 'health.metricentry') {
+        const metric = parseMetricFilter(params);
+        const sinceDays = parseSinceDays(params);
+        const thresholdMs =
+          sinceDays === null
+            ? Number.NEGATIVE_INFINITY
+            : Date.now() - sinceDays * 24 * 60 * 60 * 1000;
+        const filtered = [...(graph.healthMetricEntries ?? [])]
+          .filter((entry) => (metric ? entry.metric === metric : true))
+          .filter((entry) => parseIsoOrZero(entry.loggedAt) >= thresholdMs)
+          .sort((left, right) => parseIsoOrZero(right.loggedAt) - parseIsoOrZero(left.loggedAt));
+        const limit = parseLimit(params);
+        return applyLimit(filtered, limit) as T[];
+      }
+
+      if (normalizedQuery === 'health.dailystreak') {
+        const metric = parseMetricFilter(params);
+        const filtered = [...(graph.healthDailyStreaks ?? [])]
+          .filter((entry) => (metric ? entry.metric === metric : true))
+          .sort(
+            (left, right) =>
+              parseIsoOrZero(`${right.lastLoggedDate}T00:00:00.000Z`) -
+              parseIsoOrZero(`${left.lastLoggedDate}T00:00:00.000Z`),
+          );
+        const limit = parseLimit(params);
+        return applyLimit(filtered, limit) as T[];
+      }
+
       throw new UnsupportedQueryError(query);
     },
 
@@ -1266,41 +1484,77 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
 
     async createNode<T extends Record<string, unknown>>(label: string, data: T): Promise<string> {
       const normalizedLabel = normalizeLabel(label);
-      if (normalizedLabel !== 'plan') {
-        throw new UnsupportedLabelError(label);
-      }
-
-      const input = toPlanCreateInput(data);
-      const appendInput: {
-        input: string;
-        plan: {
-          title: string;
-          description: string;
-          deadline: string | null;
-          tasks: unknown[];
+      if (normalizedLabel === 'plan') {
+        const input = toPlanCreateInput(data);
+        const appendInput: {
+          input: string;
+          plan: {
+            title: string;
+            description: string;
+            deadline: string | null;
+            tasks: unknown[];
+          };
+          id?: string;
+          createdAt?: string;
+        } = {
+          input: input.title,
+          plan: {
+            title: input.title,
+            description: input.description,
+            deadline: input.deadline ?? null,
+            tasks: input.tasks ?? [],
+          },
         };
-        id?: string;
-        createdAt?: string;
-      } = {
-        input: input.title,
-        plan: {
-          title: input.title,
-          description: input.description,
-          deadline: input.deadline ?? null,
-          tasks: input.tasks ?? [],
-        },
-      };
 
-      if (input.id) {
-        appendInput.id = input.id;
-      }
-      if (input.createdAt) {
-        appendInput.createdAt = input.createdAt;
+        if (input.id) {
+          appendInput.id = input.id;
+        }
+        if (input.createdAt) {
+          appendInput.createdAt = input.createdAt;
+        }
+
+        const { record } = await manager.appendPlan(appendInput, resolvedGraphPath);
+        return record.id;
       }
 
-      const { record } = await manager.appendPlan(appendInput, resolvedGraphPath);
+      if (normalizedLabel === 'health.metricentry') {
+        const nowIso = new Date().toISOString();
+        const graph = await manager.load(resolvedGraphPath);
+        const normalized = normalizeHealthMetricInput(data, nowIso);
+        const healthMetricEntries = [...(graph.healthMetricEntries ?? []), normalized].slice(
+          -MAX_HEALTH_METRIC_ENTRIES,
+        );
+        await manager.save(
+          {
+            ...graph,
+            updatedAt: nowIso,
+            healthMetricEntries,
+          },
+          resolvedGraphPath,
+        );
+        return normalized.id;
+      }
 
-      return record.id;
+      if (normalizedLabel === 'health.dailystreak') {
+        const nowIso = new Date().toISOString();
+        const graph = await manager.load(resolvedGraphPath);
+        const normalized = normalizeHealthDailyStreakInput(data, nowIso);
+        const withoutCurrent = (graph.healthDailyStreaks ?? []).filter(
+          (entry) => entry.id !== normalized.id,
+        );
+        const healthDailyStreaks = [...withoutCurrent, normalized].slice(-MAX_HEALTH_DAILY_STREAKS);
+        await manager.save(
+          {
+            ...graph,
+            updatedAt: nowIso,
+            healthDailyStreaks,
+          },
+          resolvedGraphPath,
+        );
+        return normalized.id;
+      }
+
+      throw new UnsupportedLabelError(label);
     },
 
     async createRelationship(): Promise<void> {

@@ -154,6 +154,9 @@ export interface LifeGraphClient {
       Partial<Pick<LifeGraphNewsDigest, 'id' | 'read'>>,
   ): Promise<LifeGraphNewsDigest>;
   getLatestNewsDigest(topic?: string): Promise<LifeGraphNewsDigest | null>;
+  appendEmailDigest(
+    digest: Omit<LifeGraphEmailDigest, 'id'> & Partial<Pick<LifeGraphEmailDigest, 'id'>>,
+  ): Promise<LifeGraphEmailDigest>;
   searchNotes(query: string, options?: LifeGraphNoteSearchOptions): Promise<LifeGraphNote[]>;
   appendMemoryEntry(
     entry: Omit<LifeGraphMemoryEntry, 'id' | 'timestamp' | 'embedding'> &
@@ -239,6 +242,34 @@ export interface LifeGraphNewsDigest {
   read: boolean;
 }
 
+export interface LifeGraphEmailDigest {
+  id: string;
+  subject: string;
+  from: string;
+  summary: string;
+  messageId: string;
+  receivedAt: string;
+  read: boolean;
+  accountLabel: string;
+}
+
+export interface LifeGraphHealthMetricEntry {
+  id: string;
+  metric: string;
+  value: number;
+  unit: string;
+  note?: string;
+  loggedAt: string;
+}
+
+export interface LifeGraphHealthDailyStreak {
+  id: string;
+  metric: string;
+  currentStreak: number;
+  longestStreak: number;
+  lastLoggedDate: string;
+}
+
 export interface LifeGraphNoteSearchOptions {
   sinceDays?: number;
   limit?: number;
@@ -285,6 +316,9 @@ export interface LifeGraphMergeConflict {
     | 'researchResults'
     | 'weatherSnapshots'
     | 'newsDigests'
+    | 'emailDigests'
+    | 'healthMetricEntries'
+    | 'healthDailyStreaks'
     | 'memory';
   id: string;
   reason: 'incoming_older' | 'incoming_invalid';
@@ -331,6 +365,9 @@ export interface LifeGraphDocument {
   researchResults?: LifeGraphResearchResult[];
   weatherSnapshots?: LifeGraphWeatherSnapshot[];
   newsDigests?: LifeGraphNewsDigest[];
+  emailDigests?: LifeGraphEmailDigest[];
+  healthMetricEntries?: LifeGraphHealthMetricEntry[];
+  healthDailyStreaks?: LifeGraphHealthDailyStreak[];
   memory?: LifeGraphMemoryEntry[];
 }
 

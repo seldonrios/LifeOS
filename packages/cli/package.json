@@ -25,11 +25,12 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -b",
-    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts"
+    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/commands/init.test.ts"
   },
   "dependencies": {
     "@lifeos/calendar-module": "workspace:*",
     "@lifeos/core": "workspace:*",
+    "@lifeos/email-summarizer-module": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/google-bridge": "workspace:*",
     "@lifeos/goal-engine": "workspace:*",
@@ -45,10 +46,12 @@
     "@lifeos/sync-core": "workspace:*",
     "@lifeos/voice-core": "workspace:*",
     "@lifeos/weather-module": "workspace:*",
+    "@inquirer/prompts": "^7.8.6",
     "boxen": "^8.0.1",
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.1",
+    "inquirer": "^12.10.0",
     "ora": "^8.2.0"
   }
 }

@@ -3,11 +3,7 @@ export * from './types';
 import fastify from 'fastify';
 
 import { loadConfig, type ResolvedConfig } from '@lifeos/config';
-import {
-  HealthRegistry,
-  livenessHandler,
-  readinessHandler,
-} from '@lifeos/health';
+import { HealthRegistry, livenessHandler, readinessHandler } from '@lifeos/health';
 import {
   createObservabilityClient,
   type ObservabilityClient,
@@ -15,7 +11,7 @@ import {
 } from '@lifeos/observability';
 import { createPolicyClient } from '@lifeos/policy-engine';
 import { applySecretPolicy, SecretsError } from '@lifeos/secrets';
-import type { SecretRef, SecretStore } from '@lifeos/secrets';
+import type { SecretStore } from '@lifeos/secrets';
 
 import type { ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
 
@@ -49,6 +45,50 @@ export function createEnvSecretStore(): SecretStore {
   };
 }
 
+/**
+ * Validates and normalizes the service port.
+ * @throws Error if port is invalid
+ */
+function validatePort(port: number): number {
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid port number: ${port}. Must be between 1 and 65535.`);
+  }
+  return port;
+}
+
+/**
+ * Validates and normalizes the binding host.
+ * Prevents binding to all interfaces without explicit configuration.
+ * @throws Error if host is invalid
+ */
+function validateHost(host: string | undefined): string {
+  if (!host || host.trim().length === 0) {
+    // Default to localhost in development, explicit in production
+    const env = process.env.NODE_ENV ?? 'development';
+    return env === 'production' ? 'localhost' : '127.0.0.1';
+  }
+
+  const normalized = host.trim();
+
+  // Warn about 0.0.0.0 binding outside production
+  if (normalized === '0.0.0.0' && process.env.NODE_ENV !== 'production') {
+    console.warn(
+      '[service-runtime] WARNING: Binding to 0.0.0.0 outside production. Consider using localhost or an explicit IP.',
+    );
+  }
+
+  // Only allow safe host patterns
+  if (
+    !/^(\d{1,3}\.){3}\d{1,3}$|^[a-z0-9][a-z0-9-]*[a-z0-9](\.[a-z0-9][a-z0-9-]*[a-z0-9])*$|^localhost$|^::1$|^::.?$/i.test(
+      normalized,
+    )
+  ) {
+    throw new Error(`Invalid host: ${normalized}. Must be a valid IPv4, IPv6, or hostname.`);
+  }
+
+  return normalized;
+}
+
 function terminateBoot(error: unknown, message: string): never {
   const detail = error instanceof Error ? error.message : String(error);
   console.error(`${message}: ${detail}`);
@@ -57,6 +97,11 @@ function terminateBoot(error: unknown, message: string): never {
 }
 
 export async function startService(opts: InternalServiceRuntimeOptions): Promise<void> {
+  // Validate input immediately
+  if (!opts.serviceName || opts.serviceName.trim().length === 0) {
+    terminateBoot(new Error('serviceName is required'), 'Service initialization failed');
+  }
+
   const markPhase = async (phase: ServiceRuntimePhase): Promise<void> => {
     await opts.onPhase?.(phase);
   };
@@ -88,8 +133,9 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
       if (opts.isFeatureEnabled) {
         featureEnabled = await opts.isFeatureEnabled(ref.featureGate ?? '');
       } else {
-        featureEnabled =
-          (resolvedConfig.features as Record<string, boolean> | undefined)?.[ref.featureGate ?? ''];
+        featureEnabled = (resolvedConfig.features as Record<string, boolean> | undefined)?.[
+          ref.featureGate ?? ''
+        ];
       }
     }
     try {
@@ -141,7 +187,18 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
     observabilityClient = createNoopObservabilityClient();
   }
 
-  const app = fastify({ logger: true });
+  const app = fastify({ logger: true, requestTimeout: 30_000 });
+
+  // Add security headers middleware
+  app.addHook('onSend', async (request, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header('X-XSS-Protection', '1; mode=block');
+    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    reply.header('Content-Security-Policy', "default-src 'self'");
+    // Do not expose server version
+    reply.header('Server', 'LifeOS');
+  });
 
   await markPhase('auth/policy');
   app.addHook('onRequest', async (request) => {
@@ -149,15 +206,25 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
   });
 
   createPolicyClient();
-  await opts.onAuthPolicy?.(resolvedConfig);
+  try {
+    await opts.onAuthPolicy?.(resolvedConfig);
+  } catch (error) {
+    terminateBoot(error, 'Failed to initialize auth/policy');
+  }
 
-  await opts.registerPlugins?.(app);
+  try {
+    await opts.registerPlugins?.(app);
+  } catch (error) {
+    terminateBoot(error, 'Failed to register plugins');
+  }
 
   await markPhase('routes');
   try {
-    const registerRoutesHandler = opts.registerRoutes ?? (async () => {
-      return;
-    });
+    const registerRoutesHandler =
+      opts.registerRoutes ??
+      (async () => {
+        return;
+      });
     await registerRoutesHandler(app);
   } catch (error) {
     terminateBoot(error, 'Failed to register routes');
@@ -199,6 +266,9 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
       try {
         const aggregate = await healthRegistry.runAll();
         return { status: aggregate.status as 'healthy' | 'degraded' | 'unhealthy' };
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : 'Health check failed';
+        return { status: 'unhealthy' as const, reason };
       } finally {
         readinessInProgress = false;
       }
@@ -207,28 +277,75 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
 
   if (opts.enableLiveness !== false) {
     app.get('/health/live', async (_request, reply) => {
-      const response = await livenessHandler(healthRegistry)();
-      reply.code(response.status).send(response.body);
+      try {
+        const response = await livenessHandler(healthRegistry)();
+        reply.code(response.status).send(response.body);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Unknown error';
+        reply.code(500).send({ error: `Liveness check failed: ${detail}` });
+      }
     });
   }
 
   if (opts.enableReadiness !== false) {
     app.get('/health/ready', async (_request, reply) => {
-      const response = await readinessHandler(healthRegistry)();
-      reply.code(response.status).send(response.body);
+      try {
+        const response = await readinessHandler(healthRegistry)();
+        reply.code(response.status).send(response.body);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : 'Unknown error';
+        reply.code(500).send({ error: `Readiness check failed: ${detail}` });
+      }
     });
   }
 
   await markPhase('listen');
-  const port = opts.port ?? Number(process.env.PORT ?? 3000);
+  let validatedPort: number;
+  let validatedHost: string;
+
   try {
-    await app.listen({ port, host: '0.0.0.0' });
+    const rawPort = opts.port ?? Number(process.env.PORT ?? 3000);
+    validatedPort = validatePort(rawPort);
+  } catch (error) {
+    terminateBoot(error, 'Invalid port configuration');
+  }
+
+  try {
+    validatedHost = validateHost(process.env.HOST);
+  } catch (error) {
+    terminateBoot(error, 'Invalid host configuration');
+  }
+
+  try {
+    await app.listen({ port: validatedPort, host: validatedHost });
   } catch (error) {
     terminateBoot(error, 'Failed to start listening');
   }
 
   observabilityClient.log('info', `${opts.serviceName} listening`, {
     serviceName: opts.serviceName,
-    port,
+    port: validatedPort,
+    host: validatedHost,
+  });
+
+  // Graceful shutdown handling
+  const gracefulShutdown = async () => {
+    console.log(`[service-runtime] Shutting down ${opts.serviceName} gracefully...`);
+    try {
+      await app.close();
+      console.log(`[service-runtime] ${opts.serviceName} shutdown complete.`);
+    } catch (error) {
+      console.error(
+        `[service-runtime] Error during shutdown: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  };
+
+  process.on('SIGTERM', () => {
+    void gracefulShutdown();
+  });
+
+  process.on('SIGINT', () => {
+    void gracefulShutdown();
   });
 }

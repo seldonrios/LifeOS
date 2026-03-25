@@ -363,7 +363,7 @@ test('first run message appears only when default graph path is missing and save
   });
 
   assert.equal(exitCode, 0);
-  assert.match(stdout.join(''), /Welcome to LifeOS! Initializing your personal graph/);
+  assert.match(stdout.join(''), /First run detected\. Initializing your personal graph/);
 });
 
 test('uses LIFEOS_GRAPH_PATH when no --graph-path flag is provided', async () => {
@@ -1524,6 +1524,35 @@ test('module list displays enabled google-bridge sub-features', async () => {
   assert.match(listOut.join(''), /google-bridge \[optional\].*sub: calendar, tasks/i);
 });
 
+test('module setup email-summarizer configures credentials and enables module', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-email-setup-'));
+  const stdout: string[] = [];
+
+  const answers = ['imap.example.com', 'yes', '993', 'alex@example.com', 'app-pass', 'work'];
+  const exitCode = await runCli(['module', 'setup', 'email-summarizer'], {
+    env: { HOME: baseHome },
+    inputPrompt: async () => answers.shift() ?? '',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Email Summarizer is ready/i);
+
+  const state = JSON.parse(await readFile(join(baseHome, '.lifeos', 'modules.json'), 'utf8')) as {
+    enabledOptionalModules: string[];
+  };
+  assert.ok(state.enabledOptionalModules.includes('email-summarizer'));
+
+  const credentials = JSON.parse(
+    await readFile(join(baseHome, '.lifeos', 'secrets', 'email-accounts.json'), 'utf8'),
+  ) as Array<{ label: string; host: string; auth: { user: string } }>;
+  assert.equal(credentials[0]?.label, 'work');
+  assert.equal(credentials[0]?.host, 'imap.example.com');
+  assert.equal(credentials[0]?.auth.user, 'alex@example.com');
+});
+
 test('module authorize rejects unsupported modules', async () => {
   const stderr: string[] = [];
   const exitCode = await runCli(['module', 'authorize', 'weather'], {
@@ -1590,6 +1619,21 @@ test('module enable rejects optional modules without local runtime implementatio
   assert.match(stderr.join(''), /no local runtime implementation/i);
 });
 
+test('module enable resolves health-tracker alias to health optional module', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-health-tracker-'));
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['module', 'enable', 'health-tracker'], {
+    env: { HOME: baseHome },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /optional module "health" has no local runtime implementation/i);
+});
+
 test('module install accepts github repo and auto-enables known optional module', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-'));
   const stdout: string[] = [];
@@ -1612,6 +1656,30 @@ test('module install accepts github repo and auto-enables known optional module'
   });
   assert.equal(listExit, 0);
   assert.match(listOut.join(''), /research \[optional\].*enabled/i);
+});
+
+test('module install supports health-tracker repository naming without auto-enabling health', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-health-tracker-'));
+  const stdout: string[] = [];
+
+  const installExit = await runCli(['module', 'install', 'octocat/health-tracker-module'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(installExit, 0);
+  assert.match(stdout.join(''), /Installed octocat\/health-tracker-module/i);
+
+  const listOut: string[] = [];
+  const listExit = await runCli(['module', 'list'], {
+    env: { HOME: baseHome },
+    stdout: (message) => {
+      listOut.push(message);
+    },
+  });
+  assert.equal(listExit, 0);
+  assert.match(listOut.join(''), /health \[optional\].*disabled/i);
 });
 
 test('module install rejects malformed repository strings', async () => {

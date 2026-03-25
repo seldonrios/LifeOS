@@ -19,6 +19,8 @@ const MAX_PREFERENCE_VALUE_CHARS = 300;
 const MIN_BRIEFING_SECONDS = 10;
 const MAX_BRIEFING_SECONDS = 90;
 const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// Security: Prevent injection patterns
+const INJECTION_PATTERN = /[\0\x00-\x1f\x7f]/;
 const PREFERENCE_KEY_ALIASES: Record<
   string,
   | 'communication_style'
@@ -53,10 +55,13 @@ type ClassifiedIntent =
   | 'question_time'
   | 'weather'
   | 'news'
+  | 'email_summarize'
   | 'research'
   | 'briefing'
   | 'next_actions'
   | 'preference_set'
+  | 'health_log'
+  | 'health_query'
   | 'unknown';
 
 interface IntentClassification {
@@ -67,7 +72,7 @@ interface IntentClassification {
 export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
 
 {
-  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | research | briefing | next_actions | preference_set | unknown",
+  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | email_summarize | research | briefing | next_actions | preference_set | health_log | health_query | unknown",
   "payload": {}
 }`;
 
@@ -118,12 +123,37 @@ function clampText(value: string, maxLength: number): string {
   return value.trim().slice(0, maxLength);
 }
 
+/**
+ * Validates text input to prevent injection and ensure data integrity.
+ * @throws Error if text contains invalid characters
+ */
+function validateTextInput(value: string, maxLength: number): string {
+  const trimmed = value.trim();
+
+  // Prevent null bytes and other control characters
+  if (INJECTION_PATTERN.test(trimmed)) {
+    throw new Error('Input contains invalid control characters');
+  }
+
+  // Ensure not empty
+  if (trimmed.length === 0) {
+    throw new Error('Input cannot be empty');
+  }
+
+  // Keep long utterances processable while bounding payload size.
+  return trimmed.slice(0, maxLength);
+}
+
 function getString(value: unknown): string | null {
   if (typeof value !== 'string') {
     return null;
   }
 
   const trimmed = value.trim();
+  // Prevent null bytes
+  if (INJECTION_PATTERN.test(trimmed)) {
+    return null;
+  }
   return trimmed.length > 0 ? trimmed : null;
 }
 
@@ -134,8 +164,21 @@ function getStringArray(value: unknown): string[] | null {
 
   const normalized = value
     .map((entry) => getString(entry))
-    .filter((entry): entry is string => entry !== null);
+    .filter((entry): entry is string => entry !== null && !INJECTION_PATTERN.test(entry));
   return normalized.length > 0 ? normalized.slice(0, MAX_ATTENDEES) : null;
+}
+
+function getNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+  return null;
 }
 
 function parseDateTime(value: unknown): Date | null {
@@ -205,6 +248,29 @@ function extractSinceDaysFromText(text: string): number | null {
     return 30;
   }
   return null;
+}
+
+function extractHealthMetricFromText(text: string): string | null {
+  const match = text
+    .toLowerCase()
+    .match(
+      /\b(steps?|slept?|sleep(?:ing)?|weight|heart(?:\s|-)?rate|blood(?:\s|-)?pressure|water|calories?)\b/,
+    );
+  if (!match?.[1]) {
+    return null;
+  }
+  return match[1].replace(/\s+/g, '_');
+}
+
+function extractHealthQueryPeriodFromText(text: string): number | null {
+  const explicitDays = text.match(/\blast\s+(\d{1,3})\s+days?\b/i)?.[1];
+  if (explicitDays) {
+    const parsed = Number.parseInt(explicitDays, 10);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return extractSinceDaysFromText(text);
 }
 
 function extractPreferenceFromText(text: string): { key: string; value: string } | null {
@@ -341,14 +407,24 @@ function normalizeClassifiedIntent(value: unknown): ClassifiedIntent {
     value === 'question_time' ||
     value === 'weather' ||
     value === 'news' ||
+    value === 'email_summarize' ||
     value === 'research' ||
     value === 'briefing' ||
     value === 'next_actions' ||
     value === 'preference_set' ||
+    value === 'health_log' ||
+    value === 'health_query' ||
+    value === 'health' ||
     value === 'preference' ||
     value === 'preference_update'
   ) {
-    return value === 'preference' || value === 'preference_update' ? 'preference_set' : value;
+    if (value === 'preference' || value === 'preference_update') {
+      return 'preference_set';
+    }
+    if (value === 'health') {
+      return 'health_log';
+    }
+    return value;
   }
 
   return 'unknown';
@@ -512,8 +588,14 @@ export class IntentRouter {
   }
 
   async handleCommand(text: string): Promise<IntentOutcome> {
-    const normalizedText = clampText(text, MAX_COMMAND_TEXT_CHARS);
-    if (!normalizedText) {
+    // Validate input immediately
+    let normalizedText: string;
+    try {
+      normalizedText = validateTextInput(text, MAX_COMMAND_TEXT_CHARS);
+    } catch (error: unknown) {
+      this.logger(
+        `[voice.router] invalid input: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return this.handleUnknownIntent('');
     }
 
@@ -549,12 +631,18 @@ export class IntentRouter {
         return this.handleAgentIntent(normalizedText, 'weather', classification.payload);
       case 'news':
         return this.handleAgentIntent(normalizedText, 'news', classification.payload);
+      case 'email_summarize':
+        return this.handleAgentIntent(normalizedText, 'email_summarize', classification.payload);
       case 'research':
         return this.handleAgentIntent(normalizedText, 'research', classification.payload);
       case 'briefing':
         return this.handleAgentIntent(normalizedText, 'briefing', classification.payload);
       case 'preference_set':
         return this.handlePreferenceIntent(normalizedText, classification.payload);
+      case 'health_log':
+        return this.handleAgentIntent(normalizedText, 'health_log', classification.payload);
+      case 'health_query':
+        return this.handleAgentIntent(normalizedText, 'health_query', classification.payload);
       default:
         return this.handleUnknownIntent(normalizedText);
     }
@@ -598,6 +686,42 @@ export class IntentRouter {
     }
     if (lower.includes('news') || lower.includes('headlines')) {
       return 'news';
+    }
+    if (
+      lower.includes('email summary') ||
+      lower.includes('summarize email') ||
+      lower.includes('summarize inbox') ||
+      lower.includes('email digest')
+    ) {
+      return 'email_summarize';
+    }
+    // Detect health log by either explicit 'log' keyword or numeric + metric pattern
+    const metricKeyword = extractHealthMetricFromText(text);
+    if (metricKeyword) {
+      // Check for numeric value followed by metric (handles "7.5 hours", "72 kg", etc.)
+      if (/\d+(?:\.\d+)?/.test(text)) {
+        return 'health_log';
+      }
+    }
+    if (
+      lower.includes('log') &&
+      (lower.includes('steps') ||
+        lower.includes('sleep') ||
+        lower.includes('weight') ||
+        lower.includes('heart rate') ||
+        lower.includes('blood pressure') ||
+        lower.includes('calories') ||
+        lower.includes('water'))
+    ) {
+      return 'health_log';
+    }
+    if (
+      lower.includes('health') ||
+      lower.includes('how many steps') ||
+      lower.includes('progress on') ||
+      lower.includes('streak')
+    ) {
+      return 'health_query';
     }
     if (
       extractPreferenceFromText(text) ||
@@ -674,7 +798,17 @@ export class IntentRouter {
 
   private async handleAgentIntent(
     text: string,
-    intent: 'calendar' | 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
+    intent:
+      | 'calendar'
+      | 'weather'
+      | 'research'
+      | 'note'
+      | 'news'
+      | 'email_summarize'
+      | 'note_search'
+      | 'briefing'
+      | 'health_log'
+      | 'health_query',
     payload: Record<string, unknown>,
   ): Promise<IntentOutcome> {
     if (intent === 'calendar') {
@@ -684,25 +818,38 @@ export class IntentRouter {
     const requestedAt = this.now().toISOString();
     const routedPayload = this.buildIntentPayload(intent, text, payload, requestedAt);
     const topicByIntent: Record<
-      'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
+      | 'weather'
+      | 'research'
+      | 'note'
+      | 'news'
+      | 'email_summarize'
+      | 'note_search'
+      | 'briefing'
+      | 'health_log'
+      | 'health_query',
       string
     > = {
       weather: Topics.lifeos.voiceIntentWeather,
       research: Topics.lifeos.voiceIntentResearch,
       note: Topics.lifeos.voiceIntentNoteAdd,
       news: Topics.lifeos.voiceIntentNews,
+      email_summarize: Topics.lifeos.voiceIntentEmailSummarize,
       note_search: Topics.lifeos.voiceIntentNoteSearch,
       briefing: Topics.lifeos.voiceIntentBriefing,
+      health_log: Topics.lifeos.voiceIntentHealthLog,
+      health_query: Topics.lifeos.voiceIntentHealthQuery,
     };
 
     await this.publishSafe(topicByIntent[intent], routedPayload);
-    await this.publishSafe(Topics.agent.workRequested, {
-      utterance: text,
-      intent,
-      payload: routedPayload,
-      requestedAt,
-      origin: 'voice-core',
-    });
+    if (intent !== 'health_log' && intent !== 'health_query') {
+      await this.publishSafe(Topics.agent.workRequested, {
+        utterance: text,
+        intent,
+        payload: routedPayload,
+        requestedAt,
+        origin: 'voice-core',
+      });
+    }
     const responseText = this.intentConfirmation(intent, routedPayload);
     await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
       action: 'agent_work_requested',
@@ -718,7 +865,16 @@ export class IntentRouter {
   }
 
   private intentConfirmation(
-    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
+    intent:
+      | 'weather'
+      | 'research'
+      | 'note'
+      | 'news'
+      | 'email_summarize'
+      | 'note_search'
+      | 'briefing'
+      | 'health_log'
+      | 'health_query',
     payload: Record<string, unknown>,
   ): string {
     if (intent === 'weather') {
@@ -738,6 +894,15 @@ export class IntentRouter {
     }
     if (intent === 'briefing') {
       return 'Preparing your daily briefing.';
+    }
+    if (intent === 'email_summarize') {
+      return 'Preparing your email summary.';
+    }
+    if (intent === 'health_log') {
+      return 'Logged. I will update your health tracker.';
+    }
+    if (intent === 'health_query') {
+      return 'Checking your health metrics.';
     }
     return 'Preparing your news digest.';
   }
@@ -798,7 +963,16 @@ export class IntentRouter {
   }
 
   private buildIntentPayload(
-    intent: 'weather' | 'research' | 'note' | 'news' | 'note_search' | 'briefing',
+    intent:
+      | 'weather'
+      | 'research'
+      | 'note'
+      | 'news'
+      | 'email_summarize'
+      | 'note_search'
+      | 'briefing'
+      | 'health_log'
+      | 'health_query',
     text: string,
     payload: Record<string, unknown>,
     requestedAt: string,
@@ -868,6 +1042,49 @@ export class IntentRouter {
         requestedAt,
         utterance: text,
         timeframe: clampText(getString(payload.timeframe) ?? 'today', 40),
+      };
+    }
+    if (intent === 'email_summarize') {
+      const account = getString(payload.account) ?? getString(payload.label);
+      return {
+        ...(account && { account: clampText(account, 80) }),
+        limit:
+          typeof payload.limit === 'number' && Number.isFinite(payload.limit)
+            ? Math.max(1, Math.min(25, Math.trunc(payload.limit)))
+            : 10,
+        utterance: text,
+        requestedAt,
+      };
+    }
+    if (intent === 'health_log') {
+      const metric =
+        getString(payload.metric)?.toLowerCase().replace(/\s+/g, '_') ??
+        extractHealthMetricFromText(text) ??
+        undefined;
+      const value = getNumber(payload.value);
+      return {
+        metric,
+        value,
+        unit: getString(payload.unit)?.toLowerCase().replace(/\s+/g, '_') ?? undefined,
+        note: getString(payload.note) ?? undefined,
+        utterance: text,
+        requestedAt,
+      };
+    }
+    if (intent === 'health_query') {
+      const metric =
+        getString(payload.metric)?.toLowerCase().replace(/\s+/g, '_') ??
+        extractHealthMetricFromText(text) ??
+        undefined;
+      const sinceDaysFromPayload =
+        typeof payload.period === 'number' && Number.isFinite(payload.period)
+          ? Math.max(1, Math.trunc(payload.period))
+          : null;
+      return {
+        metric,
+        period: sinceDaysFromPayload ?? extractHealthQueryPeriodFromText(text) ?? 7,
+        utterance: text,
+        requestedAt,
       };
     }
     return {

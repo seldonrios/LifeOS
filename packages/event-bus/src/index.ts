@@ -6,6 +6,10 @@ import { connect, StringCodec, type NatsConnection, type Subscription } from 'na
 import type { BaseEvent, EventBusTransport, ManagedEventBus } from './types';
 
 const DEFAULT_NATS_URL = 'nats://127.0.0.1:4222';
+const HANDLER_TIMEOUT_MS = 30_000;
+const MIN_TOPIC_LENGTH = 1;
+const MAX_TOPIC_LENGTH = 255;
+const TOPIC_PATTERN = /^[a-zA-Z0-9._>*-]+$/;
 
 export interface CreateEventBusClientOptions {
   env?: NodeJS.ProcessEnv;
@@ -37,6 +41,63 @@ function normalizeServers(value: string | string[] | undefined, env?: NodeJS.Pro
   }
 
   return [DEFAULT_NATS_URL];
+}
+
+/**
+ * Validates topic name to prevent injection and ensure well-formed topics.
+ * @throws Error if topic is invalid
+ */
+function validateTopic(topic: string): void {
+  if (!topic || topic.length < MIN_TOPIC_LENGTH || topic.length > MAX_TOPIC_LENGTH) {
+    throw new Error(
+      `Invalid topic: length must be between ${MIN_TOPIC_LENGTH} and ${MAX_TOPIC_LENGTH}`,
+    );
+  }
+
+  if (!TOPIC_PATTERN.test(topic)) {
+    throw new Error(`Invalid topic characters: must match [a-zA-Z0-9._>*-]+`);
+  }
+
+  // Prevent null bytes
+  if (topic.includes('\0')) {
+    throw new Error('Topic contains null bytes');
+  }
+}
+
+/**
+ * Validates event structure before processing.
+ * @throws Error if event is invalid
+ */
+function validateEvent<T>(event: unknown): BaseEvent<T> {
+  if (!event || typeof event !== 'object') {
+    throw new Error('Event must be an object');
+  }
+
+  const candidate = event as Record<string, unknown>;
+
+  if (typeof candidate.id !== 'string' || !candidate.id.trim()) {
+    throw new Error('Event must have a non-empty id');
+  }
+
+  if (typeof candidate.type !== 'string' || !candidate.type.trim()) {
+    throw new Error('Event must have a non-empty type');
+  }
+
+  if (typeof candidate.timestamp !== 'string' || !candidate.timestamp.trim()) {
+    throw new Error('Event must have a non-empty timestamp');
+  }
+
+  // Validate timestamp is parseable ISO date
+  const ts = new Date(candidate.timestamp as string);
+  if (Number.isNaN(ts.getTime())) {
+    throw new Error('Event timestamp must be a valid ISO date string');
+  }
+
+  if (typeof candidate.source !== 'string' || !candidate.source.trim()) {
+    throw new Error('Event must have a non-empty source');
+  }
+
+  return candidate as BaseEvent<T>;
 }
 
 function toErrorMessage(error: unknown): string {
@@ -176,12 +237,28 @@ class LifeOSEventBus implements ManagedEventBus {
   }
 
   async publish<T>(topic: string, event: BaseEvent<T>): Promise<void> {
+    // Validate input
+    try {
+      validateTopic(topic);
+      validateEvent<T>(event);
+    } catch (validationError: unknown) {
+      this.logger?.(`[event-bus] validation error on publish: ${toErrorMessage(validationError)}`);
+      throw validationError;
+    }
+
     const connection = await this.getConnection();
     if (connection) {
-      connection.publish(topic, this.codec.encode(JSON.stringify(event)));
+      try {
+        const encoded = this.codec.encode(JSON.stringify(event));
+        connection.publish(topic, encoded);
+      } catch (error: unknown) {
+        this.logger?.(`[event-bus] publish error: ${toErrorMessage(error)}`);
+        throw error;
+      }
       return;
     }
 
+    // Fallback to in-memory bus
     await sharedInMemoryBus.publish(topic, event as BaseEvent<unknown>);
     this.transport = 'in-memory';
   }
@@ -190,10 +267,35 @@ class LifeOSEventBus implements ManagedEventBus {
     topic: string,
     handler: (event: BaseEvent<T>) => Promise<void>,
   ): Promise<void> {
+    // Validate topic
+    try {
+      validateTopic(topic);
+    } catch (validationError: unknown) {
+      this.logger?.(
+        `[event-bus] validation error on subscribe: ${toErrorMessage(validationError)}`,
+      );
+      throw validationError;
+    }
+
+    if (!handler || typeof handler !== 'function') {
+      throw new Error('Event handler must be a function');
+    }
+
     const connection = await this.getConnection();
     if (!connection) {
       const unsubscribe = sharedInMemoryBus.subscribe(topic, async (event: BaseEvent<unknown>) => {
-        await handler(event as BaseEvent<T>);
+        try {
+          // Timeout protection for handlers
+          await Promise.race([
+            handler(event as BaseEvent<T>),
+            (async () => {
+              await delay(HANDLER_TIMEOUT_MS);
+              throw new Error(`Handler timeout on topic ${topic}`);
+            })(),
+          ]);
+        } catch (error: unknown) {
+          this.logger?.(`[event-bus] handler error on topic ${topic}: ${toErrorMessage(error)}`);
+        }
       });
       this.fallbackUnsubscribers.add(unsubscribe);
       this.transport = 'in-memory';
@@ -208,12 +310,30 @@ class LifeOSEventBus implements ManagedEventBus {
         for await (const message of subscription) {
           try {
             const decoded = this.codec.decode(message.data);
-            const event = JSON.parse(decoded) as BaseEvent<T>;
-            await handler(event);
+            let event: BaseEvent<T>;
+            try {
+              event = validateEvent<T>(JSON.parse(decoded));
+            } catch (parseError: unknown) {
+              this.logger?.(`[event-bus] invalid event on ${topic}: ${toErrorMessage(parseError)}`);
+              continue;
+            }
+
+            // Timeout protection for event handlers
+            try {
+              await Promise.race([
+                handler(event),
+                (async () => {
+                  await delay(HANDLER_TIMEOUT_MS);
+                  throw new Error(`Handler timeout on topic ${topic}`);
+                })(),
+              ]);
+            } catch (handlerError: unknown) {
+              this.logger?.(
+                `[event-bus] failed to process message on topic ${topic}: ${toErrorMessage(handlerError)}`,
+              );
+            }
           } catch (error: unknown) {
-            this.logger?.(
-              `[event-bus] failed to process message on topic ${topic}: ${toErrorMessage(error)}`,
-            );
+            this.logger?.(`[event-bus] message processing error: ${toErrorMessage(error)}`);
           }
         }
       } catch (error: unknown) {

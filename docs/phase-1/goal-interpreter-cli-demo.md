@@ -16,9 +16,14 @@ The command runs a local model through Ollama, prints a structured plan, and wri
 
 You can also run a full end-to-end walkthrough with:
 
-```powershell
+```bash
 pnpm lifeos demo
 ```
+
+## Shell Support
+
+Most commands in this guide are identical on Linux/macOS and PowerShell.
+Linux/macOS examples use `bash` syntax. PowerShell-specific equivalents are shown where command syntax differs.
 
 ## Prerequisites
 
@@ -30,37 +35,53 @@ pnpm lifeos demo
 
 From the repository root:
 
+Recommended first-run path:
+
+```bash
+pnpm lifeos init
+```
+
+The wizard validates Ollama, helps with local model setup, and seeds your first goal. If you prefer the manual flow, use the steps below.
+
 1. Install dependencies (once):
 
-```powershell
+```bash
 pnpm install
 ```
 
 2. Start Ollama:
 
-```powershell
+```bash
 ollama serve
 ```
 
 3. Pull the default model (once):
 
-```powershell
+```bash
 ollama pull llama3.1:8b
 ```
 
 4. Run a goal decomposition:
 
-```powershell
+```bash
 pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 ```
 
 Optional one-command walkthrough:
 
-```powershell
+```bash
 pnpm lifeos demo
 ```
 
 5. Verify persisted output:
+
+**Linux/macOS (bash/zsh)**
+
+```bash
+cat ./.lifeos/life-graph.json
+```
+
+**PowerShell**
 
 ```powershell
 Get-Content .\.lifeos\life-graph.json
@@ -68,7 +89,7 @@ Get-Content .\.lifeos\life-graph.json
 
 6. Check graph status:
 
-```powershell
+```bash
 pnpm lifeos status
 pnpm lifeos status --json
 pnpm lifeos review --period weekly
@@ -84,7 +105,7 @@ pnpm lifeos events listen --topic "lifeos.>"
 
 - JSON output:
 
-```powershell
+```bash
 pnpm lifeos goal "..." --json
 ```
 
@@ -92,38 +113,38 @@ Note: `goal --json` prints the normalized plan only. Use `status --json` for sta
 
 - Skip persistence:
 
-```powershell
+```bash
 pnpm lifeos goal "..." --no-save
 ```
 
 - Override model:
 
-```powershell
+```bash
 pnpm lifeos goal "..." --model qwen2.5:7b
 ```
 
 - Override graph path:
 
-```powershell
-pnpm lifeos goal "..." --graph-path .\tmp\life-graph.json
+```bash
+pnpm lifeos goal "..." --graph-path ./tmp/life-graph.json
 ```
 
 - Safe diagnostics:
 
-```powershell
+```bash
 pnpm lifeos goal "..." --verbose
 ```
 
 - Review insights:
 
-```powershell
+```bash
 pnpm lifeos review --period weekly
 pnpm lifeos review --period daily --json
 ```
 
 - Task operations:
 
-```powershell
+```bash
 pnpm lifeos task list
 pnpm lifeos task list --json
 pnpm lifeos task complete <task-id-prefix>
@@ -133,21 +154,21 @@ pnpm lifeos next
 
 - Deadline tick:
 
-```powershell
+```bash
 pnpm lifeos tick
 pnpm lifeos tick --json
 ```
 
 - Event stream listener:
 
-```powershell
+```bash
 pnpm lifeos events listen --topic "lifeos.>"
 pnpm lifeos events listen --topic "lifeos.tick.overdue" --json
 ```
 
 - Modules:
 
-```powershell
+```bash
 pnpm lifeos modules
 pnpm lifeos modules load reminder
 ```
@@ -162,6 +183,15 @@ If NATS is unavailable, the CLI automatically falls back to an in-memory event b
 
 Example:
 
+**Linux/macOS (bash/zsh)**
+
+```bash
+export OLLAMA_HOST="http://192.168.1.20:11434"
+pnpm lifeos goal "Plan my next 2 weeks"
+```
+
+**PowerShell**
+
 ```powershell
 $env:OLLAMA_HOST="http://192.168.1.20:11434"
 pnpm lifeos goal "Plan my next 2 weeks"
@@ -171,7 +201,7 @@ pnpm lifeos goal "Plan my next 2 weeks"
 
 - Show CLI help:
 
-```powershell
+```bash
 pnpm lifeos --help
 pnpm lifeos goal --help
 pnpm lifeos status --help
@@ -185,7 +215,7 @@ pnpm lifeos events listen --help
 
 - Test global command locally:
 
-```powershell
+```bash
 pnpm --filter @lifeos/cli run build
 pnpm --filter @lifeos/cli link --global
 lifeos goal "Plan my next 2 weeks"

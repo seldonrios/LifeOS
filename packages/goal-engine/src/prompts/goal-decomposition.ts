@@ -1,7 +1,7 @@
 import { GoalPlanSchema } from '@lifeos/life-graph';
 
 export const getGoalDecompositionSystemPrompt =
-  (): string => `You are the LifeOS Goal Engine - a precise, structured planner.
+  (): string => `You are the LifeOS Goal Engine - a precise, supportive planner.
 
 You MUST respond with ONLY a single valid JSON object that matches this exact schema. No markdown, no explanation, no extra text whatsoever.
 
@@ -15,6 +15,7 @@ Rules (follow strictly):
 - status must be "todo" for all new tasks
 - Keep titles concise (under 80 chars)
 - Make the plan immediately useful for a human
+- Prefer practical tasks that feel encouraging and easy to start
 
 Output ONLY the JSON.`;
 

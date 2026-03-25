@@ -15,6 +15,16 @@ LifeOS is an open-source project focused on **user-owned AI systems** that run o
 If you are new here, start with the CLI MVP.  
 You can go from clone to first working plan in a few minutes.
 
+Recommended first run:
+
+```bash
+pnpm lifeos init
+```
+
+These commands work in Linux/macOS shells (`bash`/`zsh`) and in PowerShell unless noted otherwise.
+
+The setup wizard checks Ollama, helps with model setup, offers optional modules, and seeds your first goal.
+
 ## Module Marketplace
 
 Browse and install community modules from the registry:
@@ -30,45 +40,46 @@ pnpm lifeos module install username/repo
 
 ### 1) Install dependencies
 
-```powershell
+```bash
 pnpm install
 ```
 
 ### 2) Start Ollama
 
-```powershell
+```bash
 ollama serve
 ```
 
-### 3) Pull the default model (first time only)
+### 3) Verify CLI
 
-```powershell
-ollama pull llama3.1:8b
+```bash
+pnpm lifeos --version
 ```
 
-### 4) Verify CLI
+### 4) Run guided setup (recommended first run)
 
-```powershell
-pnpm lifeos --version
+```bash
+pnpm lifeos init
 ```
 
 ### 5) Run the one-command demo
 
-```powershell
+```bash
 pnpm lifeos demo
 ```
 
-### 6) Explore the graph
+### 6) Explore your workspace
 
-```powershell
+```bash
 pnpm lifeos status
 pnpm lifeos task list
+pnpm lifeos voice start
 pnpm lifeos modules
 ```
 
 ## 🧪 Demo Flow (Manual)
 
-```powershell
+```bash
 pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
 pnpm lifeos review --period weekly
 pnpm lifeos next
@@ -163,14 +174,14 @@ Defaults:
 
 For external event streaming with NATS:
 
-```powershell
+```bash
 docker compose up -d nats
 pnpm lifeos events listen --topic "lifeos.>"
 ```
 
 For local inference + NATS:
 
-```powershell
+```bash
 docker compose up -d ollama nats
 ```
 

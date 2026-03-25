@@ -696,3 +696,131 @@ test('orchestrator normalizes unsafe decision updates before apply', async () =>
   assert.equal(appliedUpdates.length, 24);
   assert.ok(appliedUpdates.every((entry) => entry.op === 'append_memory'));
 });
+
+test('orchestrator includes email digest context in briefing when digests exist', async () => {
+  const subscriptions: CapturedSubscription[] = [];
+  const published: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const sink = mockTtsSink();
+
+  const contextWithDigests: ModuleRuntimeContext = {
+    env: {},
+    eventBus: {
+      async publish() {
+        return;
+      },
+      async subscribe() {
+        return;
+      },
+      async close() {
+        return;
+      },
+      getTransport() {
+        return 'unknown' as const;
+      },
+    },
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: '2026-03-25T08:00:00.000Z',
+            plans: [],
+            calendarEvents: [],
+            researchResults: [],
+            emailDigests: [
+              {
+                id: 'email_1',
+                subject: 'Project status',
+                from: 'alice@example.com',
+                summary: 'Quick update on project',
+                messageId: '<abc@example.com>',
+                receivedAt: '2026-03-25T07:30:00.000Z',
+                accountLabel: 'work',
+                read: false,
+              },
+              {
+                id: 'email_2',
+                subject: 'Meeting notes',
+                from: 'bob@example.com',
+                summary: 'Notes from yesterday',
+                messageId: '<def@example.com>',
+                receivedAt: '2026-03-25T07:45:00.000Z',
+                accountLabel: 'work',
+                read: false,
+              },
+            ],
+            memory: [],
+          };
+        },
+        async getLatestWeatherSnapshot() {
+          return null;
+        },
+        async getLatestNewsDigest() {
+          return null;
+        },
+        async appendMemoryEntry(entry: Record<string, unknown>) {
+          return {
+            ...entry,
+            id: 'memory_1',
+            timestamp: '2026-03-25T08:00:00.000Z',
+            embedding: Array.from({ length: 384 }, () => 0),
+            relatedTo: Array.isArray(entry.relatedTo) ? entry.relatedTo : [],
+          };
+        },
+        async searchMemory() {
+          return [];
+        },
+        async applyUpdates() {
+          return;
+        },
+      }) as never,
+    subscribe: async <T>(
+      topic: string,
+      handler: (event: BaseEvent<T>) => Promise<void> | void,
+    ): Promise<void> => {
+      subscriptions.push({
+        topic,
+        handler: handler as (event: BaseEvent<unknown>) => Promise<void>,
+      });
+    },
+    publish: async <T extends Record<string, unknown>>(topic: string, data: T) => {
+      published.push({ topic, data });
+      return {
+        id: 'evt_1',
+        type: topic,
+        timestamp: '2026-03-25T08:00:00.000Z',
+        source: 'test',
+        version: '0.1.0',
+        data,
+      };
+    },
+    log() {
+      return;
+    },
+  };
+
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    now: () => new Date('2026-03-25T08:00:00.000Z'),
+    decisionEngine: async () => ({ action: 'nothing' }),
+  });
+  await module.init(contextWithDigests);
+
+  const handler = getHandler(subscriptions, 'lifeos.>');
+  assert.ok(handler);
+  await handler?.({
+    id: 'evt_briefing_email',
+    type: Topics.lifeos.voiceIntentBriefing,
+    timestamp: '2026-03-25T08:00:00.000Z',
+    source: 'voice-core',
+    version: '0.1.0',
+    data: {
+      requestedAt: '2026-03-25T08:00:00.000Z',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
+  const briefing = sink.spoken[0] ?? '';
+  assert.match(briefing, /Inbox summary: 2 email digests? ready/i);
+  assert.match(briefing, /Good morning/i);
+});

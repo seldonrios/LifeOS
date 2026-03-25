@@ -88,7 +88,7 @@ test('createNode(plan) preserves optional task metadata fields', async () => {
   assert.equal(task?.suggestedReschedule, '2026-04-16T09:00:00.000Z');
 });
 
-test('append note/research/weather/news methods persist normalized records', async () => {
+test('append note/research/weather/news/email methods persist normalized records', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');
   const client = createLifeGraphClient({ graphPath });
@@ -114,6 +114,15 @@ test('append note/research/weather/news methods persist normalized records', asy
     summary: 'A concise daily briefing.',
     sources: ['https://example.com/rss'],
   });
+  const email = await client.appendEmailDigest({
+    subject: 'Quarterly planning update',
+    from: 'Ada Lovelace <ada@example.com>',
+    summary: 'Draft agenda and budget review attached.',
+    messageId: '<msg-1@example.com>',
+    receivedAt: '2026-03-25T08:15:00.000Z',
+    read: false,
+    accountLabel: 'work',
+  });
   const memory = await client.appendMemoryEntry({
     type: 'insight',
     content: 'Board deck draft due tomorrow',
@@ -129,6 +138,8 @@ test('append note/research/weather/news methods persist normalized records', asy
   assert.ok(weather.timestamp);
   assert.ok(news.id);
   assert.equal(news.read, false);
+  assert.ok(email.id);
+  assert.equal(email.accountLabel, 'work');
   assert.ok(memory.id);
   assert.equal(memory.type, 'insight');
 
@@ -138,6 +149,7 @@ test('append note/research/weather/news methods persist normalized records', asy
   assert.equal(graph.researchResults?.[0]?.conversationContext?.[0], 'Initial query');
   assert.equal(graph.weatherSnapshots?.length, 1);
   assert.equal(graph.newsDigests?.length, 1);
+  assert.equal(graph.emailDigests?.length, 1);
   assert.equal(graph.memory?.length, 1);
 });
 
@@ -414,6 +426,106 @@ test('query supports plans/tasks with filters and limits', async () => {
 
   const limitedTasks = await client.query<{ title: string }>('tasks', { limit: 2 });
   assert.equal(limitedTasks.length, 2);
+});
+
+test('query and createNode support health metric entries and streaks', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  const metricId = await client.createNode('health.MetricEntry', {
+    metric: 'steps',
+    value: 9000,
+    unit: 'count',
+    loggedAt: '2026-03-25T08:00:00.000Z',
+  });
+  const streakId = await client.createNode('health.DailyStreak', {
+    id: 'health_streak_steps',
+    metric: 'steps',
+    currentStreak: 3,
+    longestStreak: 5,
+    lastLoggedDate: '2026-03-25',
+  });
+
+  assert.equal(metricId.length > 0, true);
+  assert.equal(streakId, 'health_streak_steps');
+
+  const metrics = await client.query<{ metric: string; value: number }>('health.MetricEntry', {
+    metric: 'steps',
+    sinceDays: 365,
+    limit: 5,
+  });
+  assert.equal(metrics.length, 1);
+  assert.equal(metrics[0]?.metric, 'steps');
+  assert.equal(metrics[0]?.value, 9000);
+
+  const streaks = await client.query<{ metric: string; currentStreak: number }>(
+    'health.DailyStreak',
+    {
+      metric: 'steps',
+      limit: 1,
+    },
+  );
+  assert.equal(streaks.length, 1);
+  assert.equal(streaks[0]?.metric, 'steps');
+  assert.equal(streaks[0]?.currentStreak, 3);
+});
+
+test('mergeDelta normalizes health metric events with entryId alias for id', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-metric-');
+  const client = createLifeGraphClient({ graphPath });
+
+  // Simulate published metric event from health-tracker using entryId instead of id
+  const mergeResult = await client.mergeDelta({
+    healthMetricEntries: [
+      {
+        entryId: 'metric-entry-123',
+        metric: 'steps',
+        value: 8500,
+        unit: 'count',
+        loggedAt: '2026-03-25T10:00:00.000Z',
+      },
+    ],
+  });
+
+  assert.equal(mergeResult.merged, true);
+  assert.equal(mergeResult.conflicts.length, 0);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.healthMetricEntries?.length, 1);
+  const metric = graph.healthMetricEntries?.[0];
+  assert.equal(metric?.id, 'metric-entry-123');
+  assert.equal(metric?.metric, 'steps');
+  assert.equal(metric?.value, 8500);
+});
+
+test('mergeDelta normalizes health streak events with date alias for lastLoggedDate', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-streak-');
+  const client = createLifeGraphClient({ graphPath });
+
+  // Simulate published streak event from health-tracker using date instead of lastLoggedDate
+  const mergeResult = await client.mergeDelta({
+    healthDailyStreaks: [
+      {
+        metric: 'sleep',
+        currentStreak: 5,
+        longestStreak: 12,
+        date: '2026-03-25',
+      },
+    ],
+  });
+
+  assert.equal(mergeResult.merged, true);
+  assert.equal(mergeResult.conflicts.length, 0);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.healthDailyStreaks?.length, 1);
+  const streak = graph.healthDailyStreaks?.[0];
+  assert.equal(streak?.metric, 'sleep');
+  assert.equal(streak?.currentStreak, 5);
+  assert.equal(streak?.lastLoggedDate, '2026-03-25');
 });
 
 test('getNode resolves plan first, then task, otherwise null', async () => {

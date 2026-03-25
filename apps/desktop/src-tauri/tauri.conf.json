@@ -1,0 +1,28 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LifeOS",
+  "version": "0.4.0",
+  "identifier": "ai.lifeos.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --dir .. dev:before-tauri",
+    "beforeBuildCommand": "pnpm --dir .. build:before-tauri",
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "LifeOS",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 900,
+        "minHeight": 600
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/lifeos-sidecar"]
+  }
+}

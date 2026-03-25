@@ -13,6 +13,55 @@ import type { InterpretGoalStage, TickResult } from '@lifeos/goal-engine';
 import type { createModuleLoader, LifeOSModule, ModuleLoader } from '@lifeos/module-loader';
 import type { IntentOutcome, VoiceCoreOptions } from '@lifeos/voice-core';
 
+export interface PromptChoice<TValue extends string = string> {
+  value: TValue;
+  name: string;
+  description?: string;
+  checked?: boolean;
+}
+
+export interface PromptConfirmOptions {
+  message: string;
+  default?: boolean;
+}
+
+export interface PromptInputOptions {
+  message: string;
+  default?: string;
+  validate?: (value: string) => boolean | string;
+}
+
+export interface PromptSelectOptions<TValue extends string = string> {
+  message: string;
+  choices: PromptChoice<TValue>[];
+  default?: TValue;
+}
+
+export interface PromptCheckboxOptions<TValue extends string = string> {
+  message: string;
+  choices: PromptChoice<TValue>[];
+}
+
+export interface ChildProcessLike {
+  stdout: NodeJS.ReadableStream | null;
+  stderr: NodeJS.ReadableStream | null;
+  on(event: 'close', listener: (code: number | null) => void): this;
+  on(event: 'error', listener: (error: Error) => void): this;
+  removeAllListeners?: () => void;
+  kill?: (signal?: NodeJS.Signals | number) => boolean;
+}
+
+export interface GraphSummary {
+  version: string;
+  updatedAt: string;
+  totalPlans: number;
+  totalGoals: number;
+  latestPlanCreatedAt: string;
+  latestGoalCreatedAt: string;
+  recentPlanTitles: string[];
+  recentGoalTitles: string[];
+  activeGoals: unknown[];
+}
 export type VoiceDemoScenario =
   | 'task'
   | 'calendar'
@@ -31,6 +80,10 @@ export interface GoalCommandOptions {
   verbose: boolean;
 }
 
+export interface InitCommandOptions {
+  force: boolean;
+  verbose: boolean;
+}
 export interface StatusCommandOptions {
   outputJson: boolean;
   graphPath: string;
@@ -155,8 +208,10 @@ export interface SpeechOutput {
 
 export interface RunCliDependencies {
   env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
   now?: () => Date;
   cwd?: () => string;
+  fetchFn?: typeof fetch;
   interpretGoal?: (
     input: string,
     options: {
@@ -197,6 +252,33 @@ export interface RunCliDependencies {
   createModuleLoader?: (options?: Parameters<typeof createModuleLoader>[0]) => ModuleLoader;
   moduleLoader?: ModuleLoader;
   defaultModules?: LifeOSModule[];
+  setOptionalModuleEnabled?: (
+    moduleId: string,
+    enabled: boolean,
+    options?: {
+      env?: NodeJS.ProcessEnv;
+      statePath?: string;
+    },
+  ) => Promise<unknown>;
+  runGoalCommand?: (
+    goal: string,
+    options: GoalCommandOptions,
+    dependencies?: RunCliDependencies,
+  ) => Promise<number>;
+  spawnProcess?: (
+    command: string,
+    args: string[],
+    options?: {
+      cwd?: string;
+      env?: NodeJS.ProcessEnv;
+      shell?: boolean;
+      stdio?: 'pipe' | 'inherit';
+    },
+  ) => ChildProcessLike;
+  confirmPrompt?: (options: PromptConfirmOptions) => Promise<boolean>;
+  inputPrompt?: (options: PromptInputOptions) => Promise<string>;
+  selectPrompt?: (options: PromptSelectOptions) => Promise<string>;
+  checkboxPrompt?: (options: PromptCheckboxOptions) => Promise<string[]>;
   waitForSignal?: () => Promise<void>;
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;

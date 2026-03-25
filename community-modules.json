@@ -50,6 +50,15 @@
       "resourceHint": "medium"
     },
     {
+      "name": "health-tracker",
+      "repo": "lifeos-community/health-tracker",
+      "certified": false,
+      "category": "health",
+      "description": "Local-first logging for steps, sleep, weight, heart rate, and custom health metrics.",
+      "tags": ["health", "metrics", "tracking", "habit"],
+      "resourceHint": "low"
+    },
+    {
       "name": "smart-home",
       "repo": "lifeos-community/smart-home-module",
       "certified": false,

@@ -30,9 +30,9 @@ test('loadProfile returns defaults when no preferences exist', async () => {
   });
 
   const profile = await personality.loadProfile();
-  assert.equal(profile.communicationStyle, 'concise and direct');
-  assert.deepEqual(profile.priorities, ['health', 'deep work', 'family']);
-  assert.deepEqual(profile.quirks, ['hates long briefings', 'loves research rabbit holes']);
+  assert.equal(profile.communicationStyle, 'clear, warm, and concise');
+  assert.deepEqual(profile.priorities, ['wellbeing', 'deep work', 'relationships']);
+  assert.deepEqual(profile.quirks, ['prefers encouraging language', 'likes practical next steps']);
 });
 
 test('loadProfile maps explicit preference key/value entries', async () => {

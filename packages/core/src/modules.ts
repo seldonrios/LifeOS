@@ -6,7 +6,14 @@ export const baselineModules = [
   'briefing',
 ] as const;
 
-export const optionalModules = ['research', 'weather', 'news', 'health', 'google-bridge'] as const;
+export const optionalModules = [
+  'research',
+  'weather',
+  'news',
+  'email-summarizer',
+  'health',
+  'google-bridge',
+] as const;
 
 export type BaselineModuleId = (typeof baselineModules)[number];
 export type OptionalModuleId = (typeof optionalModules)[number];

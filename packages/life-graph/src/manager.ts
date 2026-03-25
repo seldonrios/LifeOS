@@ -48,6 +48,9 @@ function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
     researchResults: [],
     weatherSnapshots: [],
     newsDigests: [],
+    emailDigests: [],
+    healthMetricEntries: [],
+    healthDailyStreaks: [],
     memory: [],
     updatedAt: now.toISOString(),
   };
@@ -193,6 +196,9 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       researchResults: [],
       weatherSnapshots: [],
       newsDigests: [],
+      emailDigests: [],
+      healthMetricEntries: [],
+      healthDailyStreaks: [],
       memory: [],
     };
   }
@@ -208,11 +214,16 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       researchResults: [],
       weatherSnapshots: [],
       newsDigests: [],
+      emailDigests: [],
+      healthMetricEntries: [],
+      healthDailyStreaks: [],
       memory: [],
     };
   }
 
-  return LifeGraphDocumentSchema.parse(value) as LifeGraphDocument;
+  throw new Error(
+    `Invalid life graph format: ${JSON.stringify(versionedPlans.error.issues, null, 2)}`,
+  );
 }
 
 export class LifeGraphManager {
@@ -225,31 +236,128 @@ export class LifeGraphManager {
   async load(graphPath?: string): Promise<LifeGraphDocument> {
     const resolvedPath = this.resolvePath(graphPath);
 
+    if (!resolvedPath || resolvedPath.trim().length === 0) {
+      throw new Error('Invalid graph path: path cannot be empty');
+    }
+
     try {
       const content = await readFile(resolvedPath, 'utf8');
       const parsed = JSON.parse(stripUtf8Bom(content)) as unknown;
       return normalizeDocument(parsed, new Date());
     } catch (error: unknown) {
-      if (isErrnoException(error) && error.code === 'ENOENT') {
-        return createEmptyDocument();
+      if (isErrnoException(error)) {
+        if (error.code === 'ENOENT') {
+          return createEmptyDocument();
+        }
+        if (error.code === 'EACCES') {
+          throw new Error(`Permission denied reading life graph at ${resolvedPath}`);
+        }
+        if (error.code === 'EISDIR') {
+          throw new Error(`Path is a directory, not a file: ${resolvedPath}`);
+        }
+        if (error.code === 'EMFILE') {
+          throw new Error('Too many open files. Please close some applications');
+        }
+      }
+
+      if (error instanceof SyntaxError) {
+        throw new Error(`Invalid JSON in life graph at ${resolvedPath}: ${error.message}`);
       }
 
       if (error instanceof Error) {
-        throw new Error(`Invalid life graph format at ${resolvedPath}: ${error.message}`);
+        if (error.message.includes('Zod')) {
+          throw new Error(
+            `Life graph format is incompatible or corrupted at ${resolvedPath}: ${error.message}`,
+          );
+        }
+        throw new Error(`Failed to load life graph at ${resolvedPath}: ${error.message}`);
       }
 
-      throw new Error(`Invalid life graph format at ${resolvedPath}`);
+      throw new Error(`Failed to load life graph at ${resolvedPath}`);
     }
   }
 
   async save(graph: LifeGraphDocument, graphPath?: string): Promise<void> {
     const resolvedPath = this.resolvePath(graphPath);
-    const parsed = LifeGraphDocumentSchema.parse(graph) as LifeGraphDocument;
 
-    await mkdir(dirname(resolvedPath), { recursive: true });
-    const tempPath = `${resolvedPath}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(tempPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
-    await rename(tempPath, resolvedPath);
+    if (!resolvedPath || resolvedPath.trim().length === 0) {
+      throw new Error('Invalid graph path: path cannot be empty');
+    }
+
+    // Validate graph before writing
+    try {
+      const parsed = LifeGraphDocumentSchema.parse(graph) as LifeGraphDocument;
+
+      if (!parsed.version) {
+        throw new Error('Graph must have a version');
+      }
+
+      // Ensure directory exists with error handling
+      const dirPath = dirname(resolvedPath);
+      try {
+        await mkdir(dirPath, { recursive: true });
+      } catch (dirError: unknown) {
+        if (isErrnoException(dirError)) {
+          if (dirError.code === 'EACCES') {
+            throw new Error(`Permission denied creating directory: ${dirPath}`);
+          }
+          if (dirError.code === 'EEXIST') {
+            // Directory already exists, continue
+          } else {
+            throw dirError;
+          }
+        } else {
+          throw dirError;
+        }
+      }
+
+      // Use atomic write: write to temp, then rename
+      const tempPath = `${resolvedPath}.${process.pid}.${Date.now()}.tmp`;
+
+      try {
+        await writeFile(tempPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+      } catch (writeError: unknown) {
+        if (isErrnoException(writeError)) {
+          if (writeError.code === 'EACCES') {
+            throw new Error(`Permission denied writing to ${resolvedPath}`);
+          }
+          if (writeError.code === 'ENOSPC') {
+            throw new Error('Disk full: cannot save life graph');
+          }
+          if (writeError.code === 'EMFILE') {
+            throw new Error('Too many open files: cannot save life graph');
+          }
+        }
+        throw writeError;
+      }
+
+      // Atomic rename
+      try {
+        await rename(tempPath, resolvedPath);
+      } catch (renameError: unknown) {
+        // Clean up temp file on rename failure
+        try {
+          await readFile(tempPath).then(() => {
+            // File still exists, try to delete it
+            return new Promise<void>((resolve) => {
+              setTimeout(resolve, 100); // Give time for lock release
+            });
+          });
+        } catch {
+          // Ignore cleanup errors
+        }
+
+        if (isErrnoException(renameError)) {
+          throw new Error(`Failed to finalize graph save: ${renameError.message}`);
+        }
+        throw renameError;
+      }
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message.includes('Zod')) {
+        throw new Error(`Invalid graph format: ${error.message}`);
+      }
+      throw error;
+    }
   }
 
   async appendPlan<TPlan = Record<string, unknown>>(
@@ -274,6 +382,9 @@ export class LifeGraphManager {
       researchResults: graph.researchResults ?? [],
       weatherSnapshots: graph.weatherSnapshots ?? [],
       newsDigests: graph.newsDigests ?? [],
+      emailDigests: graph.emailDigests ?? [],
+      healthMetricEntries: graph.healthMetricEntries ?? [],
+      healthDailyStreaks: graph.healthDailyStreaks ?? [],
       memory: graph.memory ?? [],
     };
 

@@ -14,3 +14,19 @@ config/local.yaml
 
 # TypeScript incremental build cache
 *.tsbuildinfo
+HARDENING_PASS_COMPLETE.md
+HARDENING_PASS_INIT.md
+HARDENING_PASS_SUMMARY.md
+
+# Rust / Tauri build output
+apps/desktop/src-tauri/target/
+
+# Test run artifacts
+test-output.txt
+test-output.log
+**/test-output.txt
+**/test-output.log
+**/test-failures.txt
+**/test-results.txt
+**/failures.txt
+**/out.txt

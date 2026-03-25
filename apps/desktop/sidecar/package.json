@@ -1,0 +1,24 @@
+{
+  "name": "@lifeos/desktop-sidecar",
+  "version": "0.4.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:release": "pnpm run build && node ./scripts/package-sidecar.mjs",
+    "dev": "tsx watch index.ts",
+    "start": "node dist/index.js",
+    "test": "tsx --test index.test.ts"
+  },
+  "dependencies": {
+    "@lifeos/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "pkg": "^5.8.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2"
+  }
+}

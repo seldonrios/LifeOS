@@ -7,9 +7,9 @@ import {
 
 const MAX_PREFERENCE_KEY_CHARS = 80;
 const MAX_PREFERENCE_VALUE_CHARS = 300;
-const DEFAULT_COMMUNICATION_STYLE = 'concise and direct';
-const DEFAULT_PRIORITIES = ['health', 'deep work', 'family'];
-const DEFAULT_QUIRKS = ['hates long briefings', 'loves research rabbit holes'];
+const DEFAULT_COMMUNICATION_STYLE = 'clear, warm, and concise';
+const DEFAULT_PRIORITIES = ['wellbeing', 'deep work', 'relationships'];
+const DEFAULT_QUIRKS = ['prefers encouraging language', 'likes practical next steps'];
 
 const PROFILE_KEY_ALIASES: Record<string, string> = {
   communication_style: 'communication_style',

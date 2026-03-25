@@ -11,6 +11,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
 
+import { runInitCommand } from './commands/init';
 import {
   Topics,
   createEventBusClient,
@@ -45,6 +46,13 @@ import { schedulerModule } from '@lifeos/scheduler-module';
 import { DeviceRegistry, SyncEngine, syncModule, type PairedDevice } from '@lifeos/sync-core';
 import { weatherModule } from '@lifeos/weather-module';
 import {
+  emailSummarizerModule,
+  getCredentialsFilePath,
+  readCredentials,
+  writeCredentials,
+  type ImapCredentials,
+} from '@lifeos/email-summarizer-module';
+import {
   MeshRegistry,
   readMeshState,
   writeMeshState,
@@ -76,6 +84,7 @@ import type {
   DemoCommandOptions,
   EventsListenCommandOptions,
   GoalCommandOptions,
+  InitCommandOptions,
   MarketplaceCommandOptions,
   MemoryCommandOptions,
   MeshCommandOptions,
@@ -126,6 +135,7 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   research: researchModule,
   weather: weatherModule,
   news: newsModule,
+  'email-summarizer': emailSummarizerModule,
   health: null,
   'google-bridge': googleBridgeModule,
 };
@@ -372,6 +382,106 @@ function normalizeModuleAction(action: string): ModuleCommandOptions['action'] |
   return null;
 }
 
+function parsePortInput(value: string): number | null {
+  const parsed = Number.parseInt(value.trim(), 10);
+  if (!Number.isFinite(parsed) || parsed < 1 || parsed > 65535) {
+    return null;
+  }
+  return parsed;
+}
+
+function parseSecureInput(value: string): boolean | null {
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'y' || normalized === 'yes' || normalized === 'true' || normalized === '1') {
+    return true;
+  }
+  if (normalized === 'n' || normalized === 'no' || normalized === 'false' || normalized === '0') {
+    return false;
+  }
+  return null;
+}
+
+async function setupEmailSummarizer(
+  env: NodeJS.ProcessEnv,
+  dependencies: RunCliDependencies,
+): Promise<{ path: string; accountLabel: string }> {
+  const inputPrompt = dependencies.inputPrompt;
+  if (!inputPrompt) {
+    throw new Error('Interactive prompts unavailable. Re-run in an interactive terminal.');
+  }
+
+  const host = (
+    await inputPrompt({
+      message: 'IMAP host (for example: imap.gmail.com)',
+      validate: (value: string) => (value.trim().length > 0 ? true : 'Host is required.'),
+    })
+  ).trim();
+
+  const secure = parseSecureInput(
+    await inputPrompt({
+      message: 'Use TLS/SSL? (yes/no)',
+      default: 'yes',
+      validate: (value: string) => (parseSecureInput(value) === null ? 'Enter yes or no.' : true),
+    }),
+  );
+
+  const defaultPort = secure === false ? '143' : '993';
+  const port = parsePortInput(
+    await inputPrompt({
+      message: 'IMAP port',
+      default: defaultPort,
+      validate: (value: string) =>
+        parsePortInput(value) === null ? 'Port must be between 1 and 65535.' : true,
+    }),
+  );
+
+  const user = (
+    await inputPrompt({
+      message: 'IMAP username',
+      validate: (value: string) => (value.trim().length > 0 ? true : 'Username is required.'),
+    })
+  ).trim();
+
+  const pass = (
+    await inputPrompt({
+      message: 'IMAP password or app password',
+      validate: (value: string) => (value.trim().length > 0 ? true : 'Password is required.'),
+    })
+  ).trim();
+
+  const label = (
+    await inputPrompt({
+      message: 'Account label (for example: work)',
+      default: 'default',
+      validate: (value: string) => (value.trim().length > 0 ? true : 'Label is required.'),
+    })
+  ).trim();
+
+  if (secure === null || port === null) {
+    throw new Error('Invalid IMAP security or port value.');
+  }
+
+  const current = await readCredentials(env);
+  const next: ImapCredentials[] = [
+    ...current.filter((entry) => entry.label.toLowerCase() !== label.toLowerCase()),
+    {
+      host,
+      port,
+      secure,
+      auth: {
+        user,
+        pass,
+      },
+      label,
+    },
+  ];
+  await writeCredentials(next, env);
+  return {
+    path: getCredentialsFilePath(env),
+    accountLabel: label,
+  };
+}
+
 function normalizeMarketplaceAction(action: string): MarketplaceCommandOptions['action'] | null {
   if (action === 'list' || action === 'search' || action === 'refresh') {
     return action;
@@ -440,6 +550,14 @@ function toModuleIdFromRepo(repo: string): string {
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-module$/, '')
     .replace(/^-+|-+$/g, '');
+}
+
+function resolveOptionalModuleAlias(moduleId: string): string {
+  const normalized = moduleId.trim().toLowerCase();
+  if (normalized === 'health-tracker') {
+    return 'health';
+  }
+  return normalized;
 }
 
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
@@ -772,7 +890,7 @@ export async function runGoalCommand(
       const defaultGraphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
       const isFirstRun = options.graphPath === defaultGraphPath && !fileExists(options.graphPath);
       if (isFirstRun) {
-        const firstRunMessage = `Welcome to LifeOS! Initializing your personal graph at ${options.graphPath}`;
+        const firstRunMessage = `First run detected. Initializing your personal graph at ${options.graphPath}. Tip: run 'lifeos init' for guided setup.`;
         if (options.outputJson) {
           writeStderr(`${chalk.yellow(firstRunMessage)}\n`);
         } else {
@@ -1226,9 +1344,9 @@ async function buildVoiceBriefingSummary(client: LifeGraphClient, now: Date): Pr
   const latestWeather = await client.getLatestWeatherSnapshot();
   const latestNews = await client.getLatestNewsDigest();
 
-  const sections: string[] = ['Here is your LifeOS briefing.'];
+  const sections: string[] = ['Here is your LifeOS briefing. I will keep it clear and practical.'];
   if (openTasks.length === 0) {
-    sections.push('You have no open tasks.');
+    sections.push('You have no open tasks right now. Nice clean slate.');
   } else if (nextTask) {
     sections.push(
       `You have ${openTasks.length} open task${openTasks.length === 1 ? '' : 's'}. Next: ${truncateText(
@@ -1239,7 +1357,7 @@ async function buildVoiceBriefingSummary(client: LifeGraphClient, now: Date): Pr
   }
 
   if (upcomingEvents.length === 0) {
-    sections.push('No calendar events in the next 24 hours.');
+    sections.push('No calendar events in the next 24 hours. You have room for focused work.');
   } else {
     const event = upcomingEvents[0];
     if (event) {
@@ -1255,7 +1373,7 @@ async function buildVoiceBriefingSummary(client: LifeGraphClient, now: Date): Pr
   if (latestWeather?.forecast) {
     sections.push(`Weather: ${truncateText(latestWeather.forecast, 180)}`);
   } else {
-    sections.push('Weather: no recent forecast cached.');
+    sections.push('Weather: no recent forecast cached yet.');
   }
 
   if (latestNews?.summary) {
@@ -1949,29 +2067,52 @@ export async function runModuleCommand(
       return 1;
     }
     const normalizedModuleName = moduleName.toLowerCase();
-    if (normalizedModuleName !== 'google-bridge') {
+    try {
+      if (normalizedModuleName === 'google-bridge') {
+        writeStdout('Starting Google Bridge setup...\n');
+        await authorizeGoogleBridgeModule(env);
+        await setOptionalModuleEnabled('google-bridge', true, { env });
+        await setEnabledGoogleBridgeSubFeatures(['calendar', 'tasks', 'gmail'], { env });
+        writeStdout(
+          chalk.green('Google Bridge is ready with calendar, tasks, and Gmail enabled.\n'),
+        );
+        try {
+          const tts = dependencies.createTextToSpeech
+            ? dependencies.createTextToSpeech()
+            : new TextToSpeech();
+          await tts.speak(
+            'Google Bridge setup complete. Calendar, tasks, and Gmail are now enabled.',
+          );
+        } catch {
+          // setup remains successful even if speech output is unavailable
+        }
+        return 0;
+      }
+
+      if (normalizedModuleName === 'email-summarizer') {
+        writeStdout('Starting Email Summarizer setup...\n');
+        const configured = await setupEmailSummarizer(env, dependencies);
+        await setOptionalModuleEnabled('email-summarizer', true, { env });
+        writeStdout(
+          chalk.green(
+            `Email Summarizer is ready for account "${configured.accountLabel}". Credentials saved at ${configured.path}.\n`,
+          ),
+        );
+        try {
+          const tts = dependencies.createTextToSpeech
+            ? dependencies.createTextToSpeech()
+            : new TextToSpeech();
+          await tts.speak('Email summarizer setup complete.');
+        } catch {
+          // setup remains useful without speech output
+        }
+        return 0;
+      }
+
       writeStderr(
-        `${chalk.red.bold('Error:')} Setup is currently implemented for "google-bridge" only.\n`,
+        `${chalk.red.bold('Error:')} Setup is currently implemented for "google-bridge" and "email-summarizer" only.\n`,
       );
       return 1;
-    }
-    try {
-      writeStdout('Starting Google Bridge setup...\n');
-      await authorizeGoogleBridgeModule(env);
-      await setOptionalModuleEnabled('google-bridge', true, { env });
-      await setEnabledGoogleBridgeSubFeatures(['calendar', 'tasks', 'gmail'], { env });
-      writeStdout(chalk.green('Google Bridge is ready with calendar, tasks, and Gmail enabled.\n'));
-      try {
-        const tts = dependencies.createTextToSpeech
-          ? dependencies.createTextToSpeech()
-          : new TextToSpeech();
-        await tts.speak(
-          'Google Bridge setup complete. Calendar, tasks, and Gmail are now enabled.',
-        );
-      } catch {
-        // setup remains successful even if speech output is unavailable
-      }
-      return 0;
     } catch (error: unknown) {
       writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
       return 1;
@@ -1985,7 +2126,7 @@ export async function runModuleCommand(
       );
       return 1;
     }
-    const normalizedModuleName = moduleName.toLowerCase();
+    const normalizedModuleName = resolveOptionalModuleAlias(moduleName);
     if (!optionalModules.includes(normalizedModuleName as (typeof optionalModules)[number])) {
       writeStderr(
         `${chalk.red.bold('Error:')} "${moduleName}" is not an optional module. Optional modules: ${optionalModules.join(', ')}.\n`,
@@ -2130,12 +2271,13 @@ export async function runModuleCommand(
           ),
         );
       }
+      const resolvedInstalledModuleId = resolveOptionalModuleAlias(installed.moduleId);
       if (
-        optionalModules.includes(installed.moduleId as (typeof optionalModules)[number]) &&
-        MODULE_DEFINITIONS[installed.moduleId] !== null
+        optionalModules.includes(resolvedInstalledModuleId as (typeof optionalModules)[number]) &&
+        MODULE_DEFINITIONS[resolvedInstalledModuleId] !== null
       ) {
-        await setOptionalModuleEnabled(installed.moduleId, true, { env });
-        if (installed.moduleId === 'google-bridge') {
+        await setOptionalModuleEnabled(resolvedInstalledModuleId, true, { env });
+        if (resolvedInstalledModuleId === 'google-bridge') {
           const existing = await getEnabledGoogleBridgeSubFeatures({ env });
           if (existing.length === 0) {
             await setEnabledGoogleBridgeSubFeatures(['calendar'], { env });
@@ -2459,6 +2601,27 @@ function buildProgram(
     writeErr: writeStderr,
   });
   program.exitOverride();
+
+  program
+    .command('init')
+    .description('Interactive first-run setup wizard (local-first, safe to re-run)')
+    .option('--force', 'Re-run setup even if already initialized')
+    .option('--verbose', 'Show debug diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runInitCommand(
+        {
+          force: Boolean(commandOptions.force),
+          verbose: Boolean(commandOptions.verbose),
+        } satisfies InitCommandOptions,
+        {
+          ...dependencies,
+          env,
+          runGoalCommand,
+        },
+      );
+
+      setExitCode(commandExitCode);
+    });
 
   program
     .command('goal')

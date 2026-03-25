@@ -11,6 +11,14 @@ This guide gets a LifeOS development environment running and validates that it i
 - Docker Desktop or Docker Engine
 - Git
 
+## Shell Support
+
+- Linux/macOS: use `bash` or `zsh`.
+- Windows: use PowerShell for general commands; run bash scripts with `bash`, Git Bash, or WSL.
+- Bash-only scripts used in setup:
+  - `bash scripts/init-secrets.sh`
+  - `bash scripts/provision-nats-identities.sh`
+
 ## Primary Path - Dev Container (Recommended)
 
 1. Clone and enter the repository.
@@ -42,7 +50,7 @@ docker compose up
 
 8. Confirm startup diagnostics are emitted by a running service.
 
-**bash**
+**Linux/macOS (bash/zsh)**
 
 ```bash
 docker compose logs module-loader | grep "Startup Diagnostics Report"
@@ -74,8 +82,16 @@ pnpm install
 4. Copy `.env.example` to `.env` and fill required values.
 5. Seed secrets where needed.
 
+**Linux/macOS (bash/zsh)**
+
 ```bash
 scripts/init-secrets.sh
+```
+
+**PowerShell**
+
+```powershell
+bash scripts/init-secrets.sh
 ```
 
 6. Validate the workspace.
@@ -105,11 +121,11 @@ Use this checklist before opening a PR:
 
 ## Troubleshooting
 
-| Symptom | Cause | Fix |
-|---|---|---|
-| `init-db` exits non-zero | `postgres` is not yet healthy | Wait for `pg_isready` healthcheck and verify `POSTGRES_USER` and `POSTGRES_DB` in `.env` |
-| Missing secrets error on service start | `.env` is not populated | Copy `.env.example` to `.env` and run `scripts/init-secrets.sh` |
-| NATS auth failure | NKey credentials were not provisioned | Run `scripts/provision-nats-identities.sh` |
-| Port conflict on 5432/4222/3000/7474 | Another process is holding the port | Stop the conflicting process or remap ports in `docker-compose.yml` |
+| Symptom                                                                                 | Cause                                                            | Fix                                                                                                                                                     |
+| --------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `init-db` exits non-zero                                                                | `postgres` is not yet healthy                                    | Wait for `pg_isready` healthcheck and verify `POSTGRES_USER` and `POSTGRES_DB` in `.env`                                                                |
+| Missing secrets error on service start                                                  | `.env` is not populated                                          | Copy `.env.example` to `.env` and run `scripts/init-secrets.sh` (Linux/macOS) or `bash scripts/init-secrets.sh` (PowerShell)                            |
+| NATS auth failure                                                                       | NKey credentials were not provisioned                            | Run `scripts/provision-nats-identities.sh` (Linux/macOS) or `bash scripts/provision-nats-identities.sh` (PowerShell)                                    |
+| Port conflict on 5432/4222/3000/7474                                                    | Another process is holding the port                              | Stop the conflicting process or remap ports in `docker-compose.yml`                                                                                     |
 | `init-db` exits immediately with `exec format error` or `/usr/bin/env: bash: not found` | `init-db` image was changed to an Alpine variant that lacks bash | Restore `image: postgres:16` (Debian) for the `init-db` service in `docker-compose.yml`; run `docker compose pull init-db && docker compose up init-db` |
-| `pnpm run validate` fails on typecheck | Dependencies are missing | Run `pnpm install` first |
+| `pnpm run validate` fails on typecheck                                                  | Dependencies are missing                                         | Run `pnpm install` first                                                                                                                                |

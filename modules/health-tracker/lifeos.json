@@ -1,0 +1,26 @@
+{
+  "name": "health-tracker",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Log health metrics locally - steps, sleep, weight, heart rate, and custom metrics.",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": ["speak"],
+    "events": [
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.voice.intent.health.log",
+      "subscribe:lifeos.voice.intent.health.query",
+      "publish:lifeos.health.metric.logged",
+      "publish:lifeos.health.streak.updated",
+      "publish:lifeos.orchestrator.suggestion"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/life-graph", "@lifeos/event-bus", "@lifeos/voice-core"],
+  "category": "health",
+  "tags": ["health", "metrics", "tracking", "habit"]
+}

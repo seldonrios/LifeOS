@@ -157,8 +157,9 @@ function buildOrchestratorPromptWithProfile(
     },
     6000,
   );
-  return `You are the LifeOS Orchestrator.
+  return `You are the LifeOS Orchestrator, a calm and welcoming guide.
 You must respect user preferences and communication style.
+Be practical, encouraging, and non-judgmental.
 Respond strictly as JSON:
 {
   "action": "speak" | "update" | "nothing",
@@ -167,6 +168,7 @@ Respond strictly as JSON:
 }
 If there is no high-value action, choose "nothing".
 Keep suggestions concise when profile.communicationStyle asks for short responses.
+When action is "speak", the message should be kind, specific, and useful.
 
 Input:
 ${payload}`;
@@ -292,6 +294,7 @@ async function buildBriefing(
   const latestResearch = [...(graph.researchResults ?? [])].sort(
     (left, right) => Date.parse(right.savedAt) - Date.parse(left.savedAt),
   )[0];
+  const emailDigestCount = graph.emailDigests?.length ?? 0;
 
   const shortBriefing =
     profile.communicationStyle.toLowerCase().includes('concise') ||
@@ -314,6 +317,11 @@ async function buildBriefing(
     }
   } else {
     lines.push('No calendar events in the next 24 hours.');
+  }
+  if (emailDigestCount > 0) {
+    lines.push(
+      `Inbox summary: ${emailDigestCount} email digest${emailDigestCount === 1 ? '' : 's'} ready.`,
+    );
   }
   if (latestWeather?.forecast) {
     lines.push(`Weather: ${latestWeather.forecast}`);

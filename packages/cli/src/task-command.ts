@@ -307,7 +307,7 @@ export async function handleNextActions(
   } else {
     const lines = ['Top Next Actions:'];
     if (nextActions.length === 0) {
-      lines.push('- none yet');
+      lines.push('- none yet, create a goal and LifeOS will suggest your best next move');
     } else {
       nextActions.forEach((action) => {
         lines.push(`- ${action}`);
