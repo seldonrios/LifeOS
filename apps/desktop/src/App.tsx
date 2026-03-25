@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Dashboard } from './screens/Dashboard';
@@ -8,10 +9,19 @@ import { Marketplace } from './screens/Marketplace';
 import { Settings } from './screens/Settings';
 import { useGraph } from './hooks/useGraph';
 import { useModules } from './hooks/useModules';
+import { readSettings } from './ipc';
 import type { ScreenId } from './types';
 
+function getTimeGreeting(): string {
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) return 'Good morning';
+  if (hour >= 12 && hour < 17) return 'Good afternoon';
+  if (hour >= 17 && hour < 21) return 'Good evening';
+  return 'Welcome back';
+}
+
 const SCREEN_META: Record<ScreenId, { title: string }> = {
-  dashboard: { title: 'Good morning' },
+  dashboard: { title: 'Dashboard' },
   graph: { title: 'Life Graph' },
   goals: { title: 'Goal Builder' },
   marketplace: { title: 'Marketplace' },
@@ -22,6 +32,12 @@ export function App(): JSX.Element {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard');
   const graphQuery = useGraph();
   const { modulesQuery } = useModules();
+  const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
+
+  const screenTitle = useMemo(() => {
+    if (activeScreen === 'dashboard') return getTimeGreeting();
+    return SCREEN_META[activeScreen].title;
+  }, [activeScreen]);
 
   const graphSummary = useMemo(() => {
     if (!graphQuery.data) {
@@ -38,18 +54,20 @@ export function App(): JSX.Element {
     return `Modules: ${enabled.slice(0, 3).join(', ') || 'none'}`;
   }, [modulesQuery.data]);
 
+  const activeModel = settingsQuery.data?.model ?? 'llama3.1:8b';
+
   return (
     <div className="app-shell">
       <Sidebar active={activeScreen} onSelect={setActiveScreen} />
       <div className="main-shell">
         <header className="topbar">
-          <h1>{SCREEN_META[activeScreen].title}</h1>
+          <h1>{screenTitle}</h1>
           <span className="status-pill">Runtime online</span>
         </header>
 
         <main className="screen-area">{renderScreen(activeScreen)}</main>
 
-        <StatusBar model="llama3.1:8b" graphSummary={graphSummary} modulesSummary={modulesSummary} />
+        <StatusBar model={activeModel} graphSummary={graphSummary} modulesSummary={modulesSummary} />
       </div>
     </div>
   );

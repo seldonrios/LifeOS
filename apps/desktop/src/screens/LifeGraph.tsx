@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useGraph } from '../hooks/useGraph';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 
 export function LifeGraph(): JSX.Element {
   const graphQuery = useGraph();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   if (graphQuery.isLoading) {
     return <Spinner label="Rendering graph..." />;
@@ -14,6 +16,7 @@ export function LifeGraph(): JSX.Element {
   }
 
   const activeGoals = graphQuery.data?.activeGoals ?? [];
+  const selectedGoal = activeGoals.find((g) => g.id === selectedId) ?? null;
 
   return (
     <div className="split-layout">
@@ -29,8 +32,13 @@ export function LifeGraph(): JSX.Element {
         {activeGoals.map((goal, index) => (
           <div
             key={goal.id}
-            className="goal-node"
+            className={`goal-node${selectedId === goal.id ? ' goal-node--selected' : ''}`}
             style={{ left: `${20 + index * 28}%`, top: `${28 + (index % 2) * 24}%` }}
+            role="button"
+            tabIndex={0}
+            aria-pressed={selectedId === goal.id}
+            onClick={() => setSelectedId(goal.id === selectedId ? null : goal.id)}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedId(goal.id === selectedId ? null : goal.id); }}
           >
             <strong>{goal.title ?? goal.id}</strong>
             <span>
@@ -48,7 +56,30 @@ export function LifeGraph(): JSX.Element {
         <p>
           Plans: <strong>{graphQuery.data?.totalPlans ?? 0}</strong>
         </p>
-        <p className="muted">Select a node to inspect relationships and metadata.</p>
+        {selectedGoal ? (
+          <div className="node-detail">
+            <h4>{selectedGoal.title ?? selectedGoal.id}</h4>
+            <p>
+              Progress: <strong>{selectedGoal.completedTasks ?? 0}</strong> /{' '}
+              <strong>{selectedGoal.totalTasks ?? 0}</strong> tasks complete
+            </p>
+            <div
+              className="progress-bar-track"
+              role="progressbar"
+              aria-valuenow={selectedGoal.completedTasks ?? 0}
+              aria-valuemax={selectedGoal.totalTasks ?? 1}
+            >
+              <div
+                className="progress-bar-fill"
+                style={{
+                  width: `${Math.round(((selectedGoal.completedTasks ?? 0) / Math.max(selectedGoal.totalTasks ?? 1, 1)) * 100)}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : (
+          <p className="muted">Click a node to inspect goal progress and metadata.</p>
+        )}
       </aside>
     </div>
   );

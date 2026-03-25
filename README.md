@@ -133,6 +133,41 @@ pnpm lifeos sync demo
 
 ## ⚙️ Configuration
 
+LifeOS is configured through environment variables and a local YAML config file. The `lifeos init` wizard handles first-run setup automatically.
+
+### Environment Variables
+
+| Variable             | Default                                 | Description                      |
+| -------------------- | --------------------------------------- | -------------------------------- |
+| `OLLAMA_HOST`        | `http://127.0.0.1:11434`                | Ollama API endpoint              |
+| `LIFEOS_GOAL_MODEL`  | `llama3.1:8b`                           | LLM model for goal planning      |
+| `LIFEOS_GRAPH_PATH`  | `~/.local/share/lifeos/life-graph.json` | Life Graph data file             |
+| `LIFEOS_NATS_URL`    | `nats://127.0.0.1:4222`                 | NATS event bus endpoint          |
+| `LIFEOS_SECRETS_DIR` | `~/.lifeos/secrets/`                    | Directory for module credentials |
+
+### Config File
+
+After running `lifeos init`, settings are stored in `~/.lifeos/config.json`:
+
+```json
+{
+  "model": "llama3.1:8b",
+  "configuredAt": "2026-01-01T00:00:00.000Z",
+  "enabledModules": ["research", "weather"]
+}
+```
+
+### Module Configuration
+
+Enable or disable optional modules any time with:
+
+```bash
+pnpm lifeos module enable research
+pnpm lifeos module disable weather
+```
+
+Baseline modules (`scheduler`, `notes`, `calendar`, `personality`, `briefing`) are always active.
+
 ## Multi-Device Sync
 
 ### Multi-Device Sync (Phase 5)

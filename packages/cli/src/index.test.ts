@@ -1762,8 +1762,38 @@ test('module certify requires local module sources for automated checks', async 
 });
 
 test('marketplace search returns matching entries', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-mktpl-search-'));
+  await writeFile(
+    join(baseDir, 'community-modules.json'),
+    JSON.stringify(
+      {
+        modules: [
+          {
+            name: 'research',
+            repo: 'lifeos-community/research-module',
+            certified: true,
+            category: 'knowledge',
+            description: 'Research assistant with local context and follow-up memory.',
+            tags: ['research', 'knowledge'],
+          },
+          {
+            name: 'weather',
+            repo: 'lifeos-community/weather-module',
+            certified: true,
+            category: 'utilities',
+            description: 'Offline-first weather snapshots.',
+            tags: ['weather'],
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+  );
   const stdout: string[] = [];
   const exitCode = await runCli(['marketplace', 'search', 'research', '--json'], {
+    cwd: () => baseDir,
+    env: { HOME: baseDir },
     stdout: (message) => {
       stdout.push(message);
     },

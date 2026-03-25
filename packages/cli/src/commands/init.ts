@@ -54,15 +54,11 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   weather: 'Offline-first weather snapshots',
   news: 'RSS-powered daily digest',
   health: 'Health metric tracking',
+  'email-summarizer': 'AI-summarized email digest (IMAP)',
+  'google-bridge': 'Google Calendar & Gmail integration',
 };
 
-const WIZARD_MODULES = optionalModules.filter(
-  (moduleId) =>
-    moduleId === 'research' ||
-    moduleId === 'weather' ||
-    moduleId === 'news' ||
-    moduleId === 'health',
-);
+const WIZARD_MODULES = optionalModules;
 
 function resolveBaseCwd(env: NodeJS.ProcessEnv, cwdProvider?: () => string): string {
   if (cwdProvider) {

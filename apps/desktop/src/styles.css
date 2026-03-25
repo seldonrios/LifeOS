@@ -62,6 +62,25 @@ select {
   opacity: 0.8;
 }
 
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-left: 8px;
+}
+
+.sidebar-brand h2 {
+  margin-bottom: 0;
+  padding-left: 0;
+}
+
+.nav-icon {
+  font-size: 14px;
+  opacity: 0.7;
+  margin-right: 6px;
+}
+
 .nav-item {
   text-align: left;
   border: 0;
@@ -144,6 +163,23 @@ select {
   border-bottom: 1px solid #e9edef;
 }
 
+.task-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.due-badge {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fff3e0;
+  color: #8a5a00;
+  border: 1px solid #f0d8a0;
+  white-space: nowrap;
+}
+
 .voice-btn {
   grid-column: 1 / -1;
   border: 0;
@@ -204,6 +240,45 @@ select {
   border-radius: 10px;
   padding: 10px;
   box-shadow: 0 8px 18px rgba(20, 45, 58, 0.08);
+}
+
+.goal-node {
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.goal-node--selected {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 3px rgba(25, 58, 71, 0.18), 0 8px 18px rgba(20, 45, 58, 0.12);
+}
+
+.goal-node:hover {
+  border-color: #8bb8c8;
+}
+
+.node-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.node-detail h4 {
+  margin: 0 0 6px;
+}
+
+.progress-bar-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--brand-soft);
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--brand);
+  border-radius: 999px;
+  transition: width 0.3s ease;
 }
 
 .graph-legend {
@@ -339,6 +414,39 @@ select {
   border: 1px solid #f3cbc2;
   border-radius: 10px;
   padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.error-icon {
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.error-message {
+  flex: 1;
+}
+
+.error-action {
+  border: 1px solid var(--danger);
+  background: transparent;
+  color: var(--danger);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.error-dismiss {
+  border: none;
+  padding: 2px 6px;
+}
+
+.empty-state {
+  padding: 16px 0 8px;
+  text-align: center;
 }
 
 .spinner-row {
