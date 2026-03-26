@@ -171,7 +171,9 @@ const LifeGraphSystemMetaSchema = z
 
 const LifeGraphSystemNodeSchema = z
   .object({
-    meta: LifeGraphSystemMetaSchema.default({}),
+    meta: LifeGraphSystemMetaSchema.default({
+      migrationHistory: [],
+    }),
   })
   .strict();
 
@@ -200,7 +202,11 @@ export const LifeGraphDocumentSchema = z
     healthMetricEntries: z.array(HealthMetricEntrySchema).default([]),
     healthDailyStreaks: z.array(HealthDailyStreakSchema).default([]),
     memory: z.array(MemoryEntrySchema).default([]),
-    system: LifeGraphSystemNodeSchema.default({ meta: {} }),
+    system: LifeGraphSystemNodeSchema.default({
+      meta: {
+        migrationHistory: [],
+      },
+    }),
   })
   .strict();
 
