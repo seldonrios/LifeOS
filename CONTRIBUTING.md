@@ -19,6 +19,13 @@ ollama serve
 docker compose up -d nats
 ```
 
+Targeted package checks used by CI for runtime hardening:
+
+```bash
+pnpm --filter @lifeos/mesh test
+pnpm --filter @lifeos/cli exec tsx --test src/index.test.ts
+```
+
 ## How to create a new module (recommended way)
 
 ```bash
@@ -53,6 +60,12 @@ pnpm lifeos module validate my-new-module
 - Must pass sandbox tests
 - Must use the official template
 
+Mesh/runtime changes must also satisfy:
+
+- Delegation paths are fail-safe (local fallback remains available when remote delegation fails).
+- Mesh RPC auth checks pass for missing token, bad signature, wrong scope, and expired token.
+- Delegation transparency topics remain emitted (`requested`, `accepted`, `completed`, `failed`, `fallback_local`).
+
 ## Modularity Risk Checklist
 
 Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --risks`. Required items:
@@ -66,6 +79,8 @@ Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --
 
 Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
 Marketplace catalog: `community-modules.json` (root).
+
+Catalog contributions should include a current `lastUpdated` value so CLI freshness reporting remains accurate.
 
 ## Build a New Module
 

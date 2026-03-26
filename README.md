@@ -36,6 +36,14 @@ pnpm lifeos marketplace refresh https://example.com/community-modules.json
 pnpm lifeos module install username/repo
 ```
 
+`lifeos marketplace list` now prints catalog source and freshness metadata so users can see when module data is stale.
+
+## Storage + Trust Transparency
+
+- `lifeos status` now reports storage backend, graph path, and resolved SQLite path.
+- `lifeos trust status` and `lifeos trust report --json` include storage backend/path metadata.
+- Compatibility path remains `life-graph.json`, while runtime persistence is SQLite (`life-graph.db` alongside it).
+
 ## ⚡ Quick Start (CLI MVP)
 
 ### 1) Install dependencies
@@ -96,9 +104,9 @@ lifeos demo [--goal <goal>] [--model <model>] [--graph-path <path>] [--verbose]
 lifeos research "<query>" [--graph-path <path>] [--verbose]
 lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
 lifeos module [create|validate|list|status|setup|enable|disable|install|certify|authorize] [name-or-repo] [--sub calendar,tasks,gmail,drive,contacts]
-lifeos marketplace [list|search|refresh] [term-or-url] [--certified] [--json]
+lifeos marketplace [list|search|refresh|compatibility] [term-or-url] [--certified] [--json]
 lifeos graph [migrate] [--to <version>] [--dry-run] [--json] [--graph-path <path>] [--verbose]
-lifeos mesh [join|status|assign|demo] [arg1] [arg2] [--json] [--verbose]
+lifeos mesh [join|status|assign|start|delegate|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos trust [status|explain|report] [action] [--json] [--verbose]
@@ -140,13 +148,21 @@ LifeOS is configured through environment variables and a local YAML config file.
 
 ### Environment Variables
 
-| Variable             | Default                                 | Description                      |
-| -------------------- | --------------------------------------- | -------------------------------- |
-| `OLLAMA_HOST`        | `http://127.0.0.1:11434`                | Ollama API endpoint              |
-| `LIFEOS_GOAL_MODEL`  | `llama3.1:8b`                           | LLM model for goal planning      |
-| `LIFEOS_GRAPH_PATH`  | `~/.local/share/lifeos/life-graph.json` | Life Graph data file             |
-| `LIFEOS_NATS_URL`    | `nats://127.0.0.1:4222`                 | NATS event bus endpoint          |
-| `LIFEOS_SECRETS_DIR` | `~/.lifeos/secrets/`                    | Directory for module credentials |
+| Variable                            | Default                                 | Description                                                          |
+| ----------------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
+| `OLLAMA_HOST`                       | `http://127.0.0.1:11434`                | Ollama API endpoint                                                  |
+| `LIFEOS_GOAL_MODEL`                 | `llama3.1:8b`                           | LLM model for goal planning                                          |
+| `LIFEOS_GRAPH_PATH`                 | `~/.local/share/lifeos/life-graph.json` | Compatibility path; runtime persistence is SQLite at `life-graph.db` |
+| `LIFEOS_NATS_URL`                   | `nats://127.0.0.1:4222`                 | NATS/event-bus endpoint                                              |
+| `LIFEOS_SECRETS_DIR`                | `~/.lifeos/secrets/`                    | Directory for module credentials                                     |
+| `LIFEOS_MESH_RPC_HOST`              | `127.0.0.1`                             | Mesh RPC server bind host                                            |
+| `LIFEOS_MESH_RPC_PORT`              | `5590`                                  | Mesh RPC server port                                                 |
+| `LIFEOS_MESH_HEARTBEAT_INTERVAL_MS` | `5000`                                  | Mesh heartbeat publish interval                                      |
+| `LIFEOS_MESH_NODE_TTL_MS`           | `15000`                                 | Mesh node healthy TTL                                                |
+| `LIFEOS_MESH_DELEGATION_TIMEOUT_MS` | `8000`                                  | RPC delegation timeout                                               |
+| `LIFEOS_JWT_SECRET`                 | _none_                                  | Signing secret for mesh RPC tokens                                   |
+| `LIFEOS_MODULE_MANIFEST_REQUIRED`   | `true`                                  | Require valid module manifests                                       |
+| `LIFEOS_MODULE_RUNTIME_PERMISSIONS` | `strict`                                | Enforce declared module runtime permissions                          |
 
 ### Config File
 
@@ -212,6 +228,38 @@ Runtime enforcement options:
 
 - `LIFEOS_MODULE_MANIFEST_REQUIRED=true` requires a valid `lifeos.json` for loaded modules.
 - `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` rejects undeclared runtime graph/event operations (`warn` by default).
+
+## Distributed Mesh Runtime
+
+LifeOS mesh uses a hybrid model:
+
+- Event-bus control plane (heartbeats + delegation transparency topics).
+- HTTP JSON RPC data plane (`goal.plan`, heavy intent publish).
+
+Key commands:
+
+```bash
+pnpm lifeos mesh start <node-id> --role heavy-compute --capabilities goal-planning,research
+pnpm lifeos mesh status --json
+pnpm lifeos mesh delegate goal-planning --goal "Plan launch checklist" --json
+pnpm lifeos mesh delegate research --topic lifeos.voice.intent.research --data '{"query":"quantum chips"}'
+```
+
+Heavy-intent delegation behavior:
+
+- Goal planning plus heavy voice intents (`research`, `weather`, `news`, `email-summarize`) delegate to healthy mesh nodes when available.
+- Delegation failures (timeout, auth rejection, no healthy node, unreachable RPC) fall back to local execution.
+- Transparency topics emitted: `lifeos.mesh.delegate.requested`, `accepted`, `completed`, `failed`, `fallback_local`.
+
+Mesh/JWT environment variables:
+
+- `LIFEOS_MESH_RPC_HOST` (default `127.0.0.1`)
+- `LIFEOS_MESH_RPC_PORT` (default `5590`)
+- `LIFEOS_MESH_HEARTBEAT_INTERVAL_MS` (default `5000`)
+- `LIFEOS_MESH_NODE_TTL_MS` (default `15000`)
+- `LIFEOS_MESH_DELEGATION_TIMEOUT_MS` (default `8000`)
+- `LIFEOS_JWT_SECRET` (required for secure mesh RPC in real deployments)
+- Optional JWT claims config: `LIFEOS_JWT_ISSUER`, `LIFEOS_JWT_AUDIENCE`
 
 ## 📦 Docker (Optional)
 
