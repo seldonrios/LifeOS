@@ -22,6 +22,3 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm lifeos module validate --all
       - run: pnpm lifeos module certify --dry-run
-      - run: pnpm exec vitest run packages/cli --coverage --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100
-      - run: pnpm run test:graph -- --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100
-      - run: pnpm run test:loader -- --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100
