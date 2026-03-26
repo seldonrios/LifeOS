@@ -41,7 +41,7 @@ test('validateGoalInterpretationPlan rejects invalid priority', () => {
         neededResources: [],
         relatedAreas: ['work'],
       }),
-    /Invalid enum value/,
+    /Invalid (enum value|option)/,
   );
 });
 
