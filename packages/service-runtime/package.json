@@ -21,7 +21,7 @@
     "@lifeos/observability": "workspace:*",
     "@lifeos/health": "workspace:*",
     "@lifeos/policy-engine": "workspace:*",
-    "fastify": "^5.6.1"
+    "fastify": "^5.8.4"
   },
   "devDependencies": {
     "vitest": "^2.1.8"

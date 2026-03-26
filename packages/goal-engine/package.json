@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@lifeos/life-graph": "workspace:*",
-    "ollama": "^0.5.18",
-    "zod": "^3.23.8"
+    "ollama": "^0.6.3",
+    "zod": "^4.3.6"
   },
   "scripts": {
     "test": "tsx --test src/state-machine.test.ts src/mvp-plan.test.ts src/interpreter.test.ts src/tick.test.ts"
