@@ -15,6 +15,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Changed
 
+- Completed two-wave stable dependency upgrade across root toolchain, CLI/runtime packages, and desktop stack (TypeScript 6, ESLint 10, Vitest 4, Vite 8, React test tooling alignment).
+- Raised minimum supported Node.js to `>=20.19.0` for local development and CI/runtime compatibility with upgraded bundler/test dependencies.
+- Upgraded GitHub Actions to Node 24-compatible major versions and pinned workflow execution Node to `20.19.0` for deterministic cross-platform validation.
 - CI and release versioning workflows now install Ruff and validate before release version PR updates.
 - CLI smoke workflow now executes real non-interactive CLI commands (`--version`, `status --json`, `demo --dry-run`).
 - Root `pnpm lifeos` command now runs in `@lifeos/cli` package scope to resolve workspace dependencies consistently.

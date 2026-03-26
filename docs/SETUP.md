@@ -4,7 +4,7 @@ This guide gets a LifeOS development environment running and validates that it i
 
 ## Prerequisites
 
-- Node.js >= 20
+- Node.js >= 20.19.0
 - pnpm >= 9.15.4 (matches the root packageManager pin)
 - Python >= 3.11
 - uv
@@ -74,7 +74,7 @@ docker compose logs module-loader | Select-String "Startup Diagnostics Report"
 
 ## Alternate Path - Native Install
 
-1. Install prerequisites locally: Node.js >= 20, pnpm >= 9.15.4, Python >= 3.11, uv, Docker, Git.
+1. Install prerequisites locally: Node.js >= 20.19.0, pnpm >= 9.15.4, Python >= 3.11, uv, Docker, Git.
 2. Clone and enter the repository.
 
 ```bash

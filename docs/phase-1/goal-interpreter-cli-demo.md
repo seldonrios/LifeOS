@@ -27,7 +27,7 @@ Linux/macOS examples use `bash` syntax. PowerShell-specific equivalents are show
 
 ## Prerequisites
 
-- Node.js >= 20
+- Node.js >= 20.19.0
 - pnpm >= 9.15.4
 - Ollama installed and available in your shell
 
