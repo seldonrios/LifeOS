@@ -121,7 +121,7 @@ lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
 lifeos module [create|validate|list|status|setup|enable|disable|install|certify|authorize] [name-or-repo] [--sub calendar,tasks,gmail,drive,contacts]
 lifeos marketplace [list|search|refresh|compatibility] [term-or-url] [--certified] [--json]
 lifeos graph [migrate] [--to <version>] [--dry-run] [--json] [--graph-path <path>] [--verbose]
-lifeos mesh [join|status|assign|start|delegate|demo] [arg1] [arg2] [--json] [--verbose]
+lifeos mesh [join|status|assign|start|delegate|debug|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos trust [status|explain|report] [action] [--json] [--verbose]
@@ -209,7 +209,7 @@ Baseline modules (`scheduler`, `notes`, `calendar`, `personality`, `briefing`) a
 
 ## Multi-Device Sync
 
-### Multi-Device Sync (Phase 5)
+### Multi-Device Sync
 
 LifeOS now syncs your Life Graph across laptop, phone, tablet, etc. -- 100% locally via NATS.
 
@@ -264,6 +264,7 @@ pnpm lifeos mesh start <node-id> --role heavy-compute --capabilities goal-planni
 pnpm lifeos mesh status --json
 pnpm lifeos mesh delegate goal-planning --goal "Plan launch checklist" --json
 pnpm lifeos mesh delegate research --topic lifeos.voice.intent.research --data '{"query":"quantum chips"}'
+pnpm lifeos mesh debug --bundle ./mesh-debug.json --json
 ```
 
 Heavy-intent delegation behavior:
@@ -348,6 +349,11 @@ Modules that follow the official spec get this badge:
 
 ![Works with LifeOS](docs/badges/works-with-lifeos.svg)
 
+Compatibility checklist and CI profile:
+
+- [Works with LifeOS Checklist](docs/community/works-with-lifeos-checklist.md)
+- [External Module CI Example](templates/module/community-module-ci.yml)
+
 ## 🧭 Project Direction
 
 LifeOS is in **Phase 2: First Production-Ready OSS Release**.
@@ -364,12 +370,14 @@ Next direction:
 - richer module ecosystem (health, finance, calendar, voice)
 - multi-node/federated personal AI patterns
 
-## Phase 9 Release Notes
+## Release Highlights (v0.3.x)
 
 - Mesh runtime keeps existing delegation routing and adds leader lease election with deterministic failover.
 - Marketplace discovery supports multi-source aggregation with trust verification (`strict|warn|off`) and per-source transparency in CLI output.
 - Module loader now enforces heap-pressure resource budgets before module init (`strict` in production, `warn` in development, `off` by explicit override).
 - Backward compatibility is preserved for existing CLI command names and `community-modules.json` module entry shape.
+
+See [CHANGELOG.md](CHANGELOG.md) for versioned release details.
 
 ## 🤝 Contributing
 
@@ -382,6 +390,8 @@ Start here:
 - [Phase 1 Landing Page](docs/phase-1/README.md)
 - [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md)
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
+- [Mesh Protocol v1 Contract](docs/architecture/mesh-protocol-v1.md)
+- [Marketplace Trust Contract v1](docs/architecture/marketplace-trust-contract-v1.md)
 - [Contributing Guide](CONTRIBUTING.md)
 - [Release Policy](docs/community/release-policy.md)
 - [Changelog](CHANGELOG.md)

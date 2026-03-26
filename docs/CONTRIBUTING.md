@@ -10,6 +10,7 @@ This is the canonical contributor guide for LifeOS.
 - Review maintainer expectations in [Maintainer Policy](community/maintainer-policy.md)
 - Follow release versioning and tagging in [Release Policy](community/release-policy.md)
 - Follow test expectations in [Test Taxonomy](testing/test-taxonomy.md)
+- Follow ecosystem compatibility requirements in [Works with LifeOS Checklist](community/works-with-lifeos-checklist.md)
 
 ## Folder Conventions and Navigation
 
@@ -60,6 +61,7 @@ This is the canonical contributor guide for LifeOS.
 - Auto-fixers run for Prettier formatting, ESLint auto-fixable rules, and Ruff formatting.
 - Commits are blocked only for unfixable errors (for example type violations or undefined references).
 - Commit message format is validated by Commitlint against Conventional Commits.
+- Automation can skip pre-commit hooks by setting `LIFEOS_GIT_AUTOMATION=1` (legacy alias `TRAYCER_GIT_AUTOMATION=1` remains accepted for one cycle).
 
 ## Test Contract
 

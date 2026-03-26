@@ -7,6 +7,20 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+### Added
+
+- Mesh protocol and marketplace trust contracts for Phase 3 foundation.
+- `lifeos mesh debug --bundle` command for reproducible mesh diagnostics.
+- Works with LifeOS checklist, external module CI example, and dedicated workflow profile.
+
+### Changed
+
+- CI and release versioning workflows now install Ruff and validate before release version PR updates.
+- CLI smoke workflow now executes real non-interactive CLI commands (`--version`, `status --json`, `demo --dry-run`).
+- Root `pnpm lifeos` command now runs in `@lifeos/cli` package scope to resolve workspace dependencies consistently.
+- Pre-commit automation env var standardized to `LIFEOS_GIT_AUTOMATION` (legacy alias retained).
+- Mesh delegation now propagates `traceId` through events and RPC payloads for cross-node correlation.
+
 ## [0.3.0] - 2026-03-26
 
 ### Added

@@ -203,3 +203,102 @@ test('marketplace strict trust mode accepts valid signed remote catalogs', async
     assert.equal(remoteStatus?.count, 1);
   });
 });
+
+test('marketplace off trust mode includes unsigned remote catalogs', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'lifeos-marketplace-off-'));
+  const payload = {
+    lastUpdated: '2026-03-25',
+    modules: [
+      {
+        name: 'off-mode-module',
+        repo: 'octocat/off-mode-module',
+        certified: false,
+      },
+    ],
+  };
+
+  await withRegistryServer(payload, async (sourceUrl) => {
+    const entries = await listMarketplaceEntries({
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        LIFEOS_MARKETPLACE_SOURCES: sourceUrl,
+        LIFEOS_MARKETPLACE_TRUST_MODE: 'off',
+      },
+      baseDir: home,
+    });
+
+    assert.ok(entries.some((entry) => entry.id === 'off-mode-module'));
+
+    const status = await getMarketplaceCatalogStatus({
+      env: {
+        ...process.env,
+        HOME: home,
+        USERPROFILE: home,
+        LIFEOS_MARKETPLACE_SOURCES: sourceUrl,
+        LIFEOS_MARKETPLACE_TRUST_MODE: 'off',
+      },
+      baseDir: home,
+    });
+    const remoteStatus = status.sources.find((source) => source.kind === 'remote');
+    assert.ok(remoteStatus);
+    assert.equal(remoteStatus?.trusted, true);
+    assert.equal(remoteStatus?.verified, false);
+  });
+});
+
+test('marketplace merge prefers verified entries over newer unverified entries', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'lifeos-marketplace-merge-verified-'));
+
+  const unsignedPayload = {
+    lastUpdated: '2026-03-26',
+    modules: [
+      {
+        name: 'merge-target',
+        repo: 'octocat/unverified-merge-target',
+        certified: false,
+      },
+    ],
+  };
+
+  const signedUnsignedPayload: Record<string, unknown> = {
+    lastUpdated: '2026-03-25',
+    modules: [
+      {
+        name: 'merge-target',
+        repo: 'octocat/verified-merge-target',
+        certified: true,
+      },
+    ],
+  };
+  const signatureValue = signCatalog(signedUnsignedPayload, 'secret-key');
+  const signedPayload = {
+    ...signedUnsignedPayload,
+    signature: {
+      keyId: 'alpha',
+      algorithm: 'hmac-sha256',
+      value: signatureValue,
+    },
+  };
+
+  await withRegistryServer(unsignedPayload, async (unsignedUrl) => {
+    await withRegistryServer(signedPayload, async (signedUrl) => {
+      const entries = await listMarketplaceEntries({
+        env: {
+          ...process.env,
+          HOME: home,
+          USERPROFILE: home,
+          LIFEOS_MARKETPLACE_SOURCES: `${unsignedUrl},${signedUrl}`,
+          LIFEOS_MARKETPLACE_TRUST_MODE: 'warn',
+          LIFEOS_MARKETPLACE_TRUST_KEYS: 'alpha:secret-key',
+        },
+        baseDir: home,
+      });
+
+      const target = entries.find((entry) => entry.id === 'merge-target');
+      assert.ok(target);
+      assert.equal(target?.repo, 'octocat/verified-merge-target');
+    });
+  });
+});
