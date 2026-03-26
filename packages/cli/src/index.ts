@@ -23,6 +23,7 @@ import {
 import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
+  runGraphMigrations,
   type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphClient,
@@ -87,6 +88,7 @@ import { handleNextActions, handleTaskComplete, handleTaskList } from './task-co
 import type {
   DemoCommandOptions,
   EventsListenCommandOptions,
+  GraphCommandOptions,
   GoalCommandOptions,
   InitCommandOptions,
   MarketplaceCommandOptions,
@@ -607,6 +609,14 @@ function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
 
 function normalizeTaskAction(action: string): TaskCommandOptions['action'] | null {
   if (action === 'list' || action === 'complete' || action === 'next') {
+    return action;
+  }
+
+  return null;
+}
+
+function normalizeGraphAction(action: string): GraphCommandOptions['action'] | null {
+  if (action === 'migrate') {
     return action;
   }
 
@@ -1290,6 +1300,84 @@ export async function runStatusCommand(
     }
 
     writeStdout(`${printGraphSummary(summary)}\n`);
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    if (options.verbose && error instanceof Error) {
+      writeStderr(`${chalk.gray(`[verbose] error_type=${error.name}`)}\n`);
+    }
+    return 1;
+  }
+}
+
+export async function runGraphCommand(
+  options: GraphCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const migrate = dependencies.runGraphMigrations ?? runGraphMigrations;
+
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    if (options.action !== 'migrate') {
+      writeStderr(
+        `${chalk.red.bold('Error:')} Invalid graph action "${options.action}". Use migrate.\n`,
+      );
+      return 1;
+    }
+
+    verboseLog(`graph_path=${options.graphPath}`);
+    verboseLog(`target_version=${options.targetVersion ?? '(default)'}`);
+    verboseLog(`dry_run=${options.dryRun === true}`);
+
+    const migrationOptions: { targetVersion?: string; dryRun?: boolean } = {};
+    if (options.targetVersion) {
+      migrationOptions.targetVersion = options.targetVersion;
+    }
+    if (options.dryRun !== undefined) {
+      migrationOptions.dryRun = options.dryRun;
+    }
+
+    const result = await migrate(options.graphPath, migrationOptions);
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(result, null, 2)}\n`);
+      return 0;
+    }
+
+    if (result.migrated === false) {
+      writeStdout(
+        chalk.green(
+          `Graph already at schema ${result.targetVersion}. No migration required (current ${result.currentVersion}).\n`,
+        ),
+      );
+      return 0;
+    }
+
+    const modeLabel = result.dryRun ? 'dry-run' : 'applied';
+    writeStdout(chalk.bold(`Graph migration ${modeLabel}\n`));
+    writeStdout(`${chalk.dim('-'.repeat(36))}\n`);
+    writeStdout(`From: ${result.currentVersion}\n`);
+    writeStdout(`To:   ${result.targetVersion}\n`);
+
+    if (result.steps.length > 0) {
+      writeStdout('Steps:\n');
+      for (const step of result.steps) {
+        writeStdout(`- ${step}\n`);
+      }
+    }
+
+    if (result.backupPath) {
+      writeStdout(`${chalk.dim(`Backup: ${result.backupPath}`)}\n`);
+    }
+
     return 0;
   } catch (error: unknown) {
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -3092,6 +3180,37 @@ function buildProgram(
           risks: Boolean(commandOptions.risks),
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('graph')
+    .description('Graph maintenance commands: migrate')
+    .argument('[action]', 'migrate', 'migrate')
+    .option('--to <version>', 'Target schema version (default: current CLI baseline)')
+    .option('--dry-run', 'Preview migration changes without writing graph file')
+    .option('--json', 'Output migration result JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (action: string, commandOptions) => {
+      const normalizedAction = normalizeGraphAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(`${chalk.red.bold('Error:')} Invalid graph action "${action}". Use migrate.\n`);
+        return;
+      }
+
+      const commandExitCode = await runGraphCommand(
+        {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          dryRun: Boolean(commandOptions.dryRun),
+          targetVersion: commandOptions.to,
           verbose: Boolean(commandOptions.verbose),
         },
         dependencies,

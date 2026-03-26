@@ -1,6 +1,14 @@
+import { writeFile } from 'node:fs/promises';
 import { graphManager } from './manager';
-import { getDefaultLifeGraphPath } from './path';
-import type { GoalPlanRecord, LifeGraphDocument, LifeGraphSummary, LocalLifeGraph } from './types';
+import { getDefaultLifeGraphPath, resolveLifeGraphPath } from './path';
+import type {
+  GoalPlanRecord,
+  GraphMigrationResult,
+  LifeGraphDocument,
+  LifeGraphSummary,
+  LocalLifeGraph,
+  RunGraphMigrationsOptions,
+} from './types';
 
 export interface AppendGoalPlanRecordInput<TPlan = Record<string, unknown>> {
   input: string;
@@ -26,6 +34,90 @@ function toLegacyRecord(plan: LifeGraphDocument['plans'][number]): GoalPlanRecor
 }
 
 export { getDefaultLifeGraphPath };
+
+const DEFAULT_SCHEMA_VERSION = '2.0.0';
+
+function buildMigrationSteps(currentVersion: string, targetVersion: string): string[] {
+  if (currentVersion === targetVersion) {
+    return [];
+  }
+
+  const steps: string[] = [];
+  steps.push(`Validate current graph compatibility from ${currentVersion}.`);
+  if (currentVersion === '1.0.0' && targetVersion === '2.0.0') {
+    steps.push('Initialize system.meta.schemaVersion and migration history metadata.');
+  } else {
+    steps.push(`Apply schema metadata migration to ${targetVersion}.`);
+  }
+  return steps;
+}
+
+export async function runGraphMigrations(
+  graphPath?: string,
+  options: RunGraphMigrationsOptions = {},
+): Promise<GraphMigrationResult> {
+  const targetVersion = options.targetVersion?.trim() || DEFAULT_SCHEMA_VERSION;
+  const graph = await graphManager.load(graphPath);
+  const currentVersion = graph.system?.meta?.schemaVersion ?? '1.0.0';
+  const steps = buildMigrationSteps(currentVersion, targetVersion);
+  const dryRun = options.dryRun === true;
+
+  if (steps.length === 0) {
+    return {
+      currentVersion,
+      targetVersion,
+      migrated: false,
+      dryRun,
+      steps,
+    };
+  }
+
+  const nowIso = new Date().toISOString();
+  const nextGraph: LifeGraphDocument = {
+    ...graph,
+    updatedAt: nowIso,
+    system: {
+      ...(graph.system ?? {}),
+      meta: {
+        ...(graph.system?.meta ?? {}),
+        schemaVersion: targetVersion,
+        migrationHistory: [
+          ...(graph.system?.meta?.migrationHistory ?? []).slice(-49),
+          {
+            fromVersion: currentVersion,
+            toVersion: targetVersion,
+            appliedAt: nowIso,
+            description: `Automatic graph migration ${currentVersion} -> ${targetVersion}`,
+          },
+        ],
+      },
+    },
+  };
+
+  if (dryRun) {
+    return {
+      currentVersion,
+      targetVersion,
+      migrated: true,
+      dryRun,
+      steps,
+    };
+  }
+
+  const resolvedGraphPath = resolveLifeGraphPath(graphPath);
+  const backupPath = `${resolvedGraphPath}.backup-${Date.now()}.json`;
+  await writeFile(backupPath, `${JSON.stringify(graph, null, 2)}\n`, 'utf8');
+  await graphManager.save(nextGraph, graphPath);
+
+  return {
+    currentVersion,
+    targetVersion,
+    migrated: true,
+    dryRun,
+    backupPath,
+    steps,
+  };
+}
 
 export async function loadGraph(graphPath?: string): Promise<LifeGraphDocument> {
   return graphManager.load(graphPath);

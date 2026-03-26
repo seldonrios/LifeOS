@@ -1,6 +1,7 @@
 import type { CreateEventBusClientOptions, ManagedEventBus } from '@lifeos/event-bus';
 import type {
   createLifeGraphClient,
+  GraphMigrationResult,
   GoalPlan,
   GoalPlanRecord,
   LifeGraphClient,
@@ -89,6 +90,15 @@ export interface StatusCommandOptions {
   graphPath: string;
   verbose: boolean;
   risks?: boolean;
+}
+
+export interface GraphCommandOptions {
+  action: 'migrate';
+  outputJson: boolean;
+  graphPath: string;
+  targetVersion?: string;
+  dryRun?: boolean;
+  verbose: boolean;
 }
 
 export interface ReviewCommandOptions {
@@ -251,6 +261,10 @@ export interface RunCliDependencies {
     client?: Pick<LifeGraphClient, 'loadGraph'>;
     logger?: (message: string) => void;
   }) => Promise<TickResult>;
+  runGraphMigrations?: (
+    graphPath?: string,
+    options?: { targetVersion?: string; dryRun?: boolean },
+  ) => Promise<GraphMigrationResult>;
   createEventBusClient?: (options?: CreateEventBusClientOptions) => ManagedEventBus;
   grantVoiceConsent?: () => Promise<void>;
   createTextToSpeech?: () => SpeechOutput;

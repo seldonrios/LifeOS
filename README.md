@@ -96,6 +96,7 @@ lifeos research "<query>" [--graph-path <path>] [--verbose]
 lifeos sync [pair|devices|demo] [device-name] [--json] [--verbose]
 lifeos module [create|validate|list|status|setup|enable|disable|install|certify|authorize] [name-or-repo] [--sub calendar,tasks,gmail,drive,contacts]
 lifeos marketplace [list|search|refresh] [term-or-url] [--certified] [--json]
+lifeos graph [migrate] [--to <version>] [--dry-run] [--json] [--graph-path <path>] [--verbose]
 lifeos mesh [join|status|assign|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
@@ -204,6 +205,11 @@ Defaults:
 - graph path (Windows): `%APPDATA%\\lifeos\\life-graph.json`
 - graph path (Unix): `$XDG_DATA_HOME/lifeos/life-graph.json` or `~/.local/share/lifeos/life-graph.json`
 - NATS URL: `nats://127.0.0.1:4222`
+
+Runtime enforcement options:
+
+- `LIFEOS_MODULE_MANIFEST_REQUIRED=true` requires a valid `lifeos.json` for loaded modules.
+- `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` rejects undeclared runtime graph/event operations (`warn` by default).
 
 ## 📦 Docker (Optional)
 

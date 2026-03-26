@@ -488,6 +488,64 @@ test('status --risks --json emits modularity risk radar payload', async () => {
   assert.equal(typeof parsed.modularityRiskRadar.overallHealth, 'string');
 });
 
+test('graph migrate --dry-run --json emits migration preview payload', async () => {
+  const stdout: string[] = [];
+  let capturedGraphPath = '';
+
+  const exitCode = await runCli(['graph', 'migrate', '--dry-run', '--json'], {
+    runGraphMigrations: async (graphPath, options) => {
+      capturedGraphPath = graphPath ?? '';
+      assert.equal(options?.dryRun, true);
+      return {
+        currentVersion: '1.0.0',
+        targetVersion: '2.0.0',
+        migrated: true,
+        dryRun: true,
+        steps: ['Preview migration step'],
+      };
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.ok(capturedGraphPath.length > 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    migrated: boolean;
+    dryRun: boolean;
+    targetVersion: string;
+  };
+  assert.equal(payload.migrated, true);
+  assert.equal(payload.dryRun, true);
+  assert.equal(payload.targetVersion, '2.0.0');
+});
+
+test('graph migrate prints human summary with backup location', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['graph', 'migrate'], {
+    runGraphMigrations: async () => ({
+      currentVersion: '1.0.0',
+      targetVersion: '2.0.0',
+      migrated: true,
+      dryRun: false,
+      backupPath: '/tmp/lifegraph.backup.json',
+      steps: ['Apply metadata migration'],
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /Graph migration applied/);
+  assert.match(output, /From: 1.0.0/);
+  assert.match(output, /To:\s+2.0.0/);
+  assert.match(output, /Backup:/);
+});
+
 test('memory status --json emits memory counters', async () => {
   const stdout: string[] = [];
 

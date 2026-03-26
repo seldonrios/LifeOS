@@ -10,6 +10,7 @@ import {
   getGraphSummary,
   loadGraph,
   loadLocalLifeGraph,
+  runGraphMigrations,
   saveGraphAtomic,
 } from './store';
 
@@ -227,4 +228,59 @@ test('legacy JSON migration does not overwrite existing SQLite graph', async () 
   const graph = await loadGraph(graphPath);
   assert.equal(graph.plans.length, 1);
   assert.equal(graph.plans[0]?.id, 'db-plan-1');
+});
+
+test('runGraphMigrations dry-run previews migration without mutating graph', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+
+  await saveGraphAtomic(
+    {
+      version: '0.1.0',
+      updatedAt: '2026-03-21T12:00:00.000Z',
+      plans: [],
+    },
+    graphPath,
+  );
+
+  const result = await runGraphMigrations(graphPath, {
+    dryRun: true,
+    targetVersion: '2.0.0',
+  });
+
+  assert.equal(result.migrated, true);
+  assert.equal(result.dryRun, true);
+  assert.equal(result.backupPath, undefined);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.system?.meta?.schemaVersion, undefined);
+});
+
+test('runGraphMigrations applies migration metadata and writes backup', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+
+  await saveGraphAtomic(
+    {
+      version: '0.1.0',
+      updatedAt: '2026-03-21T12:00:00.000Z',
+      plans: [],
+    },
+    graphPath,
+  );
+
+  const result = await runGraphMigrations(graphPath, {
+    targetVersion: '2.0.0',
+  });
+
+  assert.equal(result.migrated, true);
+  assert.equal(result.dryRun, false);
+  assert.ok(result.backupPath);
+  await access(result.backupPath as string);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.system?.meta?.schemaVersion, '2.0.0');
+  assert.equal((graph.system?.meta?.migrationHistory ?? []).length, 1);
+  assert.equal(graph.system?.meta?.migrationHistory?.[0]?.fromVersion, '1.0.0');
+  assert.equal(graph.system?.meta?.migrationHistory?.[0]?.toVersion, '2.0.0');
 });

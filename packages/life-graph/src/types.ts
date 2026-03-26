@@ -389,8 +389,17 @@ export interface LifeGraphRiskRadar {
   recommendations: string[];
 }
 
+export interface LifeGraphMigrationRecord {
+  fromVersion: string;
+  toVersion: string;
+  appliedAt: string;
+  description: string;
+}
+
 export interface LifeGraphSystemMeta {
   riskRadar?: LifeGraphRiskRadar;
+  schemaVersion?: string;
+  migrationHistory?: LifeGraphMigrationRecord[];
 }
 
 export interface LifeGraphSystemNode {
@@ -426,4 +435,18 @@ export interface LifeGraphReviewInsights {
   nextActions: string[];
   generatedAt: string;
   source: 'llm' | 'heuristic';
+}
+
+export interface RunGraphMigrationsOptions {
+  targetVersion?: string;
+  dryRun?: boolean;
+}
+
+export interface GraphMigrationResult {
+  currentVersion: string;
+  targetVersion: string;
+  migrated: boolean;
+  dryRun: boolean;
+  backupPath?: string;
+  steps: string[];
 }

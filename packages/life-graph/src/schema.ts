@@ -152,9 +152,20 @@ const RiskRadarSchema = z
   })
   .strict();
 
+const MigrationRecordSchema = z
+  .object({
+    fromVersion: z.string().trim().min(1),
+    toVersion: z.string().trim().min(1),
+    appliedAt: IsoDateTimeSchema,
+    description: z.string().trim().min(1),
+  })
+  .strict();
+
 const LifeGraphSystemMetaSchema = z
   .object({
     riskRadar: RiskRadarSchema.optional(),
+    schemaVersion: z.string().trim().min(1).optional(),
+    migrationHistory: z.array(MigrationRecordSchema).default([]),
   })
   .strict();
 
