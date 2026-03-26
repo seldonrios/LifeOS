@@ -27,14 +27,34 @@ function renderWithQueryClient(): void {
   );
 }
 
+function makeSettings(
+  overrides: Partial<{
+    model: string;
+    ollamaHost: string;
+    natsUrl: string;
+    voiceEnabled: boolean;
+    localOnlyMode: boolean;
+    cloudAssistEnabled: boolean;
+    trustAuditEnabled: boolean;
+    transparencyTipsEnabled: boolean;
+  }> = {},
+) {
+  return {
+    model: 'llama3.1:8b',
+    ollamaHost: 'http://127.0.0.1:11434',
+    natsUrl: 'nats://127.0.0.1:4222',
+    voiceEnabled: true,
+    localOnlyMode: true,
+    cloudAssistEnabled: false,
+    trustAuditEnabled: true,
+    transparencyTipsEnabled: true,
+    ...overrides,
+  };
+}
+
 describe('Settings', () => {
   it('renders hydrated settings values from IPC', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'mistral:7b']);
 
     renderWithQueryClient();
@@ -47,19 +67,16 @@ describe('Settings', () => {
   });
 
   it('writes updated settings payload when save is clicked', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'mistral:7b']);
-    vi.mocked(ipc.writeSettings).mockResolvedValue({
-      model: 'mistral:7b',
-      ollamaHost: 'http://localhost:11434',
-      natsUrl: 'nats://localhost:4222',
-      voiceEnabled: false,
-    });
+    vi.mocked(ipc.writeSettings).mockResolvedValue(
+      makeSettings({
+        model: 'mistral:7b',
+        ollamaHost: 'http://localhost:11434',
+        natsUrl: 'nats://localhost:4222',
+        voiceEnabled: false,
+      }),
+    );
 
     renderWithQueryClient();
 
@@ -82,17 +99,16 @@ describe('Settings', () => {
         ollamaHost: 'http://localhost:11434',
         natsUrl: 'nats://localhost:4222',
         voiceEnabled: false,
+        localOnlyMode: true,
+        cloudAssistEnabled: false,
+        trustAuditEnabled: true,
+        transparencyTipsEnabled: true,
       });
     });
   });
 
   it('reverts unsaved changes to last loaded values', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b']);
 
     renderWithQueryClient();
@@ -108,12 +124,7 @@ describe('Settings', () => {
   });
 
   it('disables model selection when Ollama models cannot be loaded', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels).mockResolvedValue([]);
 
     renderWithQueryClient();
@@ -124,12 +135,7 @@ describe('Settings', () => {
   });
 
   it('shows stale saved model when not present in live Ollama list', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'gemma3:12b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings({ model: 'gemma3:12b' }));
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'qwen3:8b']);
 
     renderWithQueryClient();
@@ -140,21 +146,16 @@ describe('Settings', () => {
   });
 
   it('refreshes model options after saving a new Ollama host', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels)
       .mockResolvedValueOnce(['llama3.1:8b'])
       .mockResolvedValueOnce(['qwen3:8b']);
-    vi.mocked(ipc.writeSettings).mockResolvedValue({
-      model: 'qwen3:8b',
-      ollamaHost: 'http://localhost:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.writeSettings).mockResolvedValue(
+      makeSettings({
+        model: 'qwen3:8b',
+        ollamaHost: 'http://localhost:11434',
+      }),
+    );
 
     renderWithQueryClient();
 
@@ -168,6 +169,10 @@ describe('Settings', () => {
         ollamaHost: 'http://localhost:11434',
         natsUrl: 'nats://127.0.0.1:4222',
         voiceEnabled: true,
+        localOnlyMode: true,
+        cloudAssistEnabled: false,
+        trustAuditEnabled: true,
+        transparencyTipsEnabled: true,
       });
       expect(vi.mocked(ipc.listOllamaModels).mock.calls.length).toBeGreaterThan(1);
     });
@@ -176,12 +181,7 @@ describe('Settings', () => {
   });
 
   it('disables save until there are unsaved changes', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'llama3.1:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings());
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b', 'qwen3:8b']);
 
     renderWithQueryClient();
@@ -196,19 +196,14 @@ describe('Settings', () => {
   });
 
   it('supports namespace-style Ollama model identifiers', async () => {
-    vi.mocked(ipc.readSettings).mockResolvedValue({
-      model: 'library/qwen3:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: true,
-    });
+    vi.mocked(ipc.readSettings).mockResolvedValue(makeSettings({ model: 'library/qwen3:8b' }));
     vi.mocked(ipc.listOllamaModels).mockResolvedValue(['library/qwen3:8b', 'llama3.1:8b']);
-    vi.mocked(ipc.writeSettings).mockResolvedValue({
-      model: 'library/qwen3:8b',
-      ollamaHost: 'http://127.0.0.1:11434',
-      natsUrl: 'nats://127.0.0.1:4222',
-      voiceEnabled: false,
-    });
+    vi.mocked(ipc.writeSettings).mockResolvedValue(
+      makeSettings({
+        model: 'library/qwen3:8b',
+        voiceEnabled: false,
+      }),
+    );
 
     renderWithQueryClient();
 
@@ -223,6 +218,33 @@ describe('Settings', () => {
         ollamaHost: 'http://127.0.0.1:11434',
         natsUrl: 'nats://127.0.0.1:4222',
         voiceEnabled: false,
+        localOnlyMode: true,
+        cloudAssistEnabled: false,
+        trustAuditEnabled: true,
+        transparencyTipsEnabled: true,
+      });
+    });
+  });
+
+  it('forces cloud assist off when local-only mode is enabled', async () => {
+    vi.mocked(ipc.readSettings).mockResolvedValue(
+      makeSettings({
+        localOnlyMode: false,
+        cloudAssistEnabled: true,
+      }),
+    );
+    vi.mocked(ipc.listOllamaModels).mockResolvedValue(['llama3.1:8b']);
+    vi.mocked(ipc.writeSettings).mockResolvedValue(makeSettings());
+
+    renderWithQueryClient();
+
+    fireEvent.click(await screen.findByLabelText('Local-only mode'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save Settings' }));
+
+    await waitFor(() => {
+      expect(vi.mocked(ipc.writeSettings).mock.calls[0]?.[0]).toMatchObject({
+        localOnlyMode: true,
+        cloudAssistEnabled: false,
       });
     });
   });

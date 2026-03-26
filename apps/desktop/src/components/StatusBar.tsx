@@ -10,7 +10,7 @@ export function StatusBar({ model, graphSummary, modulesSummary }: StatusBarProp
       <span>Assistant model: {model}</span>
       <span>{graphSummary}</span>
       <span>{modulesSummary}</span>
-      <span className="muted">Tip: open Settings to change model or endpoints.</span>
+      <span className="muted">Tip: open Trust Center to inspect ownership and runtime methods.</span>
     </footer>
   );
 }

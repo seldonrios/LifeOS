@@ -488,6 +488,101 @@ test('status --risks --json emits modularity risk radar payload', async () => {
   assert.equal(typeof parsed.modularityRiskRadar.overallHealth, 'string');
 });
 
+test('trust status prints ownership and runtime posture', async () => {
+  const stdout: string[] = [];
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-trust-status-'));
+  await mkdir(join(baseHome, '.lifeos'), { recursive: true });
+  await writeFile(
+    join(baseHome, '.lifeos', 'init.json'),
+    JSON.stringify(
+      {
+        model: 'llama3.1:8b',
+        ollamaHost: 'http://127.0.0.1:11434',
+        natsUrl: 'nats://127.0.0.1:4222',
+        voiceEnabled: true,
+        localOnlyMode: true,
+        cloudAssistEnabled: false,
+        trustAuditEnabled: true,
+      },
+      null,
+      2,
+    ),
+  );
+
+  const exitCode = await runCli(['trust', 'status'], {
+    env: {
+      HOME: baseHome,
+      USERPROFILE: baseHome,
+    },
+    cwd: () => '/repo',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /LifeOS Trust Status/);
+  assert.match(output, /Your data is yours/i);
+  assert.match(output, /Local-first default: yes/);
+});
+
+test('trust report --json emits structured trust report', async () => {
+  const stdout: string[] = [];
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-trust-report-'));
+
+  const exitCode = await runCli(['trust', 'report', '--json'], {
+    env: {
+      HOME: baseHome,
+      USERPROFILE: baseHome,
+      LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'strict',
+      LIFEOS_MODULE_MANIFEST_REQUIRED: 'true',
+      LIFEOS_POLICY_ENFORCE: 'true',
+    },
+    cwd: () => '/repo',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as {
+    ownership: { localFirstDefault: boolean };
+    runtime: { moduleRuntimePermissions: string; policyEnforced: boolean };
+    modules: unknown[];
+  };
+  assert.equal(parsed.ownership.localFirstDefault, true);
+  assert.equal(parsed.runtime.moduleRuntimePermissions, 'strict');
+  assert.equal(parsed.runtime.policyEnforced, true);
+  assert.equal(Array.isArray(parsed.modules), true);
+});
+
+test('trust explain emits explanation and trust event', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const { bus, published } = createMockEventBus();
+
+  const exitCode = await runCli(['trust', 'explain', 'goal.plan'], {
+    env: {
+      LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'strict',
+      LIFEOS_POLICY_ENFORCE: 'true',
+    },
+    cwd: () => '/repo',
+    createEventBusClient: () => bus,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Trust Explanation/);
+  assert.equal(published[0]?.topic, Topics.lifeos.trustExplanationLogged);
+  assert.equal(stderr.length, 0);
+});
+
 test('graph migrate --dry-run --json emits migration preview payload', async () => {
   const stdout: string[] = [];
   let capturedGraphPath = '';

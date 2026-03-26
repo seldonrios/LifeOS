@@ -44,6 +44,12 @@ export interface ModuleRow {
   enabled: boolean;
   available: boolean;
   subFeatures: string[];
+  permissions?: {
+    graph: string[];
+    voice: string[];
+    network: string[];
+    events: string[];
+  };
 }
 
 export interface MarketplaceEntry {
@@ -61,6 +67,49 @@ export interface LifeOsSettings {
   ollamaHost: string;
   natsUrl: string;
   voiceEnabled: boolean;
+  localOnlyMode: boolean;
+  cloudAssistEnabled: boolean;
+  trustAuditEnabled: boolean;
+  transparencyTipsEnabled: boolean;
+}
+
+export interface TrustModuleSummary {
+  id: string;
+  tier: 'core' | 'optional';
+  enabled: boolean;
+  available: boolean;
+  permissions: {
+    graph: string[];
+    voice: string[];
+    network: string[];
+    events: string[];
+  };
+}
+
+export interface TrustStatus {
+  generatedAt: string;
+  ownership: {
+    dataOwnership: string;
+    methodsTransparency: string;
+    localFirstDefault: boolean;
+    cloudAssistEnabled: boolean;
+  };
+  runtime: {
+    model: string;
+    ollamaHost: string;
+    natsUrl: string;
+    localOnlyMode: boolean;
+    trustAuditEnabled: boolean;
+    policyEnforced: boolean;
+    moduleManifestRequired: boolean;
+    moduleRuntimePermissions: string;
+  };
+  modules: TrustModuleSummary[];
+  recentDecisions: Array<{
+    at: string;
+    category: 'ownership' | 'policy' | 'runtime';
+    message: string;
+  }>;
 }
 
 interface SidecarResponse<T> {
@@ -150,6 +199,10 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       ollamaHost: 'http://127.0.0.1:11434',
       natsUrl: 'nats://127.0.0.1:4222',
       voiceEnabled: true,
+      localOnlyMode: true,
+      cloudAssistEnabled: false,
+      trustAuditEnabled: true,
+      transparencyTipsEnabled: true,
     } as T;
   }
 
@@ -159,11 +212,39 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       ollamaHost: String(payload?.ollamaHost ?? 'http://127.0.0.1:11434'),
       natsUrl: String(payload?.natsUrl ?? 'nats://127.0.0.1:4222'),
       voiceEnabled: Boolean(payload?.voiceEnabled ?? true),
+      localOnlyMode: Boolean(payload?.localOnlyMode ?? true),
+      cloudAssistEnabled: Boolean(payload?.cloudAssistEnabled ?? false),
+      trustAuditEnabled: Boolean(payload?.trustAuditEnabled ?? true),
+      transparencyTipsEnabled: Boolean(payload?.transparencyTipsEnabled ?? true),
     } as T;
   }
 
   if (command === 'settings_models') {
     return { models: ['llama3.1:8b', 'qwen3:8b'] } as T;
+  }
+
+  if (command === 'trust_status') {
+    return {
+      generatedAt: new Date().toISOString(),
+      ownership: {
+        dataOwnership: 'Your data is yours. LifeOS keeps your graph and settings on your machine by default.',
+        methodsTransparency: 'Every major action is inspectable through commands, manifests, and event traces.',
+        localFirstDefault: true,
+        cloudAssistEnabled: false,
+      },
+      runtime: {
+        model: 'llama3.1:8b',
+        ollamaHost: 'http://127.0.0.1:11434',
+        natsUrl: 'nats://127.0.0.1:4222',
+        localOnlyMode: true,
+        trustAuditEnabled: true,
+        policyEnforced: true,
+        moduleManifestRequired: true,
+        moduleRuntimePermissions: 'strict',
+      },
+      modules: [],
+      recentDecisions: [],
+    } as T;
   }
 
   throw new Error(`No mock available for command: ${command}`);
@@ -218,4 +299,8 @@ export async function listOllamaModels(): Promise<string[]> {
   return result.models
     .map((item) => String(item ?? '').trim())
     .filter((item) => item.length > 0);
+}
+
+export async function readTrustStatus(): Promise<TrustStatus> {
+  return invokeOrMock<TrustStatus>('trust_status');
 }

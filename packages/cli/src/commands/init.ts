@@ -520,6 +520,7 @@ export async function runInitCommand(
         'Welcome to LifeOS - Sovereign Personal AI Node',
         '',
         'This setup keeps your data local by default and can be safely re-run.',
+        'Your data is yours, and system methods stay inspectable.',
       ],
       'cyan',
     )}\n`,

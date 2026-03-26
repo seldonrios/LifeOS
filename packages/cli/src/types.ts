@@ -168,6 +168,13 @@ export interface MarketplaceCommandOptions {
   outputPath?: string;
 }
 
+export interface TrustCommandOptions {
+  action: 'status' | 'explain' | 'report';
+  targetAction?: string;
+  outputJson: boolean;
+  verbose: boolean;
+}
+
 export interface MeshCommandOptions {
   action: 'join' | 'status' | 'assign' | 'demo';
   nodeId?: string;

@@ -6,6 +6,7 @@ use commands::graph::graph_summary;
 use commands::marketplace::marketplace_list;
 use commands::modules::{module_disable, module_enable, modules_list};
 use commands::settings::{settings_models, settings_read, settings_write};
+use commands::trust::trust_status;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -22,6 +23,7 @@ pub fn run() {
             settings_read,
             settings_write,
             settings_models,
+            trust_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -11,6 +11,10 @@ pub struct DesktopSettings {
     pub ollama_host: String,
     pub nats_url: String,
     pub voice_enabled: bool,
+    pub local_only_mode: bool,
+    pub cloud_assist_enabled: bool,
+    pub trust_audit_enabled: bool,
+    pub transparency_tips_enabled: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -20,6 +24,10 @@ pub struct SettingsUpdate {
     pub ollama_host: Option<String>,
     pub nats_url: Option<String>,
     pub voice_enabled: Option<bool>,
+    pub local_only_mode: Option<bool>,
+    pub cloud_assist_enabled: Option<bool>,
+    pub trust_audit_enabled: Option<bool>,
+    pub transparency_tips_enabled: Option<bool>,
 }
 
 fn default_settings() -> DesktopSettings {
@@ -28,11 +36,15 @@ fn default_settings() -> DesktopSettings {
         ollama_host: "http://127.0.0.1:11434".to_string(),
         nats_url: "nats://127.0.0.1:4222".to_string(),
         voice_enabled: true,
+        local_only_mode: true,
+        cloud_assist_enabled: false,
+        trust_audit_enabled: true,
+        transparency_tips_enabled: true,
     }
 }
 
 fn merge_settings(current: DesktopSettings, update: SettingsUpdate) -> DesktopSettings {
-    DesktopSettings {
+    let mut merged = DesktopSettings {
         model: sanitize_model(update.model.unwrap_or(current.model).as_str()),
         ollama_host: sanitize_http_url(
             update.ollama_host.unwrap_or(current.ollama_host).as_str(),
@@ -43,7 +55,68 @@ fn merge_settings(current: DesktopSettings, update: SettingsUpdate) -> DesktopSe
             "nats://127.0.0.1:4222",
         ),
         voice_enabled: update.voice_enabled.unwrap_or(current.voice_enabled),
+        local_only_mode: update.local_only_mode.unwrap_or(current.local_only_mode),
+        cloud_assist_enabled: update
+            .cloud_assist_enabled
+            .unwrap_or(current.cloud_assist_enabled),
+        trust_audit_enabled: update
+            .trust_audit_enabled
+            .unwrap_or(current.trust_audit_enabled),
+        transparency_tips_enabled: update
+            .transparency_tips_enabled
+            .unwrap_or(current.transparency_tips_enabled),
+    };
+
+    if merged.local_only_mode {
+        merged.cloud_assist_enabled = false;
     }
+
+    merged
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DesktopSettingsPartial {
+    model: Option<String>,
+    ollama_host: Option<String>,
+    nats_url: Option<String>,
+    voice_enabled: Option<bool>,
+    local_only_mode: Option<bool>,
+    cloud_assist_enabled: Option<bool>,
+    trust_audit_enabled: Option<bool>,
+    transparency_tips_enabled: Option<bool>,
+}
+
+fn normalize_settings_partial(partial: DesktopSettingsPartial) -> DesktopSettings {
+    let defaults = default_settings();
+    let mut normalized = DesktopSettings {
+        model: sanitize_model(partial.model.unwrap_or(defaults.model).as_str()),
+        ollama_host: sanitize_http_url(
+            partial.ollama_host.unwrap_or(defaults.ollama_host).as_str(),
+            "http://127.0.0.1:11434",
+        ),
+        nats_url: sanitize_nats_url(
+            partial.nats_url.unwrap_or(defaults.nats_url).as_str(),
+            "nats://127.0.0.1:4222",
+        ),
+        voice_enabled: partial.voice_enabled.unwrap_or(defaults.voice_enabled),
+        local_only_mode: partial.local_only_mode.unwrap_or(defaults.local_only_mode),
+        cloud_assist_enabled: partial
+            .cloud_assist_enabled
+            .unwrap_or(defaults.cloud_assist_enabled),
+        trust_audit_enabled: partial
+            .trust_audit_enabled
+            .unwrap_or(defaults.trust_audit_enabled),
+        transparency_tips_enabled: partial
+            .transparency_tips_enabled
+            .unwrap_or(defaults.transparency_tips_enabled),
+    };
+
+    if normalized.local_only_mode {
+        normalized.cloud_assist_enabled = false;
+    }
+
+    normalized
 }
 
 fn sanitize_model(value: &str) -> String {
@@ -113,8 +186,10 @@ fn load_settings() -> Result<DesktopSettings, String> {
     let raw = fs::read_to_string(&path)
         .map_err(|error| format!("Failed to read settings file {}: {error}", path.display()))?;
 
-    serde_json::from_str::<DesktopSettings>(&raw)
-        .map_err(|error| format!("Failed to parse settings file {}: {error}", path.display()))
+    let parsed = serde_json::from_str::<DesktopSettingsPartial>(&raw)
+        .map_err(|error| format!("Failed to parse settings file {}: {error}", path.display()))?;
+
+    Ok(normalize_settings_partial(parsed))
 }
 
 fn persist_settings(settings: &DesktopSettings) -> Result<(), String> {
@@ -164,6 +239,10 @@ mod tests {
         assert_eq!(encoded["ollamaHost"], "http://127.0.0.1:11434");
         assert_eq!(encoded["natsUrl"], "nats://127.0.0.1:4222");
         assert_eq!(encoded["voiceEnabled"], true);
+        assert_eq!(encoded["localOnlyMode"], true);
+        assert_eq!(encoded["cloudAssistEnabled"], false);
+        assert_eq!(encoded["trustAuditEnabled"], true);
+        assert_eq!(encoded["transparencyTipsEnabled"], true);
     }
 
     #[test]
@@ -200,12 +279,20 @@ mod tests {
             ollama_host: "http://127.0.0.1:11434".to_string(),
             nats_url: "nats://127.0.0.1:4222".to_string(),
             voice_enabled: true,
+            local_only_mode: true,
+            cloud_assist_enabled: false,
+            trust_audit_enabled: true,
+            transparency_tips_enabled: true,
         };
         let update = SettingsUpdate {
             model: Some("mistral:7b".to_string()),
             ollama_host: Some("https://localhost:11434/".to_string()),
             nats_url: Some("invalid-url".to_string()),
             voice_enabled: Some(false),
+            local_only_mode: Some(false),
+            cloud_assist_enabled: Some(true),
+            trust_audit_enabled: Some(false),
+            transparency_tips_enabled: Some(false),
         };
 
         let merged = merge_settings(current, update);
@@ -213,5 +300,28 @@ mod tests {
         assert_eq!(merged.ollama_host, "https://localhost:11434");
         assert_eq!(merged.nats_url, "nats://127.0.0.1:4222");
         assert!(!merged.voice_enabled);
+        assert!(!merged.local_only_mode);
+        assert!(merged.cloud_assist_enabled);
+        assert!(!merged.trust_audit_enabled);
+        assert!(!merged.transparency_tips_enabled);
+    }
+
+    #[test]
+    fn local_only_mode_disables_cloud_assist() {
+        let current = default_settings();
+        let update = SettingsUpdate {
+            model: None,
+            ollama_host: None,
+            nats_url: None,
+            voice_enabled: None,
+            local_only_mode: Some(true),
+            cloud_assist_enabled: Some(true),
+            trust_audit_enabled: None,
+            transparency_tips_enabled: None,
+        };
+
+        let merged = merge_settings(current, update);
+        assert!(merged.local_only_mode);
+        assert!(!merged.cloud_assist_enabled);
     }
 }

@@ -43,12 +43,12 @@ export function Dashboard(): JSX.Element {
           <p>
             {getGreeting()}. Your workspace is ready. Use <strong>Goal Builder</strong> to create
             your first plan, or say <em>&ldquo;Plan my week&rdquo;</em> to get a transparent, step-by-step
-            draft.
+            draft. Your data stays on your machine by default.
           </p>
         ) : (
           <p>
             {getGreeting()}. Top task: <strong>{topTask?.title ?? 'No urgent tasks'}</strong>. Mark
-            tasks done as you go to keep your graph progress accurate and easy to trust.
+            tasks done as you go to keep your graph progress accurate, easy to trust, and fully yours.
           </p>
         )}
       </section>

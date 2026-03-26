@@ -22,6 +22,10 @@ export function Settings(): JSX.Element {
   const [draftHost, setDraftHost] = useState('http://127.0.0.1:11434');
   const [draftNats, setDraftNats] = useState('nats://127.0.0.1:4222');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [localOnlyMode, setLocalOnlyMode] = useState(true);
+  const [cloudAssistEnabled, setCloudAssistEnabled] = useState(false);
+  const [trustAuditEnabled, setTrustAuditEnabled] = useState(true);
+  const [transparencyTipsEnabled, setTransparencyTipsEnabled] = useState(true);
   const hasHydrated = useRef(false);
   const lastHydratedSignature = useRef<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -51,6 +55,10 @@ export function Settings(): JSX.Element {
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
     setVoiceEnabled(current.voiceEnabled);
+    setLocalOnlyMode(current.localOnlyMode);
+    setCloudAssistEnabled(current.cloudAssistEnabled);
+    setTrustAuditEnabled(current.trustAuditEnabled);
+    setTransparencyTipsEnabled(current.transparencyTipsEnabled);
     hasHydrated.current = true;
     lastHydratedSignature.current = currentSignature;
     setHasUnsavedChanges(false);
@@ -64,6 +72,10 @@ export function Settings(): JSX.Element {
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
     setVoiceEnabled(current.voiceEnabled);
+    setLocalOnlyMode(current.localOnlyMode);
+    setCloudAssistEnabled(current.cloudAssistEnabled);
+    setTrustAuditEnabled(current.trustAuditEnabled);
+    setTransparencyTipsEnabled(current.transparencyTipsEnabled);
     hasHydrated.current = true;
     lastHydratedSignature.current = JSON.stringify(current);
     setHasUnsavedChanges(false);
@@ -100,6 +112,9 @@ export function Settings(): JSX.Element {
     <div className="settings-layout">
       <section className="settings-section">
         <h3>AI MODEL</h3>
+        <p className="muted">
+          Local-first by default. Your data stays yours, and methods remain inspectable.
+        </p>
         <label htmlFor="settings-model">Model</label>
         <select
           id="settings-model"
@@ -165,6 +180,65 @@ export function Settings(): JSX.Element {
           />
         </label>
 
+        <h3>OWNERSHIP & TRANSPARENCY</h3>
+
+        <label className="row" htmlFor="settings-local-only">
+          Local-only mode
+          <input
+            id="settings-local-only"
+            type="checkbox"
+            checked={localOnlyMode}
+            onChange={(event) => {
+              const next = event.target.checked;
+              setLocalOnlyMode(next);
+              if (next) {
+                setCloudAssistEnabled(false);
+              }
+              markDirty();
+            }}
+          />
+        </label>
+
+        <label className="row" htmlFor="settings-cloud-assist">
+          Cloud assist
+          <input
+            id="settings-cloud-assist"
+            type="checkbox"
+            checked={cloudAssistEnabled}
+            disabled={localOnlyMode}
+            onChange={(event) => {
+              setCloudAssistEnabled(event.target.checked);
+              markDirty();
+            }}
+          />
+        </label>
+
+        <label className="row" htmlFor="settings-trust-audit">
+          Trust audit timeline
+          <input
+            id="settings-trust-audit"
+            type="checkbox"
+            checked={trustAuditEnabled}
+            onChange={(event) => {
+              setTrustAuditEnabled(event.target.checked);
+              markDirty();
+            }}
+          />
+        </label>
+
+        <label className="row" htmlFor="settings-transparency-tips">
+          Transparency tips
+          <input
+            id="settings-transparency-tips"
+            type="checkbox"
+            checked={transparencyTipsEnabled}
+            onChange={(event) => {
+              setTransparencyTipsEnabled(event.target.checked);
+              markDirty();
+            }}
+          />
+        </label>
+
         {saveMutation.isError ? <ErrorBanner message="Unable to save settings." /> : null}
         {saveStatus ? (
           <p className="muted" role="status" aria-live="polite">
@@ -183,6 +257,10 @@ export function Settings(): JSX.Element {
                 ollamaHost: draftHost,
                 natsUrl: draftNats,
                 voiceEnabled,
+                localOnlyMode,
+                cloudAssistEnabled: localOnlyMode ? false : cloudAssistEnabled,
+                trustAuditEnabled,
+                transparencyTipsEnabled,
               });
             }}
           >

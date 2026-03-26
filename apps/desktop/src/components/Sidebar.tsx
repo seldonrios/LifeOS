@@ -6,11 +6,12 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: Array<{ id: ScreenId; label: string; icon: string }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: '⊡' },
-  { id: 'graph', label: 'Life Graph', icon: '◎' },
-  { id: 'goals', label: 'Goal Builder', icon: '◈' },
-  { id: 'marketplace', label: 'Marketplace', icon: '⊕' },
-  { id: 'settings', label: 'Settings', icon: '⚙' },
+  { id: 'dashboard', label: 'Dashboard', icon: '*' },
+  { id: 'graph', label: 'Life Graph', icon: 'o' },
+  { id: 'goals', label: 'Goal Builder', icon: '+' },
+  { id: 'marketplace', label: 'Marketplace', icon: '#' },
+  { id: 'trust', label: 'Trust Center', icon: '!' },
+  { id: 'settings', label: 'Settings', icon: '~' },
 ];
 
 export function Sidebar({ active, onSelect }: SidebarProps): JSX.Element {

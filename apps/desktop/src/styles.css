@@ -420,6 +420,72 @@ select {
   gap: 10px;
 }
 
+.trust-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.trust-pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.trust-pill-local {
+  background: #e2f3ea;
+  color: #206947;
+}
+
+.trust-pill-cloud {
+  background: #fff1da;
+  color: #865800;
+}
+
+.trust-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid #e9edef;
+}
+
+.trust-module-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trust-module-item {
+  border: 1px solid #e0e8ec;
+  border-radius: 10px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trust-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trust-timeline-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.trust-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--brand);
+  margin-top: 6px;
+}
+
 .error-banner {
   background: #fcece8;
   color: var(--danger);
@@ -515,6 +581,7 @@ select {
   }
 
   .screen-grid,
+  .trust-layout,
   .split-layout,
   .builder-layout {
     grid-template-columns: 1fr;

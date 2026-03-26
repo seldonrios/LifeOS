@@ -6,6 +6,7 @@ import { Dashboard } from './screens/Dashboard';
 import { LifeGraph } from './screens/LifeGraph';
 import { GoalBuilder } from './screens/GoalBuilder';
 import { Marketplace } from './screens/Marketplace';
+import { TrustCenter } from './screens/TrustCenter';
 import { Settings } from './screens/Settings';
 import { useGraph } from './hooks/useGraph';
 import { useModules } from './hooks/useModules';
@@ -29,6 +30,7 @@ const SCREEN_META: Record<ScreenId, { title: string }> = {
   graph: { title: 'Life Graph' },
   goals: { title: 'Goal Builder' },
   marketplace: { title: 'Marketplace' },
+  trust: { title: 'Trust Center' },
   settings: { title: 'Settings' },
 };
 
@@ -61,7 +63,7 @@ export function App(): JSX.Element {
   const activeModel = settingsQuery.data?.model ?? 'llama3.1:8b';
   const runtimeMode = isDesktopRuntime() ? 'Desktop runtime' : 'Preview mode';
   const runtimeHint = isDesktopRuntime()
-    ? 'Connected to your local services and data.'
+    ? 'Connected to your local services and user-owned data.'
     : 'Showing safe preview data until desktop services are available.';
   const runtimeStatus = graphQuery.isLoading || modulesQuery.isLoading || settingsQuery.isLoading
     ? 'Syncing workspace data'
@@ -103,6 +105,9 @@ function renderScreen(screen: ScreenId): JSX.Element {
   }
   if (screen === 'marketplace') {
     return <Marketplace />;
+  }
+  if (screen === 'trust') {
+    return <TrustCenter />;
   }
   return <Settings />;
 }

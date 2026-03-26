@@ -22,11 +22,11 @@ export function GoalBuilder(): JSX.Element {
           value={goal}
           onChange={(event) => setGoal(event.target.value)}
           rows={6}
-          placeholder="e.g. Plan my week, Prepare for next month's review, Get fit by summer…"
+          placeholder="e.g. Plan my week, Prepare for next month's review, Get fit by summer..."
         />
 
         <p className="muted" style={{ fontSize: '12px', margin: 0 }}>
-          Model: <strong>{model}</strong> — change in Settings
+          Model: <strong>{model}</strong> - local-first by default, change in Settings
         </p>
 
         <button
@@ -48,7 +48,10 @@ export function GoalBuilder(): JSX.Element {
 
         {!goalMutation.isPending && !goalMutation.error && !plan ? (
           <div className="empty-state">
-            <p className="muted">Describe a goal on the left and press <strong>Generate Plan</strong> to get a step-by-step action plan tailored by your personal AI.</p>
+            <p className="muted">
+              Describe a goal on the left and press <strong>Generate Plan</strong> to get a
+              step-by-step action plan tailored by your personal AI with transparent methods.
+            </p>
           </div>
         ) : null}
 
@@ -63,7 +66,7 @@ export function GoalBuilder(): JSX.Element {
                   <div>
                     <p>{task.title}</p>
                     <small>
-                      Due {task.dueDate ?? 'TBD'} • Priority {task.priority ?? 3}
+                      Due {task.dueDate ?? 'TBD'} - Priority {task.priority ?? 3}
                     </small>
                   </div>
                 </div>

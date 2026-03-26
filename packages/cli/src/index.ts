@@ -101,6 +101,7 @@ import type {
   RunCliDependencies,
   SpinnerLike,
   StatusCommandOptions,
+  TrustCommandOptions,
   SyncCommandOptions,
   TaskCommandOptions,
   TickCommandOptions,
@@ -762,6 +763,13 @@ function normalizeMarketplaceAction(action: string): MarketplaceCommandOptions['
   return null;
 }
 
+function normalizeTrustAction(action: string): TrustCommandOptions['action'] | null {
+  if (action === 'status' || action === 'explain' || action === 'report') {
+    return action;
+  }
+  return null;
+}
+
 function normalizeMeshAction(action: string): MeshCommandOptions['action'] | null {
   if (action === 'join' || action === 'status' || action === 'assign' || action === 'demo') {
     return action;
@@ -836,6 +844,275 @@ function resolveOptionalModuleAlias(moduleId: string): string {
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
   return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
+}
+
+interface TrustSettingsSnapshot {
+  model: string;
+  ollamaHost: string;
+  natsUrl: string;
+  voiceEnabled: boolean;
+  localOnlyMode?: boolean;
+  cloudAssistEnabled?: boolean;
+  trustAuditEnabled?: boolean;
+  transparencyTipsEnabled?: boolean;
+}
+
+interface TrustModuleSnapshot {
+  id: string;
+  tier: 'core' | 'optional';
+  enabled: boolean;
+  available: boolean;
+  permissions: {
+    graph: string[];
+    voice: string[];
+    network: string[];
+    events: string[];
+  };
+}
+
+interface TrustReportPayload {
+  generatedAt: string;
+  ownership: {
+    dataOwnership: string;
+    methodsTransparency: string;
+    localFirstDefault: boolean;
+    cloudAssistEnabled: boolean;
+  };
+  runtime: {
+    model: string;
+    ollamaHost: string;
+    natsUrl: string;
+    localOnlyMode: boolean;
+    trustAuditEnabled: boolean;
+    policyEnforced: boolean;
+    moduleManifestRequired: boolean;
+    moduleRuntimePermissions: string;
+  };
+  modules: TrustModuleSnapshot[];
+  recentDecisions: Array<{
+    at: string;
+    category: 'ownership' | 'policy' | 'runtime';
+    message: string;
+  }>;
+}
+
+function trustSettingsPath(env: NodeJS.ProcessEnv): string {
+  return join(resolveHomeDir(env), '.lifeos', 'init.json');
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+      return true;
+    }
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+      return false;
+    }
+  }
+
+  return fallback;
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry) => entry.length > 0);
+}
+
+function resolveManifestDirectory(moduleId: string): string {
+  if (moduleId === 'health') {
+    return 'health-tracker';
+  }
+  return moduleId;
+}
+
+async function readTrustSettings(env: NodeJS.ProcessEnv): Promise<TrustSettingsSnapshot> {
+  try {
+    const raw = await readFile(trustSettingsPath(env), 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return {
+      model:
+        typeof parsed.model === 'string' && parsed.model.trim().length > 0
+          ? parsed.model.trim()
+          : DEFAULT_MODEL,
+      ollamaHost:
+        typeof parsed.ollamaHost === 'string' && parsed.ollamaHost.trim().length > 0
+          ? parsed.ollamaHost.trim()
+          : 'http://127.0.0.1:11434',
+      natsUrl:
+        typeof parsed.natsUrl === 'string' && parsed.natsUrl.trim().length > 0
+          ? parsed.natsUrl.trim()
+          : 'nats://127.0.0.1:4222',
+      voiceEnabled: normalizeBoolean(parsed.voiceEnabled, true),
+      localOnlyMode: normalizeBoolean(parsed.localOnlyMode, true),
+      cloudAssistEnabled: normalizeBoolean(parsed.cloudAssistEnabled, false),
+      trustAuditEnabled: normalizeBoolean(parsed.trustAuditEnabled, true),
+      transparencyTipsEnabled: normalizeBoolean(parsed.transparencyTipsEnabled, true),
+    };
+  } catch {
+    return {
+      model: DEFAULT_MODEL,
+      ollamaHost: 'http://127.0.0.1:11434',
+      natsUrl: 'nats://127.0.0.1:4222',
+      voiceEnabled: true,
+      localOnlyMode: true,
+      cloudAssistEnabled: false,
+      trustAuditEnabled: true,
+      transparencyTipsEnabled: true,
+    };
+  }
+}
+
+async function readManifestPermissions(
+  baseCwd: string,
+  moduleId: string,
+): Promise<TrustModuleSnapshot['permissions']> {
+  const defaults = {
+    graph: [] as string[],
+    voice: [] as string[],
+    network: [] as string[],
+    events: [] as string[],
+  };
+
+  const moduleDir = resolveManifestDirectory(moduleId);
+  const manifestPath = join(baseCwd, 'modules', moduleDir, 'lifeos.json');
+  try {
+    const raw = await readFile(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!isObjectRecord(parsed.permissions)) {
+      return defaults;
+    }
+
+    const permissions = parsed.permissions;
+    return {
+      graph: getStringArray(permissions.graph),
+      voice: getStringArray(permissions.voice),
+      network: getStringArray(permissions.network),
+      events: getStringArray(permissions.events),
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+async function buildTrustReport(
+  env: NodeJS.ProcessEnv,
+  baseCwd: string,
+): Promise<TrustReportPayload> {
+  const settings = await readTrustSettings(env);
+  const moduleState = await readModuleState({ env });
+  const coreModuleIds = baselineModules;
+  const optionalModuleIds = optionalModules;
+  const coreModuleIdSet = new Set<string>(coreModuleIds);
+  const enabledOptionalModules = new Set<string>(moduleState.enabledOptionalModules);
+  const allModuleIds = Array.from(new Set([...coreModuleIds, ...optionalModuleIds]));
+
+  const moduleSnapshots: TrustModuleSnapshot[] = [];
+  for (const moduleId of allModuleIds) {
+    const alias = resolveOptionalModuleAlias(moduleId);
+    const isCore = coreModuleIdSet.has(moduleId);
+    const enabled = isCore ? true : enabledOptionalModules.has(moduleId);
+    const available = MODULE_DEFINITIONS[alias] !== null;
+    const permissions = await readManifestPermissions(baseCwd, alias);
+
+    moduleSnapshots.push({
+      id: alias,
+      tier: isCore ? 'core' : 'optional',
+      enabled,
+      available,
+      permissions,
+    });
+  }
+
+  const localOnlyMode = normalizeBoolean(settings.localOnlyMode, !settings.cloudAssistEnabled);
+  const cloudAssistEnabled = normalizeBoolean(settings.cloudAssistEnabled, false);
+  const policyEnforced = normalizeBoolean(env.LIFEOS_POLICY_ENFORCE ?? 'true', true);
+  const moduleManifestRequired = normalizeBoolean(
+    env.LIFEOS_MODULE_MANIFEST_REQUIRED ?? 'true',
+    true,
+  );
+  const moduleRuntimePermissions =
+    (env.LIFEOS_MODULE_RUNTIME_PERMISSIONS ?? 'strict').trim() || 'strict';
+
+  const now = new Date().toISOString();
+  return {
+    generatedAt: now,
+    ownership: {
+      dataOwnership:
+        'Your data is yours. LifeOS keeps your graph and settings on your machine by default.',
+      methodsTransparency:
+        'Every major action is inspectable through commands, manifests, and event traces.',
+      localFirstDefault: localOnlyMode,
+      cloudAssistEnabled,
+    },
+    runtime: {
+      model: settings.model,
+      ollamaHost: settings.ollamaHost,
+      natsUrl: settings.natsUrl,
+      localOnlyMode,
+      trustAuditEnabled: normalizeBoolean(settings.trustAuditEnabled, true),
+      policyEnforced,
+      moduleManifestRequired,
+      moduleRuntimePermissions,
+    },
+    modules: moduleSnapshots,
+    recentDecisions: [
+      {
+        at: now,
+        category: 'ownership',
+        message: localOnlyMode
+          ? 'Local-only mode is enabled; cloud assist is opt-in.'
+          : 'Cloud assist is enabled for selected features.',
+      },
+      {
+        at: now,
+        category: 'policy',
+        message: policyEnforced
+          ? 'Policy enforcement is active for module permission checks.'
+          : 'Policy enforcement is disabled; this weakens runtime trust guarantees.',
+      },
+      {
+        at: now,
+        category: 'runtime',
+        message: `Module runtime permissions are set to "${moduleRuntimePermissions}".`,
+      },
+    ],
+  };
+}
+
+function explainTrustAction(report: TrustReportPayload, targetAction: string): string {
+  const normalized = targetAction.trim().toLowerCase();
+  if (normalized.length === 0) {
+    return 'No action provided. Use `lifeos trust explain <action>`.';
+  }
+
+  if (normalized.startsWith('module.enable')) {
+    return 'Module enable requests are validated against each module manifest and policy rules before runtime access is granted.';
+  }
+
+  if (normalized.startsWith('goal') || normalized.includes('plan')) {
+    return report.runtime.localOnlyMode
+      ? 'Goal planning runs local-first with your selected model and local graph context.'
+      : 'Goal planning may use cloud assist where enabled, but policy and module contracts still gate execution.';
+  }
+
+  if (normalized.includes('voice')) {
+    return 'Voice flows require explicit microphone consent and publish structured intent events to keep methods inspectable.';
+  }
+
+  return 'This action is evaluated with explicit permissions, policy checks, and logged runtime context so behavior remains explainable.';
 }
 
 async function readGoogleBridgeStatusSnapshot(
@@ -2909,6 +3186,97 @@ export async function runMarketplaceCommand(
   }
 }
 
+export async function runTrustCommand(
+  options: TrustCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
+
+  try {
+    const report = await buildTrustReport(env, baseCwd);
+
+    if (options.action === 'report') {
+      writeStdout(`${JSON.stringify(report, null, 2)}\n`);
+      return 0;
+    }
+
+    if (options.action === 'explain') {
+      const targetAction = options.targetAction ?? '';
+      const explanation = explainTrustAction(report, targetAction);
+      const transport = await publishEventSafely(
+        Topics.lifeos.trustExplanationLogged,
+        {
+          targetAction,
+          explanation,
+          generatedAt: report.generatedAt,
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+
+      if (options.outputJson) {
+        writeStdout(
+          `${JSON.stringify(
+            {
+              action: targetAction,
+              explanation,
+              generatedAt: report.generatedAt,
+              transport,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      } else {
+        writeStdout(`${chalk.bold('Trust Explanation\n')}`);
+        writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+        writeStdout(`Action: ${targetAction || '(none)'}\n`);
+        writeStdout(`${explanation}\n`);
+        writeStdout(chalk.dim(`event transport: ${transport}\n`));
+      }
+      return 0;
+    }
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(report, null, 2)}\n`);
+      return 0;
+    }
+
+    const enabledCount = report.modules.filter((module) => module.enabled).length;
+    const cloudState = report.ownership.cloudAssistEnabled ? 'enabled' : 'disabled';
+    writeStdout(chalk.bold('LifeOS Trust Status\n'));
+    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+    writeStdout(`${report.ownership.dataOwnership}\n`);
+    writeStdout(`${report.ownership.methodsTransparency}\n`);
+    writeStdout(`Local-first default: ${report.ownership.localFirstDefault ? 'yes' : 'no'}\n`);
+    writeStdout(`Cloud assist: ${cloudState}\n`);
+    writeStdout(`Policy enforcement: ${report.runtime.policyEnforced ? 'on' : 'off'}\n`);
+    writeStdout(`Manifest required: ${report.runtime.moduleManifestRequired ? 'yes' : 'no'}\n`);
+    writeStdout(`Runtime permissions mode: ${report.runtime.moduleRuntimePermissions}\n`);
+    writeStdout(`Enabled modules: ${enabledCount}/${report.modules.length}\n`);
+    writeStdout(`Model: ${report.runtime.model}\n`);
+    writeStdout('\nRecent decisions:\n');
+    for (const decision of report.recentDecisions) {
+      writeStdout(`- [${decision.category}] ${decision.message}\n`);
+    }
+
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
 export async function runMeshCommand(
   options: MeshCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -3181,6 +3549,35 @@ function buildProgram(
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('trust')
+    .description('Inspect ownership, local-first posture, and runtime transparency')
+    .argument('[action]', 'status | explain | report', 'status')
+    .argument('[targetAction]', 'Action id for explain mode')
+    .option('--json', 'Output JSON only')
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (action: string, targetAction: string | undefined, commandOptions) => {
+      const normalizedAction = normalizeTrustAction(action);
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid trust action "${action}". Use status, explain, or report.\n`,
+        );
+        return;
+      }
+
+      const commandExitCode = await runTrustCommand(
+        {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          verbose: Boolean(commandOptions.verbose),
+          ...(targetAction ? { targetAction } : {}),
         },
         dependencies,
       );
