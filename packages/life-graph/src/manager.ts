@@ -17,6 +17,7 @@ import type {
   GoalPlanRecord,
   GoalPlanSource,
   LifeGraphDocument,
+  LifeGraphStorageInfo,
   LifeGraphTask,
 } from './types';
 
@@ -596,6 +597,10 @@ export class LifeGraphManager {
 
     const backupPath = `${graphPath}.backup-${Date.now()}`;
     await rename(graphPath, backupPath);
+    db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)').run(
+      'migrationBackupPath',
+      backupPath,
+    );
   }
 
   private async getContext(graphPath?: string): Promise<DbContext> {
@@ -638,6 +643,20 @@ export class LifeGraphManager {
     const context = await this.getContext(graphPath);
     const parsed = LifeGraphDocumentSchema.parse(graph) as LifeGraphDocument;
     this.writeGraphToDb(context.db, parsed);
+  }
+
+  async getStorageInfo(graphPath?: string): Promise<LifeGraphStorageInfo> {
+    const context = await this.getContext(graphPath);
+    const row = context.db
+      .prepare('SELECT value FROM meta WHERE key = ?')
+      .get('migrationBackupPath') as { value?: string } | undefined;
+    const migrationBackupPath = typeof row?.value === 'string' ? row.value : null;
+    return {
+      backend: 'sqlite',
+      graphPath: context.graphPath,
+      dbPath: context.dbPath,
+      migrationBackupPath,
+    };
   }
 
   async appendPlan<TPlan = Record<string, unknown>>(

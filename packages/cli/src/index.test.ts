@@ -6,6 +6,7 @@ import test from 'node:test';
 import { pathToFileURL } from 'node:url';
 
 import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
+import { MeshRpcServer } from '@lifeos/mesh';
 import type {
   GoalPlan,
   LifeGraphDocument,
@@ -548,12 +549,21 @@ test('trust report --json emits structured trust report', async () => {
   assert.equal(exitCode, 0);
   const parsed = JSON.parse(stdout.join('')) as {
     ownership: { localFirstDefault: boolean };
-    runtime: { moduleRuntimePermissions: string; policyEnforced: boolean };
+    runtime: {
+      moduleRuntimePermissions: string;
+      policyEnforced: boolean;
+      storageBackend: string;
+      graphPath: string;
+      graphDatabasePath: string;
+    };
     modules: unknown[];
   };
   assert.equal(parsed.ownership.localFirstDefault, true);
   assert.equal(parsed.runtime.moduleRuntimePermissions, 'strict');
   assert.equal(parsed.runtime.policyEnforced, true);
+  assert.equal(parsed.runtime.storageBackend, 'sqlite');
+  assert.match(parsed.runtime.graphPath, /life-graph\.json/i);
+  assert.match(parsed.runtime.graphDatabasePath, /life-graph\.db/i);
   assert.equal(Array.isArray(parsed.modules), true);
 });
 
@@ -1758,6 +1768,7 @@ test('module list displays enabled google-bridge sub-features', async () => {
   });
   assert.equal(listExit, 0);
   assert.match(listOut.join(''), /google-bridge \[optional\].*sub: calendar, tasks/i);
+  assert.match(listOut.join(''), /resource=(low|medium|high)/i);
 });
 
 test('module setup email-summarizer configures credentials and enables module', async () => {
@@ -2052,6 +2063,19 @@ test('marketplace list --certified returns certified entries only', async () => 
   assert.ok(payload.every((entry) => entry.certified));
 });
 
+test('marketplace list prints catalog source and freshness metadata', async () => {
+  const stdout: string[] = [];
+  const exitCode = await runCli(['marketplace', 'list'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /Catalog source:/i);
+  assert.match(output, /staleAfter=/i);
+});
+
 test('marketplace commands read community-modules.json from cwd', async () => {
   const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-marketplace-catalog-'));
   await writeFile(
@@ -2198,10 +2222,13 @@ test('mesh join, assign, and status commands persist node state', async () => {
   });
   assert.equal(statusExit, 0);
   const payload = JSON.parse(stdout.join('')) as {
-    nodes: Array<{ nodeId: string }>;
+    nodes: Array<{ nodeId: string; rpcUrl: string; healthy: boolean }>;
     assignments: Record<string, string>;
+    ttlMs: number;
   };
   assert.ok(payload.nodes.some((node) => node.nodeId === 'heavy-server'));
+  assert.ok(payload.nodes.every((node) => typeof node.rpcUrl === 'string'));
+  assert.equal(typeof payload.ttlMs, 'number');
   assert.equal(payload.assignments.research, 'heavy-server');
 });
 
@@ -2226,6 +2253,138 @@ test('mesh assign rejects capability that target node does not declare', async (
   });
   assert.equal(assignExit, 1);
   assert.match(stderr.join(''), /does not declare capability/i);
+});
+
+test('mesh start --json performs runtime startup check with heartbeat', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-start-'));
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(
+    [
+      'mesh',
+      'start',
+      'heavy-server',
+      '--json',
+      '--role',
+      'heavy-compute',
+      '--capabilities',
+      'goal-planning,research',
+      '--rpc-port',
+      '58040',
+    ],
+    {
+      env: {
+        HOME: baseHome,
+        LIFEOS_JWT_SECRET: 'mesh-test-secret',
+      },
+      stdout: (message) => {
+        stdout.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    started: boolean;
+    heartbeatSeen: boolean;
+    nodeId: string;
+    status: { nodes: Array<{ nodeId: string }> };
+  };
+  assert.equal(payload.started, true);
+  assert.equal(payload.heartbeatSeen, true);
+  assert.equal(payload.nodeId, 'heavy-server');
+  assert.ok(payload.status.nodes.some((node) => node.nodeId === 'heavy-server'));
+});
+
+test('mesh delegate goal-planning dispatches to a healthy rpc node', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-delegate-'));
+  await mkdir(join(baseHome, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    join(baseHome, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-server',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58041',
+          },
+        ],
+        assignments: {
+          'goal-planning': 'heavy-server',
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(baseHome, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-server',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58041',
+            lastSeenAt: new Date().toISOString(),
+          },
+        ],
+        ttlMs: 15000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const rpcServer = new MeshRpcServer({
+    host: '127.0.0.1',
+    port: 58041,
+    goalPlanner: async (request) => ({
+      id: 'goal_remote_1',
+      title: request.goal,
+      description: request.goal,
+      deadline: null,
+      tasks: [],
+      createdAt: new Date().toISOString(),
+    }),
+    intentPublisher: async () => undefined,
+  });
+  await rpcServer.start();
+  try {
+    const stdout: string[] = [];
+    const exitCode = await runCli(
+      ['mesh', 'delegate', 'goal-planning', '--goal', 'Plan launch', '--json'],
+      {
+        env: {
+          HOME: baseHome,
+          LIFEOS_JWT_SECRET: 'mesh-test-secret',
+        },
+        stdout: (message) => {
+          stdout.push(message);
+        },
+      },
+    );
+
+    assert.equal(exitCode, 0);
+    const payload = JSON.parse(stdout.join('')) as {
+      delegated: boolean;
+      nodeId: string;
+      payload: { title: string };
+    };
+    assert.equal(payload.delegated, true);
+    assert.equal(payload.nodeId, 'heavy-server');
+    assert.equal(payload.payload.title, 'Plan launch');
+  } finally {
+    await rpcServer.close();
+  }
 });
 
 test('init command completes successfully with no existing graph', async () => {

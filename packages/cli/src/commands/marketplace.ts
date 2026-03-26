@@ -36,6 +36,14 @@ export interface MarketplaceRefreshResult {
   count: number;
 }
 
+export interface MarketplaceCatalogStatus {
+  source: string;
+  catalogPath: string;
+  lastUpdated: string | null;
+  staleAfterDays: number;
+  isStale: boolean;
+}
+
 const DEFAULT_CATALOG: MarketplaceEntry[] = [
   {
     id: 'research',
@@ -91,6 +99,7 @@ const DEFAULT_CATALOG: MarketplaceEntry[] = [
 
 const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
+const DEFAULT_CATALOG_STALE_DAYS = 14;
 
 interface CommunityModulesFileEntry {
   name?: unknown;
@@ -242,12 +251,57 @@ function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
   return Array.from(unique.values());
 }
 
+function extractLastUpdated(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return null;
+  }
+  const record = raw as Record<string, unknown>;
+  const candidate = typeof record.lastUpdated === 'string' ? record.lastUpdated.trim() : '';
+  if (!candidate) {
+    return null;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
+    return null;
+  }
+  return candidate;
+}
+
+function resolveStaleAfterDays(options: MarketplaceOptions = {}): number {
+  const env = options.env ?? process.env;
+  const parsed = Number.parseInt(env.LIFEOS_MARKETPLACE_STALE_DAYS ?? '', 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return DEFAULT_CATALOG_STALE_DAYS;
+  }
+  return parsed;
+}
+
+function isCatalogStale(lastUpdated: string | null, staleAfterDays: number): boolean {
+  if (!lastUpdated) {
+    return false;
+  }
+  const parsed = Date.parse(`${lastUpdated}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+  const ageDays = Math.floor((Date.now() - parsed) / (24 * 60 * 60 * 1000));
+  return ageDays > staleAfterDays;
+}
+
 async function readCatalogFile(path: string): Promise<MarketplaceEntry[]> {
   try {
     const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
     return parseCatalogDocument(raw);
   } catch {
     return [];
+  }
+}
+
+async function readCatalogFileLastUpdated(path: string): Promise<string | null> {
+  try {
+    const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
+    return extractLastUpdated(raw);
+  } catch {
+    return null;
   }
 }
 
@@ -434,6 +488,45 @@ export async function searchMarketplaceEntries(
       entry.tags.some((tag) => tag.includes(normalizedTerm))
     );
   });
+}
+
+export async function getMarketplaceCatalogStatus(
+  options: MarketplaceOptions = {},
+): Promise<MarketplaceCatalogStatus> {
+  const staleAfterDays = resolveStaleAfterDays(options);
+  const localCatalogPath = resolveCatalogPath(options);
+  const local = await readCatalogFile(localCatalogPath);
+  if (local.length > 0) {
+    const lastUpdated = await readCatalogFileLastUpdated(localCatalogPath);
+    return {
+      source: 'local',
+      catalogPath: localCatalogPath,
+      lastUpdated,
+      staleAfterDays,
+      isStale: isCatalogStale(lastUpdated, staleAfterDays),
+    };
+  }
+
+  const cachePath = resolveRegistryCachePath(options);
+  const cached = await readCatalogFile(cachePath);
+  if (cached.length > 0) {
+    const lastUpdated = await readCatalogFileLastUpdated(cachePath);
+    return {
+      source: 'cache',
+      catalogPath: cachePath,
+      lastUpdated,
+      staleAfterDays,
+      isStale: isCatalogStale(lastUpdated, staleAfterDays),
+    };
+  }
+
+  return {
+    source: 'default',
+    catalogPath: localCatalogPath,
+    lastUpdated: null,
+    staleAfterDays,
+    isStale: false,
+  };
 }
 
 export async function installMarketplaceModule(

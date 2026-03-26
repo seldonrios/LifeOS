@@ -174,6 +174,7 @@ export interface LifeGraphClient {
   applyUpdates(updates: LifeGraphUpdate[]): Promise<void>;
   registerModuleSchema(schema: ModuleSchema): Promise<void>;
   getSummary(): Promise<LifeGraphSummary>;
+  getStorageInfo(): Promise<LifeGraphStorageInfo>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
 }
 
@@ -416,6 +417,13 @@ export interface LifeGraphSummary {
   recentPlanTitles: string[];
   recentGoalTitles: string[];
   activeGoals: LifeGraphActiveGoalSummary[];
+}
+
+export interface LifeGraphStorageInfo {
+  backend: 'sqlite';
+  graphPath: string;
+  dbPath: string;
+  migrationBackupPath: string | null;
 }
 
 export interface LifeGraphActiveGoalSummary {

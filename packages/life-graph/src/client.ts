@@ -6,7 +6,7 @@ import { LifeGraphManager, type LifeGraphManagerOptions } from './manager';
 import { cosineSimilarity, createDeterministicEmbedding } from './memory';
 import { resolveLifeGraphPath } from './path';
 import { parseGoalPlan } from './schema';
-import { getGraphSummary } from './store';
+import { getGraphStorageInfo, getGraphSummary } from './store';
 import type {
   GoalPlan,
   LifeGraphMergeConflict,
@@ -1573,6 +1573,10 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
 
     async getSummary(): Promise<LifeGraphSummary> {
       return getGraphSummary(resolvedGraphPath);
+    },
+
+    async getStorageInfo() {
+      return getGraphStorageInfo(resolvedGraphPath);
     },
 
     async generateReview(

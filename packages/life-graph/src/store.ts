@@ -5,6 +5,7 @@ import type {
   GoalPlanRecord,
   GraphMigrationResult,
   LifeGraphDocument,
+  LifeGraphStorageInfo,
   LifeGraphSummary,
   LocalLifeGraph,
   RunGraphMigrationsOptions,
@@ -172,6 +173,10 @@ export async function getGraphSummary(graphPath?: string): Promise<LifeGraphSumm
     recentGoalTitles: recentPlanTitles,
     activeGoals,
   };
+}
+
+export async function getGraphStorageInfo(graphPath?: string): Promise<LifeGraphStorageInfo> {
+  return graphManager.getStorageInfo(graphPath);
 }
 
 export async function loadLocalLifeGraph<TPlan = Record<string, unknown>>(

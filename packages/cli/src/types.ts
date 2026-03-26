@@ -5,6 +5,7 @@ import type {
   GoalPlan,
   GoalPlanRecord,
   LifeGraphClient,
+  LifeGraphStorageInfo,
   LifeGraphReviewInsights,
   LifeGraphReviewPeriod,
   LifeGraphSummary,
@@ -176,9 +177,18 @@ export interface TrustCommandOptions {
 }
 
 export interface MeshCommandOptions {
-  action: 'join' | 'status' | 'assign' | 'demo';
+  action: 'join' | 'status' | 'assign' | 'demo' | 'start' | 'delegate';
   nodeId?: string;
   capability?: string;
+  topic?: string;
+  payloadJson?: string;
+  source?: string;
+  goal?: string;
+  model?: string;
+  role?: 'primary' | 'fallback' | 'heavy-compute';
+  capabilities?: string[];
+  rpcHost?: string;
+  rpcPort?: number;
   outputJson: boolean;
   verbose: boolean;
 }
@@ -254,6 +264,7 @@ export interface RunCliDependencies {
     graphPath?: string,
   ) => Promise<GoalPlanRecord<GoalPlan>>;
   getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
+  getGraphStorageInfo?: (graphPath?: string) => Promise<LifeGraphStorageInfo>;
   generateReview?: (
     period: LifeGraphReviewPeriod,
     graphPath?: string,

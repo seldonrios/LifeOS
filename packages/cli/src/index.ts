@@ -31,6 +31,7 @@ import {
   type LifeGraphRiskRadarItem,
   type LifeGraphRiskStatus,
   type LifeGraphReviewPeriod,
+  type LifeGraphStorageInfo,
 } from '@lifeos/life-graph';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
@@ -58,8 +59,11 @@ import {
 } from '@lifeos/email-summarizer-module';
 import { habitStreakModule } from '@lifeos/habit-streak-module';
 import {
+  MeshCoordinator,
   MeshRegistry,
+  MeshRuntime,
   readMeshState,
+  waitForMeshHeartbeat,
   writeMeshState,
   type NodeRole,
   type NodeConfig,
@@ -112,6 +116,7 @@ import type {
 import { createModuleScaffold, validateModuleManifest } from './commands/module-create';
 import {
   certifyMarketplaceModule,
+  getMarketplaceCatalogStatus,
   installMarketplaceModule,
   listMarketplaceEntries,
   refreshMarketplaceRegistry,
@@ -771,7 +776,14 @@ function normalizeTrustAction(action: string): TrustCommandOptions['action'] | n
 }
 
 function normalizeMeshAction(action: string): MeshCommandOptions['action'] | null {
-  if (action === 'join' || action === 'status' || action === 'assign' || action === 'demo') {
+  if (
+    action === 'join' ||
+    action === 'status' ||
+    action === 'assign' ||
+    action === 'demo' ||
+    action === 'start' ||
+    action === 'delegate'
+  ) {
     return action;
   }
   return null;
@@ -846,6 +858,13 @@ function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
 }
 
+function inferGraphDbPath(graphPath: string): string {
+  if (graphPath.toLowerCase().endsWith('.json')) {
+    return `${graphPath.slice(0, -5)}.db`;
+  }
+  return `${graphPath}.db`;
+}
+
 interface TrustSettingsSnapshot {
   model: string;
   ollamaHost: string;
@@ -887,6 +906,10 @@ interface TrustReportPayload {
     policyEnforced: boolean;
     moduleManifestRequired: boolean;
     moduleRuntimePermissions: string;
+    storageBackend: LifeGraphStorageInfo['backend'];
+    graphPath: string;
+    graphDatabasePath: string;
+    migrationBackupPath: string | null;
   };
   modules: TrustModuleSnapshot[];
   recentDecisions: Array<{
@@ -936,6 +959,36 @@ function resolveManifestDirectory(moduleId: string): string {
     return 'health-tracker';
   }
   return moduleId;
+}
+
+function deriveResourceHintFromResources(resources: unknown): 'low' | 'medium' | 'high' {
+  if (!resources || typeof resources !== 'object' || Array.isArray(resources)) {
+    return 'medium';
+  }
+  const record = resources as Record<string, unknown>;
+  const cpu = typeof record.cpu === 'string' ? record.cpu.trim().toLowerCase() : '';
+  const memory = typeof record.memory === 'string' ? record.memory.trim().toLowerCase() : '';
+  if (cpu === 'high' || memory === 'high') {
+    return 'high';
+  }
+  if (cpu === 'medium' || memory === 'medium') {
+    return 'medium';
+  }
+  return 'low';
+}
+
+async function readModuleResourceHint(
+  baseCwd: string,
+  moduleId: string,
+): Promise<'low' | 'medium' | 'high'> {
+  const moduleDir = resolveManifestDirectory(moduleId);
+  const manifestPath = join(baseCwd, 'modules', moduleDir, 'lifeos.json');
+  try {
+    const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
+    return deriveResourceHintFromResources(parsed.resources);
+  } catch {
+    return 'medium';
+  }
 }
 
 async function readTrustSettings(env: NodeJS.ProcessEnv): Promise<TrustSettingsSnapshot> {
@@ -1010,6 +1063,7 @@ async function readManifestPermissions(
 async function buildTrustReport(
   env: NodeJS.ProcessEnv,
   baseCwd: string,
+  dependencies: RunCliDependencies = {},
 ): Promise<TrustReportPayload> {
   const settings = await readTrustSettings(env);
   const moduleState = await readModuleState({ env });
@@ -1045,6 +1099,24 @@ async function buildTrustReport(
   );
   const moduleRuntimePermissions =
     (env.LIFEOS_MODULE_RUNTIME_PERMISSIONS ?? 'strict').trim() || 'strict';
+  const defaultGraphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
+  const storageInfoFetcher =
+    dependencies.getGraphStorageInfo ??
+    (async (graphPath?: string) => {
+      const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+      return createClient(buildClientOptions(baseCwd, env, graphPath)).getStorageInfo();
+    });
+  let storageInfo: LifeGraphStorageInfo = {
+    backend: 'sqlite',
+    graphPath: defaultGraphPath,
+    dbPath: inferGraphDbPath(defaultGraphPath),
+    migrationBackupPath: null,
+  };
+  try {
+    storageInfo = await storageInfoFetcher(defaultGraphPath);
+  } catch {
+    // Trust status remains available even if graph storage lookup fails.
+  }
 
   const now = new Date().toISOString();
   return {
@@ -1066,6 +1138,10 @@ async function buildTrustReport(
       policyEnforced,
       moduleManifestRequired,
       moduleRuntimePermissions,
+      storageBackend: storageInfo.backend,
+      graphPath: storageInfo.graphPath,
+      graphDatabasePath: storageInfo.dbPath,
+      migrationBackupPath: storageInfo.migrationBackupPath,
     },
     modules: moduleSnapshots,
     recentDecisions: [
@@ -1286,6 +1362,113 @@ function parseNodeRole(rawRole: string | undefined): NodeRole {
   return 'fallback';
 }
 
+function parseNodeRoleOption(rawRole: string | undefined): NodeRole | undefined {
+  if (rawRole === 'primary' || rawRole === 'fallback' || rawRole === 'heavy-compute') {
+    return rawRole;
+  }
+  return undefined;
+}
+
+const DEFAULT_MESH_CAPABILITIES = [
+  'voice',
+  'calendar',
+  'tasks',
+  'goal-planning',
+  'research',
+  'weather',
+  'news',
+  'email-summarize',
+] as const;
+
+function parseMeshCapabilities(value: string | undefined): string[] {
+  const normalized = (value ?? '')
+    .split(',')
+    .map((entry) => entry.trim().toLowerCase())
+    .filter((entry) => entry.length > 0);
+  if (normalized.length > 0) {
+    return [...new Set(normalized)];
+  }
+  return [...DEFAULT_MESH_CAPABILITIES];
+}
+
+function mapIntentTopicToMeshCapability(topic: string): string | null {
+  if (topic === Topics.lifeos.voiceIntentResearch) {
+    return 'research';
+  }
+  if (topic === Topics.lifeos.voiceIntentWeather) {
+    return 'weather';
+  }
+  if (topic === Topics.lifeos.voiceIntentNews) {
+    return 'news';
+  }
+  if (topic === Topics.lifeos.voiceIntentEmailSummarize) {
+    return 'email-summarize';
+  }
+  return null;
+}
+
+function mapMeshCapabilityToIntentTopic(capability: string): string | null {
+  const normalized = capability.trim().toLowerCase();
+  if (normalized === 'research') {
+    return Topics.lifeos.voiceIntentResearch;
+  }
+  if (normalized === 'weather') {
+    return Topics.lifeos.voiceIntentWeather;
+  }
+  if (normalized === 'news') {
+    return Topics.lifeos.voiceIntentNews;
+  }
+  if (normalized === 'email-summarize') {
+    return Topics.lifeos.voiceIntentEmailSummarize;
+  }
+  return null;
+}
+
+function parseJsonObject(value: string | undefined): Record<string, unknown> | null {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+async function waitForTerminationSignal(): Promise<NodeJS.Signals> {
+  return await new Promise<NodeJS.Signals>((resolve) => {
+    const onSignal = (signal: NodeJS.Signals) => {
+      process.off('SIGINT', onSigInt);
+      process.off('SIGTERM', onSigTerm);
+      resolve(signal);
+    };
+    const onSigInt = () => onSignal('SIGINT');
+    const onSigTerm = () => onSignal('SIGTERM');
+    process.on('SIGINT', onSigInt);
+    process.on('SIGTERM', onSigTerm);
+  });
+}
+
+function isGoalPlanCandidate(value: unknown): value is GoalPlan {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.id !== 'string' ||
+    typeof record.title !== 'string' ||
+    typeof record.description !== 'string' ||
+    !Array.isArray(record.tasks)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function buildClientOptions(
   baseCwd: string,
   env: NodeJS.ProcessEnv,
@@ -1304,9 +1487,98 @@ function createVoicePublisher(
   verboseLog: (line: string) => void,
 ): NonNullable<VoiceCoreOptions['publish']> {
   const publishTimeoutMs = dependencies.voicePublishTimeoutMs ?? DEFAULT_VOICE_PUBLISH_TIMEOUT_MS;
+  const meshCoordinator = new MeshCoordinator({ env });
+
+  const tryMeshDelegate = async (
+    topic: string,
+    data: Record<string, unknown>,
+    source: string,
+  ): Promise<boolean> => {
+    const capability = mapIntentTopicToMeshCapability(topic);
+    if (!capability) {
+      return false;
+    }
+
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateRequested,
+      {
+        capability,
+        topic,
+        requestedAt: new Date().toISOString(),
+        source,
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+
+    const delegated = await meshCoordinator.delegateIntentPublish({
+      capability,
+      topic,
+      data,
+      source,
+    });
+    if (delegated.delegated) {
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateAccepted,
+        {
+          capability,
+          topic,
+          delegatedTo: delegated.nodeId ?? null,
+          rpcUrl: delegated.rpcUrl ?? null,
+          acceptedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateCompleted,
+        {
+          capability,
+          topic,
+          delegatedTo: delegated.nodeId ?? null,
+          completedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      return true;
+    }
+
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateFailed,
+      {
+        capability,
+        topic,
+        delegatedTo: delegated.nodeId ?? null,
+        reason: delegated.reason ?? 'delegation_failed',
+        failedAt: new Date().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateFallbackLocal,
+      {
+        capability,
+        topic,
+        fallbackAt: new Date().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+    return false;
+  };
 
   if (dependencies.moduleLoader) {
     return async (topic, data, source) => {
+      if (await tryMeshDelegate(topic, data, source ?? 'voice-core')) {
+        return;
+      }
       const publishPromise = Promise.resolve(
         dependencies.moduleLoader?.publish(topic, data, source),
       ).then(() => undefined);
@@ -1319,6 +1591,9 @@ function createVoicePublisher(
   }
 
   return async (topic, data, source = 'voice-core') => {
+    if (await tryMeshDelegate(topic, data, source)) {
+      return;
+    }
     const createBus = createDefaultEventBusClient(dependencies);
     const eventBus = createBus({
       env,
@@ -1424,7 +1699,76 @@ export async function runGoalCommand(
         verboseLog(`stage=${mapStageToVerboseLine(stage)}`);
       };
     }
-    const plan = await interpret(normalizedGoal, interpretOptions);
+    let plan: GoalPlan;
+    const meshCoordinator = new MeshCoordinator({ env });
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateRequested,
+      {
+        capability: 'goal-planning',
+        requestedAt: now().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+    const delegated = await meshCoordinator.delegateGoalPlan({
+      goal: normalizedGoal,
+      model: options.model,
+      requestedAt: now().toISOString(),
+    });
+
+    if (delegated.delegated && isGoalPlanCandidate(delegated.payload)) {
+      plan = delegated.payload;
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateAccepted,
+        {
+          capability: 'goal-planning',
+          delegatedTo: delegated.nodeId ?? null,
+          rpcUrl: delegated.rpcUrl ?? null,
+          acceptedAt: now().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateCompleted,
+        {
+          capability: 'goal-planning',
+          delegatedTo: delegated.nodeId ?? null,
+          completedAt: now().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+    } else {
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateFailed,
+        {
+          capability: 'goal-planning',
+          delegatedTo: delegated.nodeId ?? null,
+          reason: delegated.reason ?? 'delegation_failed',
+          failedAt: now().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateFallbackLocal,
+        {
+          capability: 'goal-planning',
+          delegatedTo: delegated.nodeId ?? null,
+          reason: delegated.reason ?? 'no_remote_plan',
+          fallbackAt: now().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      plan = await interpret(normalizedGoal, interpretOptions);
+    }
 
     spinner?.succeed(chalk.green('Goal decomposed successfully.'));
 
@@ -1523,6 +1867,10 @@ export async function runStatusCommand(
     dependencies.getGraphSummary ??
     (async (graphPath?: string) =>
       createClient(buildClientOptions(baseCwd, env, graphPath)).getSummary());
+  const storageInfoFetcher =
+    dependencies.getGraphStorageInfo ??
+    (async (graphPath?: string) =>
+      createClient(buildClientOptions(baseCwd, env, graphPath)).getStorageInfo());
 
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
@@ -1569,14 +1917,43 @@ export async function runStatusCommand(
 
     verboseLog('stage=summary_load_started');
     const summary = await summarize(options.graphPath);
+    let storageInfo: LifeGraphStorageInfo;
+    try {
+      storageInfo = await storageInfoFetcher(options.graphPath);
+    } catch (error: unknown) {
+      storageInfo = {
+        backend: 'sqlite',
+        graphPath: options.graphPath,
+        dbPath: inferGraphDbPath(options.graphPath),
+        migrationBackupPath: null,
+      };
+      verboseLog(`storage_info_fallback reason=${normalizeErrorMessage(error)}`);
+    }
     verboseLog('stage=summary_load_completed');
 
     if (options.outputJson) {
-      writeStdout(`${JSON.stringify(summary, null, 2)}\n`);
+      writeStdout(
+        `${JSON.stringify(
+          {
+            ...summary,
+            storage: storageInfo,
+          },
+          null,
+          2,
+        )}\n`,
+      );
       return 0;
     }
 
     writeStdout(`${printGraphSummary(summary)}\n`);
+    writeStdout(
+      chalk.dim(
+        `Storage: ${storageInfo.backend} | graph=${storageInfo.graphPath} | db=${storageInfo.dbPath}\n`,
+      ),
+    );
+    if (storageInfo.migrationBackupPath) {
+      writeStdout(chalk.dim(`Latest migration backup: ${storageInfo.migrationBackupPath}\n`));
+    }
     return 0;
   } catch (error: unknown) {
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -2523,6 +2900,79 @@ export async function runResearchCommand(
   };
 
   try {
+    const meshCoordinator = new MeshCoordinator({ env });
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateRequested,
+      {
+        capability: 'research',
+        topic: Topics.lifeos.voiceIntentResearch,
+        requestedAt: new Date().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+    const delegated = await meshCoordinator.delegateIntentPublish({
+      capability: 'research',
+      topic: Topics.lifeos.voiceIntentResearch,
+      data: payload,
+      source: 'lifeos-cli',
+    });
+    if (delegated.delegated) {
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateAccepted,
+        {
+          capability: 'research',
+          topic: Topics.lifeos.voiceIntentResearch,
+          delegatedTo: delegated.nodeId ?? null,
+          rpcUrl: delegated.rpcUrl ?? null,
+          acceptedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateCompleted,
+        {
+          capability: 'research',
+          topic: Topics.lifeos.voiceIntentResearch,
+          delegatedTo: delegated.nodeId ?? null,
+          completedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      writeStdout(chalk.green(`Research request delegated: ${query}\n`));
+      return 0;
+    }
+
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateFailed,
+      {
+        capability: 'research',
+        topic: Topics.lifeos.voiceIntentResearch,
+        delegatedTo: delegated.nodeId ?? null,
+        reason: delegated.reason ?? 'delegation_failed',
+        failedAt: new Date().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+    await publishEventSafely(
+      Topics.lifeos.meshDelegateFallbackLocal,
+      {
+        capability: 'research',
+        topic: Topics.lifeos.voiceIntentResearch,
+        fallbackAt: new Date().toISOString(),
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+
     if (dependencies.moduleLoader) {
       await dependencies.moduleLoader.publish(
         Topics.lifeos.voiceIntentResearch,
@@ -2713,16 +3163,22 @@ export async function runModuleCommand(
     const state = await readModuleState({ env });
     const rows = renderModuleStateRows(state.enabledOptionalModules);
     const googleBridgeSubs = await getEnabledGoogleBridgeSubFeatures({ env });
+    const resourceHintByModule = new Map<string, 'low' | 'medium' | 'high'>();
+    for (const row of rows) {
+      resourceHintByModule.set(row.id, await readModuleResourceHint(baseCwd, row.id));
+    }
     writeStdout(chalk.bold('LifeOS Modules\n'));
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     for (const row of rows) {
       const status = row.enabled ? chalk.green('enabled') : chalk.gray('disabled');
       const availability = row.available ? '' : chalk.yellow(' (not installed)');
+      const resourceHint = resourceHintByModule.get(row.id) ?? 'medium';
+      const resourceSuffix = chalk.dim(` resource=${resourceHint}`);
       const suffix =
         row.id === 'google-bridge' && row.enabled && googleBridgeSubs.length > 0
           ? chalk.cyan(` (sub: ${googleBridgeSubs.join(', ')})`)
           : '';
-      writeStdout(`${row.id} [${row.tier}] ${status}${availability}${suffix}\n`);
+      writeStdout(`${row.id} [${row.tier}] ${status}${availability}${resourceSuffix}${suffix}\n`);
     }
     return 0;
   }
@@ -2754,6 +3210,7 @@ export async function runModuleCommand(
     writeStdout(`Last sync: ${lastSyncLabel}\n`);
     writeStdout(`Sync recency: ${syncRecency}\n`);
     writeStdout(`Health: ${health}\n`);
+    writeStdout(`Resource hint: ${await readModuleResourceHint(baseCwd, 'google-bridge')}\n`);
     writeStdout(`Authorization: ${authorized ? 'connected' : 'missing'}\n`);
     if (syncStatus?.source) {
       writeStdout(`Last source: ${syncStatus.source}\n`);
@@ -3156,10 +3613,28 @@ export async function runMarketplaceCommand(
             baseDir: baseCwd,
             certifiedOnly: options.certifiedOnly,
           });
+    const catalogStatus = await getMarketplaceCatalogStatus({
+      env,
+      baseDir: baseCwd,
+    });
 
     if (options.outputJson) {
       writeStdout(`${JSON.stringify(entries, null, 2)}\n`);
       return 0;
+    }
+
+    writeStdout(
+      chalk.dim(
+        `Catalog source: ${catalogStatus.source} | lastUpdated=${catalogStatus.lastUpdated ?? 'unknown'} | staleAfter=${catalogStatus.staleAfterDays}d\n`,
+      ),
+    );
+    writeStdout(chalk.dim(`Catalog path: ${catalogStatus.catalogPath}\n`));
+    if (catalogStatus.isStale) {
+      writeStdout(
+        chalk.yellow(
+          'Catalog looks stale. Run `lifeos marketplace refresh <url>` to fetch newer modules.\n',
+        ),
+      );
     }
 
     if (entries.length === 0) {
@@ -3202,7 +3677,7 @@ export async function runTrustCommand(
   };
 
   try {
-    const report = await buildTrustReport(env, baseCwd);
+    const report = await buildTrustReport(env, baseCwd, dependencies);
 
     if (options.action === 'report') {
       writeStdout(`${JSON.stringify(report, null, 2)}\n`);
@@ -3263,6 +3738,12 @@ export async function runTrustCommand(
     writeStdout(`Policy enforcement: ${report.runtime.policyEnforced ? 'on' : 'off'}\n`);
     writeStdout(`Manifest required: ${report.runtime.moduleManifestRequired ? 'yes' : 'no'}\n`);
     writeStdout(`Runtime permissions mode: ${report.runtime.moduleRuntimePermissions}\n`);
+    writeStdout(`Storage backend: ${report.runtime.storageBackend}\n`);
+    writeStdout(`Graph path: ${report.runtime.graphPath}\n`);
+    writeStdout(`Graph database: ${report.runtime.graphDatabasePath}\n`);
+    if (report.runtime.migrationBackupPath) {
+      writeStdout(`Latest migration backup: ${report.runtime.migrationBackupPath}\n`);
+    }
     writeStdout(`Enabled modules: ${enabledCount}/${report.modules.length}\n`);
     writeStdout(`Model: ${report.runtime.model}\n`);
     writeStdout('\nRecent decisions:\n');
@@ -3295,6 +3776,15 @@ export async function runMeshCommand(
   try {
     const state = await readMeshState({ env });
     const registry = new MeshRegistry(state);
+    const parsedRpcPort = Number.parseInt(
+      String(options.rpcPort ?? env.LIFEOS_MESH_RPC_PORT ?? ''),
+      10,
+    );
+    const rpcPort = Number.isFinite(parsedRpcPort) && parsedRpcPort > 0 ? parsedRpcPort : 5590;
+    const rpcHost = (options.rpcHost ?? env.LIFEOS_MESH_RPC_HOST ?? '127.0.0.1').trim();
+    const defaultCapabilities = parseMeshCapabilities(env.LIFEOS_MESH_CAPABILITIES);
+    const nodeRole = options.role ?? parseNodeRole(env.LIFEOS_MESH_ROLE?.trim());
+    const meshCoordinator = new MeshCoordinator({ env });
 
     if (options.action === 'join') {
       if (!options.nodeId) {
@@ -3302,21 +3792,19 @@ export async function runMeshCommand(
         return 1;
       }
       const nodeId = options.nodeId.trim().toLowerCase();
-      const role = parseNodeRole(env.LIFEOS_MESH_ROLE?.trim());
-      const capabilities = (env.LIFEOS_MESH_CAPABILITIES?.trim() || 'voice,calendar,tasks')
-        .split(',')
-        .map((item) => item.trim().toLowerCase())
-        .filter((item) => item.length > 0);
       const normalizedCapabilities =
-        capabilities.length > 0 ? capabilities : ['voice', 'calendar', 'tasks'];
+        options.capabilities && options.capabilities.length > 0
+          ? options.capabilities
+          : defaultCapabilities;
       const node: NodeConfig = {
         nodeId,
-        role,
+        role: nodeRole,
         capabilities: normalizedCapabilities,
+        rpcUrl: `http://${rpcHost}:${rpcPort}`,
       };
       registry.join(node);
       await writeMeshState(registry.toState(), { env });
-      writeStdout(chalk.green(`Node "${nodeId}" joined mesh as ${role}.\n`));
+      writeStdout(chalk.green(`Node "${nodeId}" joined mesh as ${nodeRole} (${node.rpcUrl}).\n`));
       return 0;
     }
 
@@ -3337,16 +3825,300 @@ export async function runMeshCommand(
       return 0;
     }
 
+    if (options.action === 'start') {
+      const nodeId = (options.nodeId ?? env.LIFEOS_MESH_NODE_ID ?? 'local-node')
+        .trim()
+        .toLowerCase();
+      const capabilities =
+        options.capabilities && options.capabilities.length > 0
+          ? options.capabilities
+          : defaultCapabilities;
+      const node: NodeConfig = {
+        nodeId,
+        role: nodeRole,
+        capabilities,
+        rpcUrl: `http://${rpcHost}:${rpcPort}`,
+      };
+
+      registry.join(node);
+      await writeMeshState(registry.toState(), { env });
+
+      const planner = dependencies.interpretGoal ?? interpretGoal;
+      const model = options.model?.trim() || env.LIFEOS_GOAL_MODEL?.trim() || DEFAULT_MODEL;
+      const host = env.OLLAMA_HOST?.trim();
+      const runtime = new MeshRuntime({
+        env,
+        node,
+        rpcHost,
+        rpcPort,
+        goalPlanner: async (request) => {
+          const interpreted = await planner(request.goal, {
+            model: request.model ?? model,
+            ...(host ? { host } : {}),
+            now: new Date(),
+          });
+          return interpreted;
+        },
+        logger: (line) => verboseLog(line),
+      });
+      await runtime.start();
+      const heartbeatSeen = await waitForMeshHeartbeat(node.nodeId, {
+        env,
+        timeoutMs: 3000,
+      });
+
+      if (options.outputJson) {
+        const snapshot = await meshCoordinator.getLiveStatus();
+        writeStdout(
+          `${JSON.stringify(
+            {
+              started: true,
+              mode: 'ephemeral-check',
+              heartbeatSeen,
+              nodeId: node.nodeId,
+              role: node.role,
+              capabilities: node.capabilities,
+              rpcUrl: node.rpcUrl,
+              status: snapshot,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+        await runtime.close();
+        return 0;
+      }
+
+      writeStdout(chalk.bold('LifeOS Mesh Runtime\n'));
+      writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+      writeStdout(`Node: ${node.nodeId} [${node.role}]\n`);
+      writeStdout(`Capabilities: ${node.capabilities.join(', ') || 'none'}\n`);
+      writeStdout(`RPC endpoint: ${node.rpcUrl}\n`);
+      writeStdout(`Heartbeat: ${heartbeatSeen ? 'active' : 'pending'}\n`);
+      writeStdout(chalk.dim('Press Ctrl+C to stop the node runtime.\n'));
+
+      const signal = await waitForTerminationSignal();
+      verboseLog(`mesh_runtime_signal=${signal}`);
+      await runtime.close();
+      writeStdout(chalk.yellow(`Mesh runtime stopped (${signal}).\n`));
+      return 0;
+    }
+
+    if (options.action === 'delegate') {
+      const capability = options.capability?.trim().toLowerCase() ?? '';
+      if (!capability) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Usage: lifeos mesh delegate <capability> [payload]\n`,
+        );
+        return 1;
+      }
+
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateRequested,
+        {
+          capability,
+          topic: options.topic ?? mapMeshCapabilityToIntentTopic(capability),
+          requestedAt: new Date().toISOString(),
+          source: 'lifeos-cli',
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+
+      if (capability === 'goal-planning') {
+        const goal = options.goal?.trim();
+        if (!goal) {
+          writeStderr(
+            `${chalk.red.bold('Error:')} Goal text is required. Use --goal or provide it as the third argument.\n`,
+          );
+          return 1;
+        }
+        const delegated = await meshCoordinator.delegateGoalPlan({
+          goal,
+          ...(options.model?.trim() ? { model: options.model.trim() } : {}),
+          requestedAt: new Date().toISOString(),
+        });
+
+        if (delegated.delegated && isGoalPlanCandidate(delegated.payload)) {
+          await publishEventSafely(
+            Topics.lifeos.meshDelegateAccepted,
+            {
+              capability,
+              delegatedTo: delegated.nodeId ?? null,
+              rpcUrl: delegated.rpcUrl ?? null,
+              acceptedAt: new Date().toISOString(),
+            },
+            dependencies,
+            env,
+            verboseLog,
+          );
+          await publishEventSafely(
+            Topics.lifeos.meshDelegateCompleted,
+            {
+              capability,
+              delegatedTo: delegated.nodeId ?? null,
+              completedAt: new Date().toISOString(),
+            },
+            dependencies,
+            env,
+            verboseLog,
+          );
+          if (options.outputJson) {
+            writeStdout(`${JSON.stringify(delegated, null, 2)}\n`);
+          } else {
+            writeStdout(
+              chalk.green(
+                `Delegated goal planning to ${delegated.nodeId ?? 'remote-node'} (${delegated.rpcUrl ?? 'rpc'}).\n`,
+              ),
+            );
+            writeStdout(`${formatGoalPlan(delegated.payload)}\n`);
+          }
+          return 0;
+        }
+
+        await publishEventSafely(
+          Topics.lifeos.meshDelegateFailed,
+          {
+            capability,
+            delegatedTo: delegated.nodeId ?? null,
+            reason: delegated.reason ?? 'delegation_failed',
+            failedAt: new Date().toISOString(),
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
+        await publishEventSafely(
+          Topics.lifeos.meshDelegateFallbackLocal,
+          {
+            capability,
+            reason: delegated.reason ?? 'delegation_failed',
+            fallbackAt: new Date().toISOString(),
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
+        if (options.outputJson) {
+          writeStdout(`${JSON.stringify(delegated, null, 2)}\n`);
+        } else {
+          writeStdout(
+            chalk.yellow(
+              `Delegation unavailable (${delegated.reason ?? 'unknown'}). Local fallback stays available in goal/research/voice commands.\n`,
+            ),
+          );
+        }
+        return delegated.delegated ? 0 : 1;
+      }
+
+      const topic = options.topic?.trim() || mapMeshCapabilityToIntentTopic(capability);
+      if (!topic) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Topic is required for this capability. Use --topic <lifeos.topic>.\n`,
+        );
+        return 1;
+      }
+      const payloadFromJson = parseJsonObject(options.payloadJson);
+      if (options.payloadJson && !payloadFromJson) {
+        writeStderr(`${chalk.red.bold('Error:')} --data must be a JSON object.\n`);
+        return 1;
+      }
+      const data =
+        payloadFromJson ??
+        (options.goal?.trim()
+          ? { query: options.goal.trim(), utterance: options.goal.trim() }
+          : { requestedAt: new Date().toISOString() });
+      const delegated = await meshCoordinator.delegateIntentPublish({
+        capability,
+        topic,
+        data,
+        source: options.source?.trim() || 'lifeos-cli',
+      });
+
+      if (delegated.delegated) {
+        await publishEventSafely(
+          Topics.lifeos.meshDelegateAccepted,
+          {
+            capability,
+            topic,
+            delegatedTo: delegated.nodeId ?? null,
+            rpcUrl: delegated.rpcUrl ?? null,
+            acceptedAt: new Date().toISOString(),
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
+        await publishEventSafely(
+          Topics.lifeos.meshDelegateCompleted,
+          {
+            capability,
+            topic,
+            delegatedTo: delegated.nodeId ?? null,
+            completedAt: new Date().toISOString(),
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
+        if (options.outputJson) {
+          writeStdout(`${JSON.stringify(delegated, null, 2)}\n`);
+        } else {
+          writeStdout(
+            chalk.green(
+              `Delegated ${capability} intent to ${delegated.nodeId ?? 'remote-node'} (${topic}).\n`,
+            ),
+          );
+        }
+        return 0;
+      }
+
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateFailed,
+        {
+          capability,
+          topic,
+          delegatedTo: delegated.nodeId ?? null,
+          reason: delegated.reason ?? 'delegation_failed',
+          failedAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      await publishEventSafely(
+        Topics.lifeos.meshDelegateFallbackLocal,
+        {
+          capability,
+          topic,
+          reason: delegated.reason ?? 'delegation_failed',
+          fallbackAt: new Date().toISOString(),
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(delegated, null, 2)}\n`);
+      } else {
+        writeStdout(chalk.yellow(`Delegation unavailable: ${delegated.reason ?? 'unknown'}.\n`));
+      }
+      return delegated.delegated ? 0 : 1;
+    }
+
     if (options.action === 'demo') {
       registry.join({
         nodeId: 'laptop',
         role: 'primary',
-        capabilities: ['voice', 'calendar', 'tasks'],
+        capabilities: ['voice', 'calendar', 'tasks', 'goal-planning'],
+        rpcUrl: 'http://127.0.0.1:5590',
       });
       registry.join({
         nodeId: 'heavy-server',
         role: 'heavy-compute',
-        capabilities: ['research', 'llm'],
+        capabilities: ['research', 'llm', 'goal-planning'],
+        rpcUrl: 'http://127.0.0.1:5591',
       });
       registry.assign('research', 'heavy-server');
       const assigned = registry.resolve('research');
@@ -3366,11 +4138,7 @@ export async function runMeshCommand(
       return 0;
     }
 
-    const nodes = registry.listNodes();
-    const payload = {
-      nodes,
-      assignments: registry.toState().assignments,
-    };
+    const payload = await meshCoordinator.getLiveStatus();
     if (options.outputJson) {
       writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
       return 0;
@@ -3378,12 +4146,15 @@ export async function runMeshCommand(
 
     writeStdout(chalk.bold('LifeOS Mesh Status\n'));
     writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
-    if (nodes.length === 0) {
+    writeStdout(chalk.dim(`TTL: ${payload.ttlMs}ms | Updated: ${payload.updatedAt}\n`));
+    if (payload.nodes.length === 0) {
       writeStdout('No nodes have joined yet.\n');
     } else {
-      for (const node of nodes) {
+      for (const node of payload.nodes) {
+        const health = node.healthy ? chalk.green('healthy') : chalk.yellow('stale');
+        const ageLabel = node.ageMs === null ? 'n/a' : `${Math.floor(node.ageMs / 1000)}s`;
         writeStdout(
-          `${node.nodeId} [${node.role}] capabilities=${node.capabilities.join(', ') || 'none'}\n`,
+          `${node.nodeId} [${node.role}] ${health} age=${ageLabel} capabilities=${node.capabilities.join(', ') || 'none'} rpc=${node.rpcUrl}\n`,
         );
       }
     }
@@ -3394,7 +4165,7 @@ export async function runMeshCommand(
         writeStdout(`${capability} -> ${nodeId}\n`);
       }
     }
-    verboseLog(`mesh_nodes=${nodes.length}`);
+    verboseLog(`mesh_nodes=${payload.nodes.length}`);
     return 0;
   } catch (error: unknown) {
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -3942,11 +4713,20 @@ function buildProgram(
 
   program
     .command('mesh')
-    .description('Manage multi-node mesh: join, status, assign, demo')
-    .argument('[action]', 'join | status | assign | demo', 'status')
-    .argument('[arg1]', 'Node id for join, capability for assign')
-    .argument('[arg2]', 'Node id for assign')
+    .description('Manage multi-node mesh: join, status, assign, start, delegate, demo')
+    .argument('[action]', 'join | status | assign | start | delegate | demo', 'status')
+    .argument('[arg1]', 'Node id for join/start, capability for assign/delegate')
+    .argument('[arg2]', 'Node id for assign, goal/payload for delegate')
     .option('--json', 'Output JSON only')
+    .option('--topic <topic>', 'Intent topic for mesh delegate')
+    .option('--data <json>', 'JSON payload for mesh delegate')
+    .option('--source <source>', 'Source label for delegated intent')
+    .option('--goal <goal>', 'Goal text for goal-planning delegation')
+    .option('--model <model>', 'Model override for goal-planning delegation')
+    .option('--role <role>', 'Node role for join/start: primary | fallback | heavy-compute')
+    .option('--capabilities <csv>', 'Comma-separated node capabilities for join/start')
+    .option('--rpc-host <host>', 'RPC host for join/start')
+    .option('--rpc-port <port>', 'RPC port for join/start')
     .option('--verbose', 'Show safe debug diagnostics')
     .action(
       async (
@@ -3959,21 +4739,76 @@ function buildProgram(
         if (!normalizedAction) {
           setExitCode(1);
           writeStderr(
-            `${chalk.red.bold('Error:')} Invalid mesh action "${action}". Use join, status, assign, or demo.\n`,
+            `${chalk.red.bold('Error:')} Invalid mesh action "${action}". Use join, status, assign, start, delegate, or demo.\n`,
           );
           return;
         }
-        const commandExitCode = await runMeshCommand(
-          {
-            action: normalizedAction,
-            outputJson: Boolean(commandOptions.json),
-            verbose: Boolean(commandOptions.verbose),
-            ...(normalizedAction === 'join' && arg1 ? { nodeId: arg1 } : {}),
-            ...(normalizedAction === 'assign' && arg1 ? { capability: arg1 } : {}),
-            ...(normalizedAction === 'assign' && arg2 ? { nodeId: arg2 } : {}),
-          },
-          dependencies,
-        );
+        const parsedRole = parseNodeRoleOption(commandOptions.role);
+        if (commandOptions.role && !parsedRole) {
+          setExitCode(1);
+          writeStderr(
+            `${chalk.red.bold('Error:')} --role must be one of: primary, fallback, heavy-compute.\n`,
+          );
+          return;
+        }
+        const parsedCapabilities = commandOptions.capabilities
+          ? parseMeshCapabilities(commandOptions.capabilities)
+          : undefined;
+        const parsedRpcPort =
+          typeof commandOptions.rpcPort === 'string' && commandOptions.rpcPort.trim().length > 0
+            ? Number.parseInt(commandOptions.rpcPort, 10)
+            : undefined;
+        const meshOptions: MeshCommandOptions = {
+          action: normalizedAction,
+          outputJson: Boolean(commandOptions.json),
+          verbose: Boolean(commandOptions.verbose),
+        };
+        if (normalizedAction === 'join' && arg1) {
+          meshOptions.nodeId = arg1;
+        }
+        if (normalizedAction === 'start' && arg1) {
+          meshOptions.nodeId = arg1;
+        }
+        if (normalizedAction === 'assign' && arg1) {
+          meshOptions.capability = arg1;
+        }
+        if (normalizedAction === 'assign' && arg2) {
+          meshOptions.nodeId = arg2;
+        }
+        if (normalizedAction === 'delegate' && arg1) {
+          meshOptions.capability = arg1;
+        }
+        if (normalizedAction === 'delegate' && arg2) {
+          meshOptions.goal = arg2;
+        }
+        if (commandOptions.topic) {
+          meshOptions.topic = commandOptions.topic;
+        }
+        if (commandOptions.data) {
+          meshOptions.payloadJson = commandOptions.data;
+        }
+        if (commandOptions.source) {
+          meshOptions.source = commandOptions.source;
+        }
+        if (commandOptions.goal) {
+          meshOptions.goal = commandOptions.goal;
+        }
+        if (commandOptions.model) {
+          meshOptions.model = commandOptions.model;
+        }
+        if (parsedRole) {
+          meshOptions.role = parsedRole;
+        }
+        if (parsedCapabilities) {
+          meshOptions.capabilities = parsedCapabilities;
+        }
+        if (commandOptions.rpcHost) {
+          meshOptions.rpcHost = commandOptions.rpcHost;
+        }
+        if (Number.isFinite(parsedRpcPort)) {
+          meshOptions.rpcPort = parsedRpcPort as number;
+        }
+        const commandExitCode = await runMeshCommand(meshOptions, dependencies);
         setExitCode(commandExitCode);
       },
     );
