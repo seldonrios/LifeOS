@@ -19,6 +19,6 @@
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/module-loader": "workspace:*",
     "@lifeos/voice-core": "workspace:*",
-    "imapflow": "^1.0.186"
+    "imapflow": "^1.2.18"
   }
 }
