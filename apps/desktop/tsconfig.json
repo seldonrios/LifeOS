@@ -5,11 +5,12 @@
     "moduleResolution": "Bundler",
     "strict": true,
     "jsx": "react-jsx",
-    "types": ["vite/client"],
+    "types": ["vite/client", "react", "react-dom", "vitest/globals", "@testing-library/jest-dom"],
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
     "baseUrl": "."
   },
   "include": ["src", "vite.config.ts"]

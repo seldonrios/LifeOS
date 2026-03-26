@@ -20,6 +20,7 @@ import {
 
 import { toFriendlyCliError } from '../errors';
 import type {
+  ChildProcessLike,
   GoalCommandOptions,
   InitCommandOptions,
   PromptChoice,
@@ -217,9 +218,9 @@ export async function pullModel(model: string, dependencies: RunCliDependencies)
     (Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
       ? configuredTimeoutMs
       : DEFAULT_MODEL_PULL_TIMEOUT_MS);
-  const spawnProcess =
+  const spawnProcess: NonNullable<RunCliDependencies['spawnProcess']> =
     dependencies.spawnProcess ??
-    ((command: string, args: string[], options) =>
+    ((command: string, args: string[], options): ChildProcessLike =>
       spawn(command, args, {
         cwd: options?.cwd,
         env: options?.env,
@@ -270,7 +271,7 @@ export async function pullModel(model: string, dependencies: RunCliDependencies)
         reject(new Error(`ollama pull ${model} exceeded timeout`));
       }, modelPullTimeoutMs);
 
-      child.on('error', (error) => {
+      child.on('error', (error: Error) => {
         clearTimeout(timeoutHandle);
         if (child.kill) {
           try {
@@ -282,7 +283,7 @@ export async function pullModel(model: string, dependencies: RunCliDependencies)
         reject(error);
       });
 
-      child.on('close', (code) => {
+      child.on('close', (code: number | null) => {
         clearTimeout(timeoutHandle);
         if (code === 0) {
           resolve();

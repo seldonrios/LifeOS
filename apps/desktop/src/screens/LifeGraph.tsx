@@ -228,7 +228,7 @@ function getRelationshipLinks(summary: GraphSummary | undefined, nodeIds: Set<st
 export function LifeGraph(): JSX.Element {
   const graphQuery = useGraph();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const forceGraphRef = useRef<ForceGraphMethods<GoalNode, GoalLink>>();
+  const forceGraphRef = useRef<ForceGraphMethods<GoalNode, GoalLink> | undefined>(undefined);
   const [canvasContainer, setCanvasContainer] = useState<HTMLDivElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<CanvasSize>({ width: 0, height: DEFAULT_GRAPH_HEIGHT });
   const activeGoals = useMemo(() => normalizeActiveGoals(graphQuery.data), [graphQuery.data]);

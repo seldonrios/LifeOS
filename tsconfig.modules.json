@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "composite": false,
+    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
       "@lifeos/*": ["packages/*/src/index.ts"]
