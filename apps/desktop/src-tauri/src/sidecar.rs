@@ -7,6 +7,24 @@ use std::time::{Duration, Instant};
 use serde_json::{json, Value};
 
 const SIDECAR_TIMEOUT_MS: u64 = 30_000;
+const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
+    "graph_summary",
+    "goal_run",
+    "task_list",
+    "task_complete",
+    "modules_list",
+    "module_enable",
+    "module_disable",
+    "marketplace_list",
+    "settings_read",
+    "settings_write",
+    "settings_models",
+    "trust_status",
+];
+
+fn sidecar_error(code: &str, detail: impl AsRef<str>) -> String {
+    format!("{code}: {}", detail.as_ref())
+}
 
 fn truncate_for_error(value: &str, max: usize) -> String {
     if value.len() <= max {
@@ -19,7 +37,13 @@ fn truncate_for_error(value: &str, max: usize) -> String {
 
 fn resolve_sidecar_program() -> (String, Vec<String>) {
     if let Ok(explicit) = std::env::var("LIFEOS_SIDECAR_BIN") {
-        return (explicit, Vec::new());
+        let allow_override = std::env::var("LIFEOS_ALLOW_SIDECAR_OVERRIDE")
+            .map(|value| value.trim().eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+
+        if cfg!(debug_assertions) || allow_override {
+            return (explicit, Vec::new());
+        }
     }
 
     if cfg!(debug_assertions) {
@@ -92,6 +116,13 @@ fn resolve_sidecar_program() -> (String, Vec<String>) {
 }
 
 pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
+    if !ALLOWED_SIDECAR_COMMANDS.contains(&command) {
+        return Err(sidecar_error(
+            "SIDECAR_UNSUPPORTED_COMMAND",
+            format!("Command \"{command}\" is not allowed"),
+        ));
+    }
+
     let (program, base_args) = resolve_sidecar_program();
 
     let mut child = Command::new(program)
@@ -100,7 +131,7 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Unable to launch sidecar: {error}"))?;
+        .map_err(|error| sidecar_error("SIDECAR_LAUNCH_FAILED", error.to_string()))?;
 
     let request = json!({
         "id": "tauri-request",
@@ -111,8 +142,9 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
     let input = child
         .stdin
         .as_mut()
-        .ok_or_else(|| "Sidecar stdin unavailable".to_string())?;
-    writeln!(input, "{request}").map_err(|error| format!("Failed to send request: {error}"))?;
+        .ok_or_else(|| sidecar_error("SIDECAR_STDIN_UNAVAILABLE", "Sidecar stdin unavailable"))?;
+    writeln!(input, "{request}")
+        .map_err(|error| sidecar_error("SIDECAR_REQUEST_WRITE_FAILED", error.to_string()))?;
 
     let deadline = Instant::now() + Duration::from_millis(SIDECAR_TIMEOUT_MS);
     let output = loop {
@@ -126,14 +158,19 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
                 if Instant::now() >= deadline {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(format!(
-                        "Sidecar request timed out after {}ms",
-                        SIDECAR_TIMEOUT_MS
+                    return Err(sidecar_error(
+                        "SIDECAR_TIMEOUT",
+                        format!("Sidecar request timed out after {}ms", SIDECAR_TIMEOUT_MS),
                     ));
                 }
                 thread::sleep(Duration::from_millis(10));
             }
-            Err(error) => return Err(format!("Sidecar process status failed: {error}")),
+            Err(error) => {
+                return Err(sidecar_error(
+                    "SIDECAR_STATUS_FAILED",
+                    format!("Sidecar process status failed: {error}"),
+                ))
+            }
         }
     };
 
@@ -146,7 +183,7 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
         } else {
             truncate_for_error(&stderr, 500)
         };
-        return Err(detail);
+        return Err(sidecar_error("SIDECAR_EMPTY_RESPONSE", detail));
     }
 
     let line = stdout
@@ -154,18 +191,21 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
         .last()
         .ok_or_else(|| "Sidecar produced unreadable output".to_string())?;
     let parsed: Value = serde_json::from_str(line).map_err(|error| {
-        format!(
+        sidecar_error(
+            "SIDECAR_INVALID_JSON",
+            format!(
             "Invalid sidecar JSON response: {error}. payload={}",
             truncate_for_error(line, 300)
+            ),
         )
     })?;
 
     if let Some(error) = parsed.get("error").and_then(Value::as_str) {
-        return Err(error.to_string());
+        return Err(sidecar_error("SIDECAR_COMMAND_ERROR", error));
     }
 
     parsed
         .get("result")
         .cloned()
-        .ok_or_else(|| "Missing sidecar result payload".to_string())
+        .ok_or_else(|| sidecar_error("SIDECAR_MISSING_RESULT", "Missing sidecar result payload"))
 }

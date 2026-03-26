@@ -48,6 +48,7 @@ test('ModuleLoader loads modules and reports loaded ids', async () => {
   const loaded: string[] = [];
   const loader = new ModuleLoader({
     eventBus,
+    requireManifest: false,
     logger: () => {
       return;
     },
@@ -72,6 +73,7 @@ test('ModuleLoader context subscribe + publish routes events through bus', async
   const seen: string[] = [];
   const loader = new ModuleLoader({
     eventBus,
+    requireManifest: false,
     logger: () => {
       return;
     },
@@ -98,6 +100,7 @@ test('ModuleLoader close calls module dispose and closes event bus', async () =>
   const disposed: string[] = [];
   const loader = new ModuleLoader({
     eventBus,
+    requireManifest: false,
     logger: () => {
       return;
     },
@@ -334,6 +337,104 @@ test('ModuleLoader rejects overly broad publish event permission', async () => {
       },
     });
   });
+});
+
+test('ModuleLoader rejects overly broad subscribe event permission for non-system modules', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'broad-subscriber');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'broad-subscriber',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.>'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'broad-subscriber',
+      async init() {
+        return;
+      },
+    });
+  });
+});
+
+test('ModuleLoader allows broad subscribe permissions for trusted system modules', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'orchestrator');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'orchestrator',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read', 'write'],
+          network: [],
+          voice: ['speak'],
+          events: ['subscribe:lifeos.>', 'publish:lifeos.orchestrator.suggestion'],
+        },
+        resources: {
+          cpu: 'high',
+          memory: 'medium',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'system',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await loader.load({
+    id: 'orchestrator',
+    async init() {
+      return;
+    },
+  });
+
+  assert.equal(loader.has('orchestrator'), true);
 });
 
 test('ModuleLoader rejects module without manifest in strict mode', async () => {

@@ -366,6 +366,9 @@ importers:
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph
+      '@lifeos/policy-engine':
+        specifier: workspace:*
+        version: link:../policy-engine
 
   packages/news-module:
     dependencies:
@@ -1350,7 +1353,6 @@ packages:
   '@lancedb/lancedb@0.10.0':
     resolution: {integrity: sha512-/sNUZze9Ed6N2T6y3NuEOSPPE3hSvJ4UHfZ+uAOBjNprrECRoCn4LTjza6dA4Za4Csl7K19AwBhlvhLQLvi48Q==}
     engines: {node: '>= 18'}
-    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=13.0.0 <=17.0.0'

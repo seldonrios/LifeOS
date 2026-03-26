@@ -117,5 +117,8 @@ export const Topics = {
     syncDevicePaired: 'lifeos.sync.device.paired',
     syncDevicesListed: 'lifeos.sync.devices.listed',
     syncDemoCompleted: 'lifeos.sync.demo.completed',
+    securityPolicyDenied: 'lifeos.security.policy.denied',
+    securityAuthFailed: 'lifeos.security.auth.failed',
+    trustExplanationLogged: 'lifeos.trust.explanation.logged',
   },
 } as const;

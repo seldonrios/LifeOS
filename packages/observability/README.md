@@ -2,7 +2,13 @@
 
 Observability contracts for traces, metrics, and structured logs.
 
-The intended implementation integrates with OpenTelemetry and exports traces to configured backends.
+Current implementation provides a local structured-logging client with:
+
+- span start/end tracking
+- metric event logging
+- level-based runtime logging (`debug`, `info`, `warn`, `error`)
+
+This baseline is intentionally simple and keeps output inspectable by the user.
 
 ## Spec References
 

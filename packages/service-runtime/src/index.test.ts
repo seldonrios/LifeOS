@@ -3,6 +3,7 @@ import { createServer as createNetServer } from 'node:net';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { createSecurityClient } from '@lifeos/security';
 import type { SecretStore } from '@lifeos/secrets';
 
 import { startService } from './index';
@@ -40,6 +41,8 @@ async function getFreePort(): Promise<number> {
 describe('startService', () => {
   let app: FastifyInstance | null = null;
   let previousPort: string | undefined;
+  let previousJwtSecret: string | undefined;
+  let previousPolicyStrict: string | undefined;
 
   afterEach(async () => {
     if (app) {
@@ -51,6 +54,18 @@ describe('startService', () => {
       delete process.env.PORT;
     } else {
       process.env.PORT = previousPort;
+    }
+
+    if (previousJwtSecret === undefined) {
+      delete process.env.LIFEOS_JWT_SECRET;
+    } else {
+      process.env.LIFEOS_JWT_SECRET = previousJwtSecret;
+    }
+
+    if (previousPolicyStrict === undefined) {
+      delete process.env.LIFEOS_POLICY_STRICT;
+    } else {
+      process.env.LIFEOS_POLICY_STRICT = previousPolicyStrict;
     }
 
     vi.restoreAllMocks();
@@ -236,7 +251,9 @@ describe('startService', () => {
       allowObservabilityInitFallback: true,
       isFeatureEnabled: () => false,
       secretStore: makeNullSecretStore(),
-      secretRefs: [{ name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' }],
+      secretRefs: [
+        { name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' },
+      ],
       registerRoutes: async (fastifyApp) => {
         app = fastifyApp;
       },
@@ -263,10 +280,63 @@ describe('startService', () => {
         allowObservabilityInitFallback: true,
         isFeatureEnabled: () => true,
         secretStore: makeNullSecretStore(),
-        secretRefs: [{ name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' }],
+        secretRefs: [
+          { name: 'GATED_KEY', policy: 'required_if_feature_enabled', featureGate: 'myFeature' },
+        ],
       }),
     ).rejects.toThrow('process.exit(1)');
 
     expect(exitSpy).toHaveBeenCalledWith(1);
+  });
+  it('rejects mutating routes without bearer token', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-auth-required',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.post('/mutate', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/mutate`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(401);
+  });
+
+  it('allows mutating routes with valid bearer token when policy strict mode is disabled', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    previousPolicyStrict = process.env.LIFEOS_POLICY_STRICT;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+    process.env.LIFEOS_POLICY_STRICT = 'false';
+
+    const securityClient = createSecurityClient();
+    const issued = await securityClient.issueServiceToken('dashboard');
+
+    await startService({
+      serviceName: 'service-runtime-test-auth-allowed',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.post('/mutate', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/mutate`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${issued.token}`,
+      },
+    });
+
+    expect(response.status).toBe(200);
   });
 });

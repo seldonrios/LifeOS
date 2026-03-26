@@ -27,6 +27,16 @@ test('processRequest executes supported command and returns result', async () =>
   assert.equal(response.error, undefined);
 });
 
+test('processRequest executes trust_status and returns structured trust payload', async () => {
+  const response = await processRequest(JSON.stringify({ id: 'trust-1', command: 'trust_status' }));
+  assert.equal(response.id, 'trust-1');
+  assert.equal(response.error, undefined);
+  const result = response.result as { ownership?: unknown; runtime?: unknown };
+  assert.equal(typeof result, 'object');
+  assert.equal(typeof result.ownership, 'object');
+  assert.equal(typeof result.runtime, 'object');
+});
+
 test('processRequest returns Ollama model names for settings_models', async () => {
   const originalFetch = globalThis.fetch;
 

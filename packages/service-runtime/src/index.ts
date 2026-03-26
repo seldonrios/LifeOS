@@ -10,6 +10,7 @@ import {
   type ObservabilityConfig,
 } from '@lifeos/observability';
 import { createPolicyClient } from '@lifeos/policy-engine';
+import { createSecurityClient, type JwtPayload } from '@lifeos/security';
 import { applySecretPolicy, SecretsError } from '@lifeos/secrets';
 import type { SecretStore } from '@lifeos/secrets';
 
@@ -94,6 +95,23 @@ function terminateBoot(error: unknown, message: string): never {
   console.error(`${message}: ${detail}`);
   process.exit(1);
   throw error instanceof Error ? error : new Error(detail);
+}
+
+function shouldEnforceMutatingAuth(method: string): boolean {
+  return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+}
+
+function extractBearerToken(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+
+  const [scheme, token] = value.trim().split(/\s+/, 2);
+  if (!scheme || !token || scheme.toLowerCase() !== 'bearer') {
+    return null;
+  }
+
+  return token.trim() || null;
 }
 
 export async function startService(opts: InternalServiceRuntimeOptions): Promise<void> {
@@ -201,11 +219,101 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
   });
 
   await markPhase('auth/policy');
-  app.addHook('onRequest', async (request) => {
+  const configSecurity = (
+    resolvedConfig as unknown as {
+      security?: {
+        policyEnforce?: boolean;
+        failClosed?: boolean;
+      };
+    }
+  ).security;
+  const failClosed = opts.failClosed ?? configSecurity?.failClosed ?? true;
+  const enforceMutatingRouteAuth =
+    opts.enforceMutatingRouteAuth ?? opts.enableAuth ?? configSecurity?.policyEnforce ?? true;
+  const securityClient = createSecurityClient();
+  const policyClient = createPolicyClient();
+
+  app.addHook('onRequest', async (request, reply) => {
     request.log.info({ serviceName: opts.serviceName }, 'service identity');
+
+    if (!enforceMutatingRouteAuth || !shouldEnforceMutatingAuth(request.method)) {
+      return;
+    }
+
+    if (request.url.startsWith('/health/')) {
+      return;
+    }
+
+    const authorization = request.headers.authorization;
+    const token = extractBearerToken(
+      Array.isArray(authorization) ? authorization[0] : authorization,
+    );
+    if (!token) {
+      observabilityClient.log('warn', 'mutating request denied: missing bearer token', {
+        topic: 'lifeos.security.auth.failed',
+        serviceName: opts.serviceName,
+        method: request.method,
+        path: request.url,
+      });
+      reply.code(401).send({ error: 'Missing Bearer token for mutating route' });
+      return reply;
+    }
+
+    let payload: JwtPayload | null = null;
+    try {
+      payload = await securityClient.verifyJwt(token);
+    } catch (error: unknown) {
+      if (failClosed) {
+        observabilityClient.log('error', 'mutating request denied: jwt verification failed', {
+          topic: 'lifeos.security.auth.failed',
+          serviceName: opts.serviceName,
+          method: request.method,
+          path: request.url,
+        });
+        reply.code(503).send({
+          error: `JWT verification failed: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        return reply;
+      }
+      return;
+    }
+
+    if (!payload) {
+      observabilityClient.log('warn', 'mutating request denied: invalid token', {
+        topic: 'lifeos.security.auth.failed',
+        serviceName: opts.serviceName,
+        method: request.method,
+        path: request.url,
+      });
+      reply.code(401).send({ error: 'Invalid or expired JWT token' });
+      return reply;
+    }
+
+    const policyResult = await policyClient.evaluatePolicy({
+      subject: payload.sub,
+      action: `service.${opts.serviceName}.${request.method.toLowerCase()}`,
+      resource: request.url.split('?')[0] ?? request.url,
+      context: {
+        serviceName: opts.serviceName,
+        method: request.method,
+        path: request.url,
+        scopes: payload.scopes,
+      },
+    });
+
+    if (!policyResult.allowed) {
+      observabilityClient.log('warn', 'mutating request denied: policy rejection', {
+        topic: 'lifeos.security.policy.denied',
+        serviceName: opts.serviceName,
+        method: request.method,
+        path: request.url,
+        reason: policyResult.reason,
+      });
+      reply.code(403).send({ error: policyResult.reason ?? 'Policy denied mutating request' });
+      return reply;
+    }
   });
 
-  createPolicyClient();
   try {
     await opts.onAuthPolicy?.(resolvedConfig);
   } catch (error) {

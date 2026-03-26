@@ -18,6 +18,7 @@ import { checkPermissions } from './permissions';
 
 const MODULE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const WRITE_METHOD_PATTERN = /^(save|set|update|delete|remove|merge|apply|register)/i;
+const EVENT_SECURITY_POLICY_DENIED = 'lifeos.security.policy.denied';
 
 type RuntimePermissionMode = 'off' | 'warn' | 'strict';
 
@@ -121,14 +122,17 @@ function topicMatches(pattern: string, topic: string): boolean {
 }
 
 function resolveRuntimePermissionMode(env: NodeJS.ProcessEnv): RuntimePermissionMode {
-  const raw = (env.LIFEOS_MODULE_RUNTIME_PERMISSIONS ?? '').trim().toLowerCase();
+  const raw = (env.LIFEOS_MODULE_RUNTIME_PERMISSIONS ?? 'strict').trim().toLowerCase();
   if (raw === 'off' || raw === 'disabled' || raw === 'false' || raw === '0') {
     return 'off';
   }
-  if (raw === 'strict' || raw === 'enforce' || raw === 'true' || raw === '1') {
+  if (raw === 'warn') {
+    return 'warn';
+  }
+  if (raw === 'strict' || raw === 'enforce' || raw === 'true' || raw === '1' || raw.length === 0) {
     return 'strict';
   }
-  return 'warn';
+  return 'strict';
 }
 
 export class ModuleLoader {
@@ -147,9 +151,12 @@ export class ModuleLoader {
     this.env = options.env ?? process.env;
     this.baseDir = options.baseDir ?? process.cwd();
     this.graphPath = options.graphPath;
+    const legacyManifestBypass =
+      (this.env.LIFEOS_ALLOW_LEGACY_MANIFESTLESS ?? '').trim().toLowerCase() === 'true';
     this.requireManifest =
       options.requireManifest ??
-      (this.env.LIFEOS_MODULE_MANIFEST_REQUIRED ?? '').trim().toLowerCase() === 'true';
+      (!legacyManifestBypass &&
+        (this.env.LIFEOS_MODULE_MANIFEST_REQUIRED ?? 'true').trim().toLowerCase() !== 'false');
     this.runtimePermissionMode = resolveRuntimePermissionMode(this.env);
     this.createGraphClient = options.createLifeGraphClient ?? createLifeGraphClient;
     this.logger = options.logger ?? ((line: string) => console.log(line));
@@ -160,6 +167,29 @@ export class ModuleLoader {
         name: 'lifeos-module-loader',
         ...(options.eventBusOptions ?? {}),
       });
+
+    if (legacyManifestBypass) {
+      this.logger(
+        '[ModuleLoader] legacy manifest bypass enabled; this compatibility mode is deprecated and should be removed after manifest migration.',
+      );
+    }
+  }
+
+  private emitPolicyDenied(moduleId: string, action: string, detail: string): void {
+    const event = createEventEnvelope(
+      EVENT_SECURITY_POLICY_DENIED,
+      {
+        moduleId,
+        action,
+        detail,
+        runtimeMode: this.runtimePermissionMode,
+      },
+      'module-loader',
+    );
+
+    void this.eventBus.publish(EVENT_SECURITY_POLICY_DENIED, event).catch(() => {
+      return;
+    });
   }
 
   private buildRuntimePolicy(
@@ -209,6 +239,7 @@ export class ModuleLoader {
     }
 
     const message = `[ModuleLoader] ${moduleId} unauthorized ${action}: ${detail}`;
+    this.emitPolicyDenied(moduleId, action, detail);
     if (this.runtimePermissionMode === 'strict') {
       throw new Error(message);
     }

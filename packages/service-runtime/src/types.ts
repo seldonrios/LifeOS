@@ -24,9 +24,11 @@ export interface ServiceRuntimeOptions {
   /** @deprecated Use `isCoreService` instead. Will be removed in a future release. Neither this flag nor `isCoreService` governs secret enforcement; use `SecretRef.policy` instead. */
   isCorService?: boolean;
   enableAuth?: boolean;
+  enforceMutatingRouteAuth?: boolean;
   enableMetrics?: boolean;
   enableReadiness?: boolean;
   enableLiveness?: boolean;
+  failClosed?: boolean;
   secretRefs?: SecretRef[];
   secretStore?: SecretStore;
   observabilityConfig?: ObservabilityConfig;

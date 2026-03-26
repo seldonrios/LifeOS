@@ -10,6 +10,7 @@ import {
   runModuleCommand,
   runStatusCommand,
   runTaskCommand,
+  runTrustCommand,
 } from '@lifeos/cli';
 
 type RpcCommand =
@@ -23,7 +24,8 @@ type RpcCommand =
   | 'marketplace_list'
   | 'settings_read'
   | 'settings_write'
-  | 'settings_models';
+  | 'settings_models'
+  | 'trust_status';
 
 interface RpcRequest {
   id?: string;
@@ -43,11 +45,31 @@ interface RunCaptureResult {
   stderr: string;
 }
 
+interface ModulePermissionSummary {
+  graph: string[];
+  voice: string[];
+  network: string[];
+  events: string[];
+}
+
+interface ModuleListRow {
+  id: string;
+  tier: string;
+  enabled: boolean;
+  available: boolean;
+  subFeatures: string[];
+  permissions: ModulePermissionSummary;
+}
+
 interface DesktopSettings {
   model: string;
   ollamaHost: string;
   natsUrl: string;
   voiceEnabled: boolean;
+  localOnlyMode: boolean;
+  cloudAssistEnabled: boolean;
+  trustAuditEnabled: boolean;
+  transparencyTipsEnabled: boolean;
 }
 
 const SETTINGS_PATH = join(homedir(), '.lifeos', 'init.json');
@@ -74,6 +96,7 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'settings_read',
   'settings_write',
   'settings_models',
+  'trust_status',
 ]);
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -243,6 +266,62 @@ export function parseModuleList(stdout: string): Array<{
   return rows;
 }
 
+function emptyPermissions(): ModulePermissionSummary {
+  return {
+    graph: [],
+    voice: [],
+    network: [],
+    events: [],
+  };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
+    .filter((entry) => entry.length > 0);
+}
+
+function resolveManifestModuleId(moduleId: string): string {
+  if (moduleId === 'health') {
+    return 'health-tracker';
+  }
+  return moduleId;
+}
+
+async function readModulePermissionSummary(moduleId: string): Promise<ModulePermissionSummary> {
+  const manifestPath = join(
+    process.cwd(),
+    'modules',
+    resolveManifestModuleId(moduleId),
+    'lifeos.json',
+  );
+
+  try {
+    const raw = await readFile(manifestPath, 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (!isObjectRecord(parsed.permissions)) {
+      return emptyPermissions();
+    }
+
+    return {
+      graph: toStringArray(parsed.permissions.graph),
+      voice: toStringArray(parsed.permissions.voice),
+      network: toStringArray(parsed.permissions.network),
+      events: toStringArray(parsed.permissions.events),
+    };
+  } catch {
+    return emptyPermissions();
+  }
+}
+
 async function readSettingsFile(): Promise<DesktopSettings> {
   try {
     const raw = await readFile(SETTINGS_PATH, 'utf8');
@@ -252,6 +331,12 @@ async function readSettingsFile(): Promise<DesktopSettings> {
       ollamaHost: normalizeHttpUrl(parsed.ollamaHost, 'http://127.0.0.1:11434'),
       natsUrl: normalizeNatsUrl(parsed.natsUrl, 'nats://127.0.0.1:4222'),
       voiceEnabled: typeof parsed.voiceEnabled === 'boolean' ? parsed.voiceEnabled : true,
+      localOnlyMode: typeof parsed.localOnlyMode === 'boolean' ? parsed.localOnlyMode : true,
+      cloudAssistEnabled:
+        typeof parsed.cloudAssistEnabled === 'boolean' ? parsed.cloudAssistEnabled : false,
+      trustAuditEnabled: typeof parsed.trustAuditEnabled === 'boolean' ? parsed.trustAuditEnabled : true,
+      transparencyTipsEnabled:
+        typeof parsed.transparencyTipsEnabled === 'boolean' ? parsed.transparencyTipsEnabled : true,
     };
   } catch {
     return {
@@ -259,6 +344,10 @@ async function readSettingsFile(): Promise<DesktopSettings> {
       ollamaHost: 'http://127.0.0.1:11434',
       natsUrl: 'nats://127.0.0.1:4222',
       voiceEnabled: true,
+      localOnlyMode: true,
+      cloudAssistEnabled: false,
+      trustAuditEnabled: true,
+      transparencyTipsEnabled: true,
     };
   }
 }
@@ -270,7 +359,24 @@ async function writeSettingsFile(update: Partial<DesktopSettings>): Promise<Desk
     ollamaHost: normalizeHttpUrl(update.ollamaHost ?? base.ollamaHost, base.ollamaHost),
     natsUrl: normalizeNatsUrl(update.natsUrl ?? base.natsUrl, base.natsUrl),
     voiceEnabled: typeof update.voiceEnabled === 'boolean' ? update.voiceEnabled : base.voiceEnabled,
+    localOnlyMode:
+      typeof update.localOnlyMode === 'boolean' ? update.localOnlyMode : base.localOnlyMode,
+    cloudAssistEnabled:
+      typeof update.cloudAssistEnabled === 'boolean'
+        ? update.cloudAssistEnabled
+        : base.cloudAssistEnabled,
+    trustAuditEnabled:
+      typeof update.trustAuditEnabled === 'boolean'
+        ? update.trustAuditEnabled
+        : base.trustAuditEnabled,
+    transparencyTipsEnabled:
+      typeof update.transparencyTipsEnabled === 'boolean'
+        ? update.transparencyTipsEnabled
+        : base.transparencyTipsEnabled,
   };
+  if (merged.localOnlyMode) {
+    merged.cloudAssistEnabled = false;
+  }
   await mkdir(dirname(SETTINGS_PATH), { recursive: true });
   await writeFile(SETTINGS_PATH, `${JSON.stringify(merged, null, 2)}\n`, 'utf8');
   return merged;
@@ -452,7 +558,15 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       if (output.exitCode !== 0) {
         throw new Error(output.stderr || 'modules_list failed');
       }
-      return parseModuleList(output.stdout);
+      const rows = parseModuleList(output.stdout);
+      const enhancedRows: ModuleListRow[] = [];
+      for (const row of rows) {
+        enhancedRows.push({
+          ...row,
+          permissions: await readModulePermissionSummary(row.id),
+        });
+      }
+      return enhancedRows;
     }
 
     case 'module_enable': {
@@ -517,6 +631,10 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         ollamaHost: request.args?.ollamaHost as string | undefined,
         natsUrl: request.args?.natsUrl as string | undefined,
         voiceEnabled: request.args?.voiceEnabled as boolean | undefined,
+        localOnlyMode: request.args?.localOnlyMode as boolean | undefined,
+        cloudAssistEnabled: request.args?.cloudAssistEnabled as boolean | undefined,
+        trustAuditEnabled: request.args?.trustAuditEnabled as boolean | undefined,
+        transparencyTipsEnabled: request.args?.transparencyTipsEnabled as boolean | undefined,
       });
     }
 
@@ -525,6 +643,23 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       return {
         models: await readOllamaModelNames(settings.ollamaHost),
       };
+    }
+
+    case 'trust_status': {
+      const output = await runCapture((dependencies) =>
+        runTrustCommand(
+          {
+            action: 'report',
+            outputJson: true,
+            verbose: false,
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'trust_status failed');
+      }
+      return parseJsonOutput(output.stdout);
     }
 
     default:

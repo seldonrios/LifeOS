@@ -4,6 +4,7 @@ const ALLOWED_GRAPH_PERMISSIONS = new Set(['read', 'append', 'write']);
 const ALLOWED_VOICE_PERMISSIONS = new Set(['speak', 'listen']);
 const NETWORK_PERMISSION_PATTERN = /^[a-z0-9][a-z0-9._-]{1,40}$/;
 const EVENT_PERMISSION_PATTERN = /^(subscribe|publish):[A-Za-z0-9.*>_-]+(?:\.[A-Za-z0-9.*>_-]+)*$/;
+const WILDCARD_SUBSCRIBE_TRUSTED_MODULES = new Set(['orchestrator', 'sync-core']);
 
 export interface PermissionCheckOptions {
   moduleId: string;
@@ -44,7 +45,10 @@ function parseEventPermission(
   };
 }
 
-function validatePermissionShape(permissions: LifeOSManifestPermissions): string[] {
+function validatePermissionShape(
+  permissions: LifeOSManifestPermissions,
+  options: PermissionCheckOptions,
+): string[] {
   const errors: string[] = [];
 
   for (const permission of permissions.graph) {
@@ -82,6 +86,14 @@ function validatePermissionShape(permissions: LifeOSManifestPermissions): string
         `event permission "${permission}" is too broad; publish permissions cannot contain "*" or ">"`,
       );
     }
+
+    if (
+      parsed.action === 'subscribe' &&
+      (parsed.topic.includes('*') || parsed.topic.includes('>')) &&
+      !WILDCARD_SUBSCRIBE_TRUSTED_MODULES.has(options.moduleId)
+    ) {
+      errors.push(`event permission "${permission}" is too broad for module "${options.moduleId}"`);
+    }
   }
 
   return errors;
@@ -91,7 +103,7 @@ export async function checkPermissions(
   permissions: LifeOSManifestPermissions,
   options: PermissionCheckOptions,
 ): Promise<PermissionCheckResult> {
-  const shapeErrors = validatePermissionShape(permissions);
+  const shapeErrors = validatePermissionShape(permissions, options);
   if (shapeErrors.length > 0) {
     return {
       allowed: false,
@@ -99,7 +111,9 @@ export async function checkPermissions(
     };
   }
 
-  const enforcePolicy = (options.env?.LIFEOS_POLICY_ENFORCE ?? '').trim().toLowerCase() === 'true';
+  const enforcePolicyRaw = (options.env?.LIFEOS_POLICY_ENFORCE ?? 'true').trim().toLowerCase();
+  const enforcePolicy =
+    enforcePolicyRaw !== 'false' && enforcePolicyRaw !== '0' && enforcePolicyRaw !== 'off';
   if (!enforcePolicy) {
     return {
       allowed: true,
