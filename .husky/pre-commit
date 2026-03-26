@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 
-if [ "$TRAYCER_GIT_AUTOMATION" = "1" ]; then
-	echo "Traycer automation: skipping pre-commit lint-staged to avoid hook deadlocks."
+if [ "$LIFEOS_GIT_AUTOMATION" = "1" ] || [ "$TRAYCER_GIT_AUTOMATION" = "1" ]; then
+	echo "LifeOS automation: skipping pre-commit lint-staged to avoid hook deadlocks."
 	exit 0
 else
 	pnpm lint-staged
