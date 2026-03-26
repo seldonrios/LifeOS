@@ -156,7 +156,7 @@ LifeOS is configured through environment variables and a local YAML config file.
 ### Environment Variables
 
 | Variable                             | Default                                 | Description                                                          |
-| ------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- | ---- | ----- |
+| ------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- |
 | `OLLAMA_HOST`                        | `http://127.0.0.1:11434`                | Ollama API endpoint                                                  |
 | `LIFEOS_GOAL_MODEL`                  | `llama3.1:8b`                           | LLM model for goal planning                                          |
 | `LIFEOS_GRAPH_PATH`                  | `~/.local/share/lifeos/life-graph.json` | Compatibility path; runtime persistence is SQLite at `life-graph.db` |
@@ -174,7 +174,7 @@ LifeOS is configured through environment variables and a local YAML config file.
 | `LIFEOS_MARKETPLACE_TRUST_KEYS`      | _unset_                                 | Trust key map for catalog signature verification                     |
 | `LIFEOS_MODULE_MANIFEST_REQUIRED`    | `true`                                  | Require valid module manifests                                       |
 | `LIFEOS_MODULE_RUNTIME_PERMISSIONS`  | `strict`                                | Enforce declared module runtime permissions                          |
-| `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` | `warn` dev / `strict` prod              | Heap-pressure module load enforcement (`strict                       | warn | off`) |
+| `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` | `warn` dev / `strict` prod              | Heap-pressure module load enforcement (`strict \| warn \| off`)      |
 
 ### Config File
 

@@ -22,12 +22,12 @@ We aim to build a community where people feel safe to share ideas, ask questions
 
 ## ✅ Expected Behavior
 
-- Be respectful and considerate in all interactions  
-- Provide constructive, actionable feedback  
-- Assume good intent, especially with new contributors  
-- Ask questions and explain reasoning when proposing ideas  
-- Keep discussions focused on improving the project  
-- Welcome newcomers and help them get oriented  
+- Be respectful and considerate in all interactions
+- Provide constructive, actionable feedback
+- Assume good intent, especially with new contributors
+- Ask questions and explain reasoning when proposing ideas
+- Keep discussions focused on improving the project
+- Welcome newcomers and help them get oriented
 
 ---
 
@@ -35,11 +35,11 @@ We aim to build a community where people feel safe to share ideas, ask questions
 
 The following behaviors are not tolerated:
 
-- Harassment, intimidation, or discrimination of any kind  
-- Personal attacks, insults, or dismissive language  
-- Trolling, inflammatory comments, or derailing discussions  
-- Publishing private information without consent  
-- Repeatedly ignoring community guidelines or moderator direction  
+- Harassment, intimidation, or discrimination of any kind
+- Personal attacks, insults, or dismissive language
+- Trolling, inflammatory comments, or derailing discussions
+- Publishing private information without consent
+- Repeatedly ignoring community guidelines or moderator direction
 
 ---
 
@@ -59,9 +59,9 @@ Community maintainers are responsible for clarifying and enforcing this Code of 
 
 They may take any action deemed appropriate in response to unacceptable behavior, including:
 
-- Warning the contributor  
-- Removing content  
-- Temporarily or permanently restricting participation  
+- Warning the contributor
+- Removing content
+- Temporarily or permanently restricting participation
 
 All enforcement decisions will prioritize the safety and integrity of the community.
 
@@ -71,7 +71,7 @@ All enforcement decisions will prioritize the safety and integrity of the commun
 
 If you experience or witness behavior that violates this Code of Conduct, please report it:
 
-📧 **[INSERT CONTACT EMAIL OR METHOD]**
+📧 **seldonrios+lifeos@gmail.com**
 
 All reports will be handled confidentially and reviewed promptly.
 

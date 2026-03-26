@@ -13,10 +13,10 @@ We take vulnerabilities seriously and appreciate responsible disclosure from the
 
 As the project is in early development, security updates are primarily focused on the latest version.
 
-| Version | Supported |
-|--------|----------|
-| Latest (main) | ✅ |
-| Older versions | ❌ |
+| Version        | Supported |
+| -------------- | --------- |
+| Latest (main)  | ✅        |
+| Older versions | ❌        |
 
 ---
 
@@ -30,16 +30,16 @@ Instead, report it responsibly:
 
 Include as much detail as possible:
 
-- Description of the vulnerability  
-- Steps to reproduce  
-- Potential impact  
-- Suggested mitigation (if known)  
+- Description of the vulnerability
+- Steps to reproduce
+- Potential impact
+- Suggested mitigation (if known)
 
 You can also include:
 
-- Proof-of-concept code  
-- Logs or screenshots  
-- Environment details  
+- Proof-of-concept code
+- Logs or screenshots
+- Environment details
 
 ---
 
@@ -47,9 +47,9 @@ You can also include:
 
 We aim to:
 
-- **Acknowledge** reports within 48 hours  
-- **Investigate and triage** within a few days  
-- **Provide updates** as we work toward a fix  
+- **Acknowledge** reports within 48 hours
+- **Investigate and triage** within a few days
+- **Provide updates** as we work toward a fix
 
 Critical issues will be prioritized.
 
@@ -67,15 +67,15 @@ Critical issues will be prioritized.
 
 Security applies to:
 
-- Core LifeOS architecture  
-- Modules and integrations  
-- Local and remote execution paths  
-- Data handling, storage, and transport  
+- Core LifeOS architecture
+- Modules and integrations
+- Local and remote execution paths
+- Data handling, storage, and transport
 
 Out-of-scope (unless explicitly exploitable):
 
-- Theoretical issues without a clear attack path  
-- Issues requiring unrealistic assumptions  
+- Theoretical issues without a clear attack path
+- Issues requiring unrealistic assumptions
 
 ---
 
@@ -83,11 +83,11 @@ Out-of-scope (unless explicitly exploitable):
 
 LifeOS is built around:
 
-- **Local-first architecture** — minimize external exposure  
-- **User data ownership** — no hidden data flows  
-- **Modular isolation** — reduce blast radius of failures  
-- **Explicit permissions** — no implicit trust between modules  
-- **Transparency** — clear, inspectable behavior  
+- **Local-first architecture** — minimize external exposure
+- **User data ownership** — no hidden data flows
+- **Modular isolation** — reduce blast radius of failures
+- **Explicit permissions** — no implicit trust between modules
+- **Transparency** — clear, inspectable behavior
 
 ---
 

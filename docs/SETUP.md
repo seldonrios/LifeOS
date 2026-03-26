@@ -41,10 +41,18 @@ This command must exit 0. It runs build:modules -> typecheck -> lint -> format:c
 6. Start the platform stack.
 
 ```bash
-docker compose up
+docker compose up ollama nats
 ```
 
-7. Confirm `init-db` completes before app services continue.
+This is the recommended CLI/minimal path.
+
+For the full stack (all profile-gated services), run:
+
+```bash
+docker compose --profile dormant up
+```
+
+7. For full stack runs, confirm `init-db` completes before app services continue.
 
 `init-db` requires bash and runs on `postgres:16` (Debian). If it exits immediately, run `docker compose logs init-db` to see the error. See `services/init-db/README.md` for the full diagnostic checklist.
 
@@ -105,19 +113,25 @@ This runs build:modules -> typecheck -> lint -> format:check -> test. The first 
 7. Start services.
 
 ```bash
-docker compose up
+docker compose up ollama nats
 ```
 
-8. Confirm `init-db` completion and startup diagnostics output from running application services before development work.
+For the full stack (all profile-gated services), run:
+
+```bash
+docker compose --profile dormant up
+```
+
+8. Confirm `init-db` completion and startup diagnostics output from running application services before development work (full stack path).
 
 ## Ready to Contribute Signal
 
 Use this checklist before opening a PR:
 
 - `pnpm run validate` exits 0
-- `docker compose up` runs `init-db` to completion (`service_completed_successfully`)
-- All 17 long-running services start without crash-looping (`init-db` one-shot bootstrap must also complete with `service_completed_successfully` before app services start — it is not counted as a long-running service)
-- Startup diagnostics report is emitted
+- Minimal path: `docker compose up ollama nats` starts and both services stay healthy
+- Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
+- Startup diagnostics report is emitted (full stack path)
 
 ## Troubleshooting
 
