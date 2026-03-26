@@ -1,0 +1,35 @@
+﻿name: Documentation issue
+description: Report missing, incorrect, or unclear documentation
+labels: ["type:docs"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Location
+      description: File or section with the issue.
+      placeholder: README.md or docs/SETUP.md
+    validations:
+      required: true
+  - type: textarea
+    id: issue
+    attributes:
+      label: What is wrong or missing?
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: Suggested improvement
+    validations:
+      required: true
+  - type: dropdown
+    id: audience
+    attributes:
+      label: Who is affected?
+      options:
+        - New users
+        - Contributors
+        - Operators
+        - Maintainers
+    validations:
+      required: true

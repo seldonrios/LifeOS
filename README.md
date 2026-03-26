@@ -1,6 +1,9 @@
 # LifeOS
 
 ![LifeOS v0.1 Demo](https://i.imgur.com/QanyiXk.gif)
+[![CI](https://github.com/seldonrios/LifeOS/actions/workflows/ci.yml/badge.svg)](https://github.com/seldonrios/LifeOS/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](SECURITY.md)
 
 **LifeOS** — Sovereign Personal AI Node
 
@@ -20,6 +23,11 @@ Recommended first run:
 ```bash
 pnpm lifeos init
 ```
+
+Setup paths:
+
+- Recommended path (CLI MVP): `docs/SETUP.md` -> "Primary Path - Dev Container (Recommended)" or "Local Development (No Dev Container)"
+- Advanced path (full Docker profile): `docker compose --profile dormant up`
 
 These commands work in Linux/macOS shells (`bash`/`zsh`) and in PowerShell unless noted otherwise.
 

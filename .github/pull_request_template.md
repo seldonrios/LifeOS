@@ -2,12 +2,14 @@
 
 - Describe the user-visible behavior change.
 - List key implementation updates.
+- Link the related issue(s) when available.
 
 ## Validation
 
 - [ ] `pnpm run validate`
-- [ ] If modules changed: `pnpm run build:modules`
 - [ ] If behavior changed: docs updated (`README.md` and/or `docs/*`)
+- [ ] If tests were added/changed: package-level test scripts still pass in isolation
+- [ ] No unrelated files are included in this PR
 
 ## Release Integrity
 

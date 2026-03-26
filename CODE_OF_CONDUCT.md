@@ -75,6 +75,8 @@ If you experience or witness behavior that violates this Code of Conduct, please
 
 All reports will be handled confidentially and reviewed promptly.
 
+For security vulnerabilities, use the private reporting process in [SECURITY.md](SECURITY.md) instead of public issues.
+
 ---
 
 ## 🧩 Attribution

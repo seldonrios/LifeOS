@@ -1,0 +1,52 @@
+﻿name: Bug report
+description: Report a reproducible problem in LifeOS
+labels: ["type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Share a minimal repro so maintainers can verify quickly.
+  - type: input
+    id: lifeos_version
+    attributes:
+      label: LifeOS version
+      description: Output of `pnpm lifeos --version` or the commit hash.
+      placeholder: v0.2.0 or b07a210
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Linux
+        - macOS
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: repro_steps
+    attributes:
+      label: Reproduction steps
+      description: Provide exact commands and inputs.
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual_behavior
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste logs or stack traces. Redact secrets.
+      render: shell

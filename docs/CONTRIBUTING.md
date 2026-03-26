@@ -2,6 +2,13 @@
 
 This is the canonical contributor guide for LifeOS.
 
+## Contribution Intake
+
+- Report bugs with [Bug report issue form](../.github/ISSUE_TEMPLATE/bug_report.yml)
+- Propose features with [Feature request issue form](../.github/ISSUE_TEMPLATE/feature_request.yml)
+- Report docs gaps with [Documentation issue form](../.github/ISSUE_TEMPLATE/docs_issue.yml)
+- Review maintainer expectations in [Maintainer Policy](community/maintainer-policy.md)
+
 ## Folder Conventions and Navigation
 
 | I want to...                             | Go to...                                                         |

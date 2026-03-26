@@ -41,6 +41,8 @@ You can also include:
 - Logs or screenshots
 - Environment details
 
+For non-security concerns (bugs, feature requests, docs), use GitHub issue forms and the conduct process in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ---
 
 ## ⏱️ Response Expectations
