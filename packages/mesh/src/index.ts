@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import type { NodeConfig } from './node';
 
 export * from './node';
+export * from './runtime';
 
 export interface MeshState {
   nodes: NodeConfig[];
@@ -18,6 +19,25 @@ export interface MeshStateOptions {
 
 const NODE_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
 const CAPABILITY_PATTERN = /^[a-z0-9][a-z0-9._-]{1,63}$/;
+
+function normalizeRpcUrl(value: unknown): string | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return undefined;
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
+}
 
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
@@ -58,10 +78,12 @@ function normalizeNode(value: unknown): NodeConfig | null {
   if (!nodeId || !role) {
     return null;
   }
+  const rpcUrl = normalizeRpcUrl(node.rpcUrl);
   return {
     nodeId,
     role,
     capabilities: normalizeCapabilities(node.capabilities),
+    ...(rpcUrl ? { rpcUrl } : {}),
   };
 }
 
@@ -194,10 +216,22 @@ export class MeshRegistry {
       return this.nodes.get(explicitNodeId) ?? null;
     }
 
-    const heavyCandidate = this.listNodes().find((node) =>
+    const candidates = this.listNodes().filter((node) =>
       node.capabilities.includes(normalizedCapability),
     );
-    return heavyCandidate ?? null;
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    candidates.sort((left, right) => {
+      const leftPriority = left.role === 'heavy-compute' ? 0 : left.role === 'primary' ? 1 : 2;
+      const rightPriority = right.role === 'heavy-compute' ? 0 : right.role === 'primary' ? 1 : 2;
+      if (leftPriority !== rightPriority) {
+        return leftPriority - rightPriority;
+      }
+      return left.nodeId.localeCompare(right.nodeId);
+    });
+    return candidates[0] ?? null;
   }
 
   toState(): MeshState {

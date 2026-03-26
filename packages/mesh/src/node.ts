@@ -4,4 +4,5 @@ export interface NodeConfig {
   nodeId: string;
   role: NodeRole;
   capabilities: string[];
+  rpcUrl?: string;
 }

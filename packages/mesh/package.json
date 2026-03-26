@@ -12,6 +12,10 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts"
+    "test": "tsx --test src/index.test.ts src/runtime.test.ts"
+  },
+  "dependencies": {
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/security": "workspace:*"
   }
 }
