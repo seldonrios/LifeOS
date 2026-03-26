@@ -163,7 +163,13 @@ test('orchestrator subscribes to lifeos wildcard events', async () => {
   await module.init(context);
   assert.deepEqual(
     subscriptions.map((entry) => entry.topic),
-    [Topics.lifeos.syncDelta, 'lifeos.>'],
+    [
+      Topics.lifeos.syncDelta,
+      Topics.lifeos.meshLeaderElected,
+      Topics.lifeos.meshLeaderChanged,
+      Topics.lifeos.meshLeaderLost,
+      'lifeos.>',
+    ],
   );
 });
 
@@ -217,6 +223,66 @@ test('orchestrator re-evaluates when sync delta is received', async () => {
     (entry) => entry.topic === Topics.lifeos.orchestratorSuggestion,
   );
   assert.ok(suggestion);
+});
+
+test('orchestrator stays passive in follower mode until elected leader', async () => {
+  const { context, subscriptions } = createContextMock();
+  context.env = {
+    LIFEOS_MESH_NODE_ID: 'node-b',
+  };
+  const sink = mockTtsSink();
+  const module = createOrchestratorModule({
+    tts: sink.tts,
+    decisionEngine: async () => ({
+      action: 'speak',
+      message: 'Should not be spoken while follower.',
+    }),
+  });
+
+  await module.init(context);
+  const wildcard = getHandler(subscriptions, 'lifeos.>');
+  assert.ok(wildcard);
+
+  await wildcard?.({
+    id: 'evt_note_follower',
+    type: Topics.lifeos.noteAdded,
+    timestamp: '2026-03-25T08:10:00.000Z',
+    source: 'notes-module',
+    version: '0.1.0',
+    data: {
+      title: 'Follower note',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 0);
+
+  const elected = getHandler(subscriptions, Topics.lifeos.meshLeaderElected);
+  assert.ok(elected);
+  await elected?.({
+    id: 'evt_leader',
+    type: Topics.lifeos.meshLeaderElected,
+    timestamp: '2026-03-25T08:10:01.000Z',
+    source: 'mesh-runtime',
+    version: '0.1.0',
+    data: {
+      leaderId: 'node-b',
+      term: 1,
+      leaseUntil: '2026-03-25T08:10:11.000Z',
+    },
+  });
+
+  await wildcard?.({
+    id: 'evt_note_leader',
+    type: Topics.lifeos.noteAdded,
+    timestamp: '2026-03-25T08:10:02.000Z',
+    source: 'notes-module',
+    version: '0.1.0',
+    data: {
+      title: 'Leader note',
+    },
+  });
+
+  assert.equal(sink.spoken.length, 1);
 });
 
 test('orchestrator speaks sync conflict notices when preference is enabled', async () => {
@@ -438,6 +504,7 @@ test('orchestrator emits context-spike suggestion on research events without mod
   const sink = mockTtsSink();
   const module = createOrchestratorModule({
     tts: sink.tts,
+    now: () => new Date('2026-03-25T08:00:00.000Z'),
     decisionEngine: async () => ({ action: 'nothing' }),
   });
   await module.init(context);

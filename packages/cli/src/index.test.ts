@@ -2100,6 +2100,10 @@ test('marketplace commands read community-modules.json from cwd', async () => {
   const stdout: string[] = [];
   const exitCode = await runCli(['marketplace', 'list', '--json'], {
     cwd: () => baseDir,
+    env: {
+      HOME: baseDir,
+      USERPROFILE: baseDir,
+    },
     stdout: (message) => {
       stdout.push(message);
     },
@@ -2225,11 +2229,16 @@ test('mesh join, assign, and status commands persist node state', async () => {
     nodes: Array<{ nodeId: string; rpcUrl: string; healthy: boolean }>;
     assignments: Record<string, string>;
     ttlMs: number;
+    leaderId: string | null;
+    term: number;
+    leaseUntil: string | null;
+    leaderHealthy: boolean;
   };
   assert.ok(payload.nodes.some((node) => node.nodeId === 'heavy-server'));
   assert.ok(payload.nodes.every((node) => typeof node.rpcUrl === 'string'));
   assert.equal(typeof payload.ttlMs, 'number');
   assert.equal(payload.assignments.research, 'heavy-server');
+  assert.equal(typeof payload.term, 'number');
 });
 
 test('mesh assign rejects capability that target node does not declare', async () => {

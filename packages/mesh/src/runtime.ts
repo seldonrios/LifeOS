@@ -26,6 +26,7 @@ const DEFAULT_RPC_PORT = 5590;
 const DEFAULT_HEARTBEAT_INTERVAL_MS = 5000;
 const DEFAULT_NODE_TTL_MS = 15_000;
 const DEFAULT_DELEGATION_TIMEOUT_MS = 8000;
+const DEFAULT_LEADER_LEASE_MS = 10_000;
 const MAX_RPC_BODY_BYTES = 1_048_576;
 const MESH_SCOPE_GOAL_PLAN = 'mesh.goal.plan';
 const MESH_SCOPE_INTENT_PUBLISH = 'mesh.intent.publish';
@@ -54,6 +55,19 @@ export interface MeshHeartbeatStateOptions {
   env?: NodeJS.ProcessEnv;
   statePath?: string;
   ttlMs?: number;
+}
+
+export interface MeshLeaderSnapshot {
+  leaderId: string | null;
+  leaseUntil: string | null;
+  electedAt: string | null;
+  term: number;
+  updatedAt: string;
+}
+
+export interface MeshLeaderSnapshotOptions {
+  env?: NodeJS.ProcessEnv;
+  statePath?: string;
 }
 
 export interface MeshRuntimeOptions {
@@ -100,6 +114,11 @@ export interface MeshStatusSnapshot {
   assignments: Record<string, string>;
   ttlMs: number;
   updatedAt: string;
+  leaderId: string | null;
+  term: number;
+  leaseUntil: string | null;
+  isLeader: boolean;
+  leaderHealthy: boolean;
 }
 
 interface MeshStateDocument {
@@ -116,11 +135,11 @@ interface HeartbeatPayload {
   emittedAt: string;
 }
 
-interface MeshRpcGoalPlanResponse {
+interface MeshRpcGoalPlanResponse extends Record<string, unknown> {
   plan: unknown;
 }
 
-interface MeshRpcIntentPublishResponse {
+interface MeshRpcIntentPublishResponse extends Record<string, unknown> {
   accepted: boolean;
 }
 
@@ -232,6 +251,24 @@ function getMeshStatePath(env: NodeJS.ProcessEnv): string {
   return join(resolveHomeDir(env), '.lifeos', 'mesh.json');
 }
 
+function getMeshLeaderStatePath(options: MeshLeaderSnapshotOptions = {}): string {
+  if (options.statePath) {
+    return options.statePath;
+  }
+  const env = options.env ?? process.env;
+  return join(resolveHomeDir(env), '.lifeos', 'mesh-leader.json');
+}
+
+function defaultMeshLeaderSnapshot(now = new Date()): MeshLeaderSnapshot {
+  return {
+    leaderId: null,
+    leaseUntil: null,
+    electedAt: null,
+    term: 0,
+    updatedAt: now.toISOString(),
+  };
+}
+
 function normalizeMeshNode(value: unknown): NodeConfig | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -303,6 +340,16 @@ function rolePriority(role: NodeRole): number {
   return 2;
 }
 
+function leaderRolePriority(role: NodeRole): number {
+  if (role === 'primary') {
+    return 0;
+  }
+  if (role === 'heavy-compute') {
+    return 1;
+  }
+  return 2;
+}
+
 function parseHeartbeatTimestamp(value: string | null): number {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -333,6 +380,38 @@ function buildStalenessFlags(
     ageMs: Number.isFinite(ageMs) ? ageMs : null,
     healthy: Number.isFinite(ageMs) && ageMs <= ttlMs,
   };
+}
+
+function parseIsoTimestamp(value: string | null): number {
+  if (!value) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : Number.NEGATIVE_INFINITY;
+}
+
+function isLeaseActive(leaseUntil: string | null, nowMs: number): boolean {
+  const leaseUntilMs = parseIsoTimestamp(leaseUntil);
+  return Number.isFinite(leaseUntilMs) && leaseUntilMs > nowMs;
+}
+
+function selectLeaderCandidate(candidates: MeshNodeLiveStatus[]): MeshNodeLiveStatus | null {
+  if (candidates.length === 0) {
+    return null;
+  }
+  const sorted = [...candidates].sort((left, right) => {
+    const leaderRank = leaderRolePriority(left.role) - leaderRolePriority(right.role);
+    if (leaderRank !== 0) {
+      return leaderRank;
+    }
+    const leftAge = left.ageMs ?? Number.POSITIVE_INFINITY;
+    const rightAge = right.ageMs ?? Number.POSITIVE_INFINITY;
+    if (leftAge !== rightAge) {
+      return leftAge - rightAge;
+    }
+    return left.nodeId.localeCompare(right.nodeId);
+  });
+  return sorted[0] ?? null;
 }
 
 async function readRequestBody(req: IncomingMessage): Promise<string> {
@@ -477,6 +556,61 @@ export async function writeMeshHeartbeatState(
       })),
     updatedAt: new Date().toISOString(),
     ttlMs: state.ttlMs,
+  };
+  await mkdir(dirname(statePath), { recursive: true });
+  await writeFile(statePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
+  return normalized;
+}
+
+export async function readMeshLeaderSnapshot(
+  options: MeshLeaderSnapshotOptions = {},
+): Promise<MeshLeaderSnapshot> {
+  const statePath = getMeshLeaderStatePath(options);
+  try {
+    const raw = JSON.parse(await readFile(statePath, 'utf8')) as Record<string, unknown>;
+    const leaderId = normalizeNodeId(raw.leaderId);
+    const leaseUntil =
+      typeof raw.leaseUntil === 'string' && raw.leaseUntil.trim().length > 0
+        ? raw.leaseUntil
+        : null;
+    const electedAt =
+      typeof raw.electedAt === 'string' && raw.electedAt.trim().length > 0 ? raw.electedAt : null;
+    const term =
+      typeof raw.term === 'number' && Number.isFinite(raw.term) && raw.term >= 0
+        ? Math.trunc(raw.term)
+        : 0;
+    return {
+      leaderId,
+      leaseUntil,
+      electedAt,
+      term,
+      updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
+    };
+  } catch {
+    return defaultMeshLeaderSnapshot();
+  }
+}
+
+export async function writeMeshLeaderSnapshot(
+  snapshot: MeshLeaderSnapshot,
+  options: MeshLeaderSnapshotOptions = {},
+): Promise<MeshLeaderSnapshot> {
+  const statePath = getMeshLeaderStatePath(options);
+  const normalized: MeshLeaderSnapshot = {
+    leaderId: normalizeNodeId(snapshot.leaderId),
+    leaseUntil:
+      typeof snapshot.leaseUntil === 'string' && snapshot.leaseUntil.trim().length > 0
+        ? snapshot.leaseUntil
+        : null,
+    electedAt:
+      typeof snapshot.electedAt === 'string' && snapshot.electedAt.trim().length > 0
+        ? snapshot.electedAt
+        : null,
+    term:
+      typeof snapshot.term === 'number' && Number.isFinite(snapshot.term) && snapshot.term >= 0
+        ? Math.trunc(snapshot.term)
+        : 0,
+    updatedAt: new Date().toISOString(),
   };
   await mkdir(dirname(statePath), { recursive: true });
   await writeFile(statePath, `${JSON.stringify(normalized, null, 2)}\n`, 'utf8');
@@ -865,9 +999,23 @@ export class MeshCoordinator {
   private readonly env: NodeJS.ProcessEnv;
   private readonly ttlMs: number;
   private readonly timeoutMs: number;
+  private readonly leaderLeaseMs: number;
+  private readonly localNodeId: string | null;
   private readonly rpcClient: MeshRpcClient;
+  private readonly eventBusOverride: ManagedEventBus | null;
+  private readonly logger: (line: string) => void;
 
-  constructor(options: { env?: NodeJS.ProcessEnv; ttlMs?: number; timeoutMs?: number } = {}) {
+  constructor(
+    options: {
+      env?: NodeJS.ProcessEnv;
+      ttlMs?: number;
+      timeoutMs?: number;
+      leaderLeaseMs?: number;
+      nodeId?: string;
+      eventBus?: ManagedEventBus;
+      logger?: (line: string) => void;
+    } = {},
+  ) {
     this.env = options.env ?? process.env;
     assertJwtSecretForProduction(this.env);
     this.ttlMs =
@@ -875,7 +1023,123 @@ export class MeshCoordinator {
     this.timeoutMs =
       options.timeoutMs ??
       parsePositiveInt(this.env.LIFEOS_MESH_DELEGATION_TIMEOUT_MS, DEFAULT_DELEGATION_TIMEOUT_MS);
+    this.leaderLeaseMs =
+      options.leaderLeaseMs ??
+      parsePositiveInt(this.env.LIFEOS_MESH_LEADER_LEASE_MS, DEFAULT_LEADER_LEASE_MS);
+    this.localNodeId = normalizeNodeId(options.nodeId ?? this.env.LIFEOS_MESH_NODE_ID ?? null);
     this.rpcClient = new MeshRpcClient(this.timeoutMs);
+    this.logger = options.logger ?? (() => undefined);
+    this.eventBusOverride = options.eventBus ?? null;
+  }
+
+  private async publishLeaderEvent(topic: string, data: Record<string, unknown>): Promise<void> {
+    const eventBus =
+      this.eventBusOverride ??
+      createEventBusClient({
+        env: this.env,
+        name: 'lifeos-mesh-coordinator',
+        timeoutMs: 1000,
+        maxReconnectAttempts: 0,
+        logger: (line) => this.logger(line),
+      });
+    try {
+      await eventBus.publish(topic, toRuntimeEvent(topic, data));
+    } catch (error: unknown) {
+      this.logger(
+        `mesh_leader_event_degraded topic=${topic} reason=${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      if (!this.eventBusOverride) {
+        await eventBus.close().catch(() => undefined);
+      }
+    }
+  }
+
+  private async resolveLeaderSnapshot(nodes: MeshNodeLiveStatus[]): Promise<{
+    snapshot: MeshLeaderSnapshot;
+    leaderHealthy: boolean;
+  }> {
+    const now = new Date();
+    const nowMs = now.getTime();
+    const persisted = await readMeshLeaderSnapshot({ env: this.env });
+    const healthyNodes = nodes.filter((node) => node.healthy);
+    const previousLeader =
+      persisted.leaderId !== null
+        ? (healthyNodes.find((node) => node.nodeId === persisted.leaderId) ?? null)
+        : null;
+
+    let nextLeaderId = persisted.leaderId;
+    let nextElectedAt = persisted.electedAt;
+    let nextLeaseUntil = persisted.leaseUntil;
+    let nextTerm = persisted.term;
+
+    if (!previousLeader || !isLeaseActive(persisted.leaseUntil, nowMs)) {
+      const elected = selectLeaderCandidate(healthyNodes);
+      nextLeaderId = elected?.nodeId ?? null;
+      nextLeaseUntil =
+        nextLeaderId === null ? null : new Date(nowMs + this.leaderLeaseMs).toISOString();
+      nextElectedAt = nextLeaderId === null ? null : now.toISOString();
+      if (nextLeaderId !== persisted.leaderId) {
+        nextTerm = persisted.term + 1;
+      } else if (nextLeaderId !== null && !isLeaseActive(persisted.leaseUntil, nowMs)) {
+        nextTerm = persisted.term + 1;
+      }
+    }
+
+    const leaderHealthy =
+      nextLeaderId !== null && healthyNodes.some((node) => node.nodeId === nextLeaderId);
+
+    const changed =
+      persisted.leaderId !== nextLeaderId ||
+      persisted.term !== nextTerm ||
+      persisted.leaseUntil !== nextLeaseUntil ||
+      persisted.electedAt !== nextElectedAt;
+
+    const snapshot: MeshLeaderSnapshot = {
+      leaderId: nextLeaderId,
+      leaseUntil: nextLeaseUntil,
+      electedAt: nextElectedAt,
+      term: nextTerm,
+      updatedAt: now.toISOString(),
+    };
+
+    if (changed) {
+      await writeMeshLeaderSnapshot(snapshot, { env: this.env });
+      if (persisted.leaderId && nextLeaderId === null) {
+        await this.publishLeaderEvent(Topics.lifeos.meshLeaderLost, {
+          previousLeaderId: persisted.leaderId,
+          term: nextTerm,
+          at: snapshot.updatedAt,
+        });
+      } else if (!persisted.leaderId && nextLeaderId) {
+        await this.publishLeaderEvent(Topics.lifeos.meshLeaderElected, {
+          leaderId: nextLeaderId,
+          term: nextTerm,
+          leaseUntil: nextLeaseUntil,
+          electedAt: nextElectedAt,
+        });
+      } else if (persisted.leaderId && nextLeaderId && persisted.leaderId !== nextLeaderId) {
+        await this.publishLeaderEvent(Topics.lifeos.meshLeaderChanged, {
+          previousLeaderId: persisted.leaderId,
+          leaderId: nextLeaderId,
+          term: nextTerm,
+          leaseUntil: nextLeaseUntil,
+          electedAt: nextElectedAt,
+        });
+      } else if (nextLeaderId && persisted.term !== nextTerm) {
+        await this.publishLeaderEvent(Topics.lifeos.meshLeaderElected, {
+          leaderId: nextLeaderId,
+          term: nextTerm,
+          leaseUntil: nextLeaseUntil,
+          electedAt: nextElectedAt,
+        });
+      }
+    }
+
+    return {
+      snapshot,
+      leaderHealthy,
+    };
   }
 
   private async buildStatusSnapshot(): Promise<MeshStatusSnapshot> {
@@ -903,11 +1167,19 @@ export class MeshCoordinator {
         return left.nodeId.localeCompare(right.nodeId);
       });
 
+    const leader = await this.resolveLeaderSnapshot(nodes);
+    const leaderId = leader.snapshot.leaderId;
+
     return {
       nodes,
       assignments: state.assignments,
       ttlMs: this.ttlMs,
       updatedAt: new Date().toISOString(),
+      leaderId,
+      term: leader.snapshot.term,
+      leaseUntil: leader.snapshot.leaseUntil,
+      isLeader: leaderId !== null && this.localNodeId === leaderId,
+      leaderHealthy: leader.leaderHealthy,
     };
   }
 
@@ -1021,6 +1293,13 @@ export class MeshCoordinator {
         reason: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  async close(): Promise<void> {
+    if (!this.eventBusOverride) {
+      return;
+    }
+    await this.eventBusOverride.close().catch(() => undefined);
   }
 }
 

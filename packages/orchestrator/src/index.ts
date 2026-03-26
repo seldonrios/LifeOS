@@ -56,6 +56,7 @@ const BRIEFING_MIN_CHARS = 180;
 const BRIEFING_MAX_CHARS = 1300;
 const BRIEFING_CHARS_PER_SECOND = 11;
 const CONTEXT_SPIKE_CALENDAR_WINDOW_MS = 48 * 60 * 60 * 1000;
+const FOLLOWER_LOG_INTERVAL_MS = 15_000;
 
 function normalizeErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -112,6 +113,14 @@ function parseBooleanPreference(value: string | undefined): boolean {
     normalized === 'on' ||
     normalized === 'enabled'
   );
+}
+
+function normalizeNodeId(value: string | undefined): string | null {
+  if (!value) {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized.length > 0 ? normalized : null;
 }
 
 function resolveBriefingMaxChars(profile: PersonalityProfile, shortBriefing: boolean): number {
@@ -545,6 +554,44 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
         quirks: ['hates long briefings', 'loves research rabbit holes'],
         preferences: {},
       };
+      const meshNodeId = normalizeNodeId(context.env.LIFEOS_MESH_NODE_ID);
+      let meshLeaderId: string | null = null;
+      let meshLeaderHealthy = meshNodeId === null;
+      let meshLeaderTerm = 0;
+      let lastFollowerLogAt = 0;
+
+      function updateLeaderState(data: Record<string, unknown>, healthy: boolean): void {
+        const nextLeaderId = normalizeNodeId(
+          typeof data.leaderId === 'string'
+            ? data.leaderId
+            : typeof data.previousLeaderId === 'string'
+              ? data.previousLeaderId
+              : undefined,
+        );
+        meshLeaderId = nextLeaderId;
+        meshLeaderHealthy = healthy && meshLeaderId !== null;
+        meshLeaderTerm =
+          typeof data.term === 'number' && Number.isFinite(data.term)
+            ? Math.max(0, Math.trunc(data.term))
+            : meshLeaderTerm;
+      }
+
+      function canRunLeaderWork(eventType: string): boolean {
+        if (!meshNodeId) {
+          return true;
+        }
+        if (meshLeaderHealthy && meshLeaderId === meshNodeId) {
+          return true;
+        }
+        const nowMs = now().getTime();
+        if (nowMs - lastFollowerLogAt >= FOLLOWER_LOG_INTERVAL_MS) {
+          lastFollowerLogAt = nowMs;
+          context.log(
+            `[Orchestrator] follower mode active; skipping "${eventType}" (leader=${meshLeaderId ?? 'none'} term=${meshLeaderTerm}).`,
+          );
+        }
+        return false;
+      }
 
       async function getProfile(): Promise<PersonalityProfile> {
         const nowMs = now().getTime();
@@ -597,6 +644,9 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
       }
 
       async function handleSyncDelta(event: BaseEvent<Record<string, unknown>>): Promise<void> {
+        if (!canRunLeaderWork('sync_received')) {
+          return;
+        }
         context.log('📡 Received sync from another device');
 
         let contextSnippets: string[] = [];
@@ -649,6 +699,25 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
       await context.subscribe<Record<string, unknown>>(Topics.lifeos.syncDelta, async (event) => {
         await handleSyncDelta(event as BaseEvent<Record<string, unknown>>);
       });
+
+      await context.subscribe<Record<string, unknown>>(
+        Topics.lifeos.meshLeaderElected,
+        async (event) => {
+          updateLeaderState(event.data, true);
+        },
+      );
+      await context.subscribe<Record<string, unknown>>(
+        Topics.lifeos.meshLeaderChanged,
+        async (event) => {
+          updateLeaderState(event.data, true);
+        },
+      );
+      await context.subscribe<Record<string, unknown>>(
+        Topics.lifeos.meshLeaderLost,
+        async (event) => {
+          updateLeaderState(event.data, false);
+        },
+      );
 
       await context.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {
         if (event.type === Topics.lifeos.syncDelta) {
@@ -738,6 +807,10 @@ export function createOrchestratorModule(options: OrchestratorModuleOptions = {}
         }
 
         if (event.source === 'orchestrator') {
+          return;
+        }
+
+        if (!canRunLeaderWork(event.type)) {
           return;
         }
 

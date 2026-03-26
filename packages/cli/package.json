@@ -25,7 +25,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -b",
-    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/commands/init.test.ts"
+    "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/commands/init.test.ts src/commands/marketplace.test.ts"
   },
   "dependencies": {
     "@lifeos/calendar-module": "workspace:*",

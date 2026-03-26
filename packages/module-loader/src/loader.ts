@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { getHeapStatistics } from 'node:v8';
 
 import {
   createEventBusClient,
@@ -21,6 +22,8 @@ const WRITE_METHOD_PATTERN = /^(save|set|update|delete|remove|merge|apply|regist
 const EVENT_SECURITY_POLICY_DENIED = 'lifeos.security.policy.denied';
 
 type RuntimePermissionMode = 'off' | 'warn' | 'strict';
+type ResourceEnforcementMode = 'off' | 'warn' | 'strict';
+type ResourceTier = 'low' | 'medium' | 'high';
 
 interface RuntimePermissionPolicy {
   moduleId: string;
@@ -33,6 +36,11 @@ interface RuntimePermissionPolicy {
     subscribe: string[];
     publish: string[];
   };
+}
+
+interface HeapPressureSnapshot {
+  heapUsed: number;
+  heapLimit: number;
 }
 
 export interface ModuleRuntimeContext {
@@ -66,6 +74,7 @@ export interface CreateModuleLoaderOptions {
   eventBus?: ManagedEventBus;
   eventBusOptions?: CreateEventBusClientOptions;
   createLifeGraphClient?: typeof createLifeGraphClient;
+  heapUsageProvider?: () => HeapPressureSnapshot;
   logger?: (message: string) => void;
 }
 
@@ -135,6 +144,48 @@ function resolveRuntimePermissionMode(env: NodeJS.ProcessEnv): RuntimePermission
   return 'strict';
 }
 
+function resolveResourceEnforcementMode(env: NodeJS.ProcessEnv): ResourceEnforcementMode {
+  const raw = (env.LIFEOS_MODULE_RESOURCE_ENFORCEMENT ?? '').trim().toLowerCase();
+  if (raw === 'off' || raw === 'disabled' || raw === 'false' || raw === '0') {
+    return 'off';
+  }
+  if (raw === 'warn') {
+    return 'warn';
+  }
+  if (raw === 'strict' || raw === 'enforce' || raw === 'true' || raw === '1') {
+    return 'strict';
+  }
+  return (env.NODE_ENV ?? '').trim().toLowerCase() === 'production' ? 'strict' : 'warn';
+}
+
+function deriveResourceTier(manifest: LifeOSModuleManifest): ResourceTier {
+  if (manifest.resources.cpu === 'high' || manifest.resources.memory === 'medium') {
+    return 'high';
+  }
+  if (manifest.resources.cpu === 'medium') {
+    return 'medium';
+  }
+  return 'low';
+}
+
+function getResourcePressureThreshold(tier: ResourceTier): number {
+  if (tier === 'high') {
+    return 0.78;
+  }
+  if (tier === 'medium') {
+    return 0.88;
+  }
+  return 0.95;
+}
+
+function defaultHeapUsageProvider(): HeapPressureSnapshot {
+  const stats = getHeapStatistics();
+  return {
+    heapUsed: process.memoryUsage().heapUsed,
+    heapLimit: stats.heap_size_limit,
+  };
+}
+
 export class ModuleLoader {
   private readonly modules = new Map<string, LifeOSModule>();
   private readonly moduleContexts = new Map<string, ModuleRuntimeContext>();
@@ -143,8 +194,10 @@ export class ModuleLoader {
   private readonly graphPath: string | undefined;
   private readonly requireManifest: boolean;
   private readonly runtimePermissionMode: RuntimePermissionMode;
+  private readonly resourceEnforcementMode: ResourceEnforcementMode;
   private readonly eventBus: ManagedEventBus;
   private readonly createGraphClient: typeof createLifeGraphClient;
+  private readonly heapUsageProvider: () => HeapPressureSnapshot;
   private readonly logger: (message: string) => void;
 
   constructor(options: CreateModuleLoaderOptions = {}) {
@@ -158,7 +211,9 @@ export class ModuleLoader {
       (!legacyManifestBypass &&
         (this.env.LIFEOS_MODULE_MANIFEST_REQUIRED ?? 'true').trim().toLowerCase() !== 'false');
     this.runtimePermissionMode = resolveRuntimePermissionMode(this.env);
+    this.resourceEnforcementMode = resolveResourceEnforcementMode(this.env);
     this.createGraphClient = options.createLifeGraphClient ?? createLifeGraphClient;
+    this.heapUsageProvider = options.heapUsageProvider ?? defaultHeapUsageProvider;
     this.logger = options.logger ?? ((line: string) => console.log(line));
     this.eventBus =
       options.eventBus ??
@@ -175,7 +230,12 @@ export class ModuleLoader {
     }
   }
 
-  private emitPolicyDenied(moduleId: string, action: string, detail: string): void {
+  private emitPolicyDenied(
+    moduleId: string,
+    action: string,
+    detail: string,
+    extras?: Record<string, unknown>,
+  ): void {
     const event = createEventEnvelope(
       EVENT_SECURITY_POLICY_DENIED,
       {
@@ -183,6 +243,7 @@ export class ModuleLoader {
         action,
         detail,
         runtimeMode: this.runtimePermissionMode,
+        ...(extras ?? {}),
       },
       'module-loader',
     );
@@ -190,6 +251,50 @@ export class ModuleLoader {
     void this.eventBus.publish(EVENT_SECURITY_POLICY_DENIED, event).catch(() => {
       return;
     });
+  }
+
+  private emitResourceEnforcement(
+    moduleId: string,
+    tier: ResourceTier,
+    pressure: number,
+    threshold: number,
+    blocked: boolean,
+  ): void {
+    const action = blocked ? 'resource.enforcement.denied' : 'resource.enforcement.warn';
+    const detail = `tier=${tier} pressure=${pressure.toFixed(4)} threshold=${threshold.toFixed(4)}`;
+    this.emitPolicyDenied(moduleId, action, detail, {
+      resourceTier: tier,
+      currentPressure: Number(pressure.toFixed(6)),
+      threshold: Number(threshold.toFixed(6)),
+      enforcementMode: this.resourceEnforcementMode,
+    });
+  }
+
+  private enforceResourceBudget(moduleId: string, manifest: LifeOSModuleManifest): void {
+    if (this.resourceEnforcementMode === 'off') {
+      return;
+    }
+
+    const tier = deriveResourceTier(manifest);
+    const threshold = getResourcePressureThreshold(tier);
+    const snapshot = this.heapUsageProvider();
+    const heapLimit = snapshot.heapLimit > 0 ? snapshot.heapLimit : 1;
+    const pressure = snapshot.heapUsed / heapLimit;
+
+    if (pressure < threshold) {
+      return;
+    }
+
+    const blocked = this.resourceEnforcementMode === 'strict';
+    this.emitResourceEnforcement(moduleId, tier, pressure, threshold, blocked);
+    const message = `[ModuleLoader] ${moduleId} resource budget exceeded: tier=${tier} pressure=${pressure.toFixed(
+      4,
+    )} threshold=${threshold.toFixed(4)} mode=${this.resourceEnforcementMode}`;
+
+    if (blocked) {
+      throw new Error(message);
+    }
+    this.logger(`${message} (continuing in warn mode)`);
   }
 
   private buildRuntimePolicy(
@@ -392,6 +497,7 @@ export class ModuleLoader {
 
     const manifestPath = resolve(this.baseDir, 'modules', module.id, 'lifeos.json');
     let runtimePolicy: RuntimePermissionPolicy | undefined;
+    let validatedManifest: LifeOSModuleManifest | undefined;
     try {
       await access(manifestPath);
       const manifestResult = await readLifeOSManifestFile(manifestPath);
@@ -414,6 +520,7 @@ export class ModuleLoader {
           `Module ${module.id} requested unauthorized permissions${permissionResult.reason ? `: ${permissionResult.reason}` : ''}`,
         );
       }
+      validatedManifest = manifestResult.manifest;
       runtimePolicy = this.buildRuntimePolicy(module.id, manifestResult.manifest);
       this.logger(`[ModuleLoader] ${module.id} permissions approved`);
     } catch (error: unknown) {
@@ -428,6 +535,10 @@ export class ModuleLoader {
       } else {
         throw error;
       }
+    }
+
+    if (validatedManifest) {
+      this.enforceResourceBudget(module.id, validatedManifest);
     }
 
     const context = this.createContext(runtimePolicy);

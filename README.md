@@ -27,7 +27,7 @@ The setup wizard checks Ollama, helps with model setup, offers optional modules,
 
 ## Module Marketplace
 
-Browse and install community modules from the registry:
+Browse and install community modules from dynamic multi-source catalogs:
 
 ```bash
 pnpm lifeos marketplace list
@@ -36,7 +36,14 @@ pnpm lifeos marketplace refresh https://example.com/community-modules.json
 pnpm lifeos module install username/repo
 ```
 
-`lifeos marketplace list` now prints catalog source and freshness metadata so users can see when module data is stale.
+`lifeos marketplace list` prints source freshness and trust verification status per catalog source.
+Trust policy defaults to `warn` in development and `strict` in production.
+
+Operator migration notes:
+
+- Set `LIFEOS_MARKETPLACE_SOURCES` to a comma-separated source list for multi-catalog aggregation.
+- Set `LIFEOS_MARKETPLACE_TRUST_KEYS` with key material used to verify signed remote catalogs.
+- Set `LIFEOS_MARKETPLACE_TRUST_MODE` to `strict` for fail-closed production behavior.
 
 ## Storage + Trust Transparency
 
@@ -148,21 +155,26 @@ LifeOS is configured through environment variables and a local YAML config file.
 
 ### Environment Variables
 
-| Variable                            | Default                                 | Description                                                          |
-| ----------------------------------- | --------------------------------------- | -------------------------------------------------------------------- |
-| `OLLAMA_HOST`                       | `http://127.0.0.1:11434`                | Ollama API endpoint                                                  |
-| `LIFEOS_GOAL_MODEL`                 | `llama3.1:8b`                           | LLM model for goal planning                                          |
-| `LIFEOS_GRAPH_PATH`                 | `~/.local/share/lifeos/life-graph.json` | Compatibility path; runtime persistence is SQLite at `life-graph.db` |
-| `LIFEOS_NATS_URL`                   | `nats://127.0.0.1:4222`                 | NATS/event-bus endpoint                                              |
-| `LIFEOS_SECRETS_DIR`                | `~/.lifeos/secrets/`                    | Directory for module credentials                                     |
-| `LIFEOS_MESH_RPC_HOST`              | `127.0.0.1`                             | Mesh RPC server bind host                                            |
-| `LIFEOS_MESH_RPC_PORT`              | `5590`                                  | Mesh RPC server port                                                 |
-| `LIFEOS_MESH_HEARTBEAT_INTERVAL_MS` | `5000`                                  | Mesh heartbeat publish interval                                      |
-| `LIFEOS_MESH_NODE_TTL_MS`           | `15000`                                 | Mesh node healthy TTL                                                |
-| `LIFEOS_MESH_DELEGATION_TIMEOUT_MS` | `8000`                                  | RPC delegation timeout                                               |
-| `LIFEOS_JWT_SECRET`                 | _none_                                  | Signing secret for mesh RPC tokens                                   |
-| `LIFEOS_MODULE_MANIFEST_REQUIRED`   | `true`                                  | Require valid module manifests                                       |
-| `LIFEOS_MODULE_RUNTIME_PERMISSIONS` | `strict`                                | Enforce declared module runtime permissions                          |
+| Variable                             | Default                                 | Description                                                          |
+| ------------------------------------ | --------------------------------------- | -------------------------------------------------------------------- | ---- | ----- |
+| `OLLAMA_HOST`                        | `http://127.0.0.1:11434`                | Ollama API endpoint                                                  |
+| `LIFEOS_GOAL_MODEL`                  | `llama3.1:8b`                           | LLM model for goal planning                                          |
+| `LIFEOS_GRAPH_PATH`                  | `~/.local/share/lifeos/life-graph.json` | Compatibility path; runtime persistence is SQLite at `life-graph.db` |
+| `LIFEOS_NATS_URL`                    | `nats://127.0.0.1:4222`                 | NATS/event-bus endpoint                                              |
+| `LIFEOS_SECRETS_DIR`                 | `~/.lifeos/secrets/`                    | Directory for module credentials                                     |
+| `LIFEOS_MESH_RPC_HOST`               | `127.0.0.1`                             | Mesh RPC server bind host                                            |
+| `LIFEOS_MESH_RPC_PORT`               | `5590`                                  | Mesh RPC server port                                                 |
+| `LIFEOS_MESH_HEARTBEAT_INTERVAL_MS`  | `5000`                                  | Mesh heartbeat publish interval                                      |
+| `LIFEOS_MESH_NODE_TTL_MS`            | `15000`                                 | Mesh node healthy TTL                                                |
+| `LIFEOS_MESH_LEADER_LEASE_MS`        | `10000`                                 | Leader lease duration before re-election                             |
+| `LIFEOS_MESH_DELEGATION_TIMEOUT_MS`  | `8000`                                  | RPC delegation timeout                                               |
+| `LIFEOS_JWT_SECRET`                  | _none_                                  | Signing secret for mesh RPC tokens                                   |
+| `LIFEOS_MARKETPLACE_SOURCES`         | _unset_                                 | Comma-separated catalog sources (URLs/paths)                         |
+| `LIFEOS_MARKETPLACE_TRUST_MODE`      | `warn` dev / `strict` prod              | Catalog trust mode: `strict`, `warn`, `off`                          |
+| `LIFEOS_MARKETPLACE_TRUST_KEYS`      | _unset_                                 | Trust key map for catalog signature verification                     |
+| `LIFEOS_MODULE_MANIFEST_REQUIRED`    | `true`                                  | Require valid module manifests                                       |
+| `LIFEOS_MODULE_RUNTIME_PERMISSIONS`  | `strict`                                | Enforce declared module runtime permissions                          |
+| `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` | `warn` dev / `strict` prod              | Heap-pressure module load enforcement (`strict                       | warn | off`) |
 
 ### Config File
 
@@ -227,7 +239,8 @@ Defaults:
 Runtime enforcement options:
 
 - `LIFEOS_MODULE_MANIFEST_REQUIRED=true` requires a valid `lifeos.json` for loaded modules.
-- `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` rejects undeclared runtime graph/event operations (`warn` by default).
+- `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` rejects undeclared runtime graph/event operations.
+- `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` enforces heap-pressure checks before `module.init` (`strict` in production, `warn` in development, `off` by explicit override).
 
 ## Distributed Mesh Runtime
 
@@ -251,12 +264,20 @@ Heavy-intent delegation behavior:
 - Delegation failures (timeout, auth rejection, no healthy node, unreachable RPC) fall back to local execution.
 - Transparency topics emitted: `lifeos.mesh.delegate.requested`, `accepted`, `completed`, `failed`, `fallback_local`.
 
+Leader election + failover behavior:
+
+- Control plane leader is elected from healthy nodes with deterministic precedence: `primary` > `heavy-compute` > `fallback`, then freshest heartbeat, then lexical `nodeId`.
+- Leader lease persists in `~/.lifeos/mesh-leader.json` with `leaderId`, `leaseUntil`, `electedAt`, and `term`.
+- `mesh status` now includes `leaderId`, `term`, `leaseUntil`, `isLeader`, and `leaderHealthy`.
+- Leader events emitted: `lifeos.mesh.leader.elected`, `lifeos.mesh.leader.changed`, `lifeos.mesh.leader.lost`.
+
 Mesh/JWT environment variables:
 
 - `LIFEOS_MESH_RPC_HOST` (default `127.0.0.1`)
 - `LIFEOS_MESH_RPC_PORT` (default `5590`)
 - `LIFEOS_MESH_HEARTBEAT_INTERVAL_MS` (default `5000`)
 - `LIFEOS_MESH_NODE_TTL_MS` (default `15000`)
+- `LIFEOS_MESH_LEADER_LEASE_MS` (default `10000`)
 - `LIFEOS_MESH_DELEGATION_TIMEOUT_MS` (default `8000`)
 - `LIFEOS_JWT_SECRET` (required for secure mesh RPC in real deployments)
 - Optional JWT claims config: `LIFEOS_JWT_ISSUER`, `LIFEOS_JWT_AUDIENCE`
@@ -333,6 +354,13 @@ Long-term direction:
 
 - richer module ecosystem (health, finance, calendar, voice)
 - multi-node/federated personal AI patterns
+
+## Phase 9 Release Notes
+
+- Mesh runtime keeps existing delegation routing and adds leader lease election with deterministic failover.
+- Marketplace discovery supports multi-source aggregation with trust verification (`strict|warn|off`) and per-source transparency in CLI output.
+- Module loader now enforces heap-pressure resource budgets before module init (`strict` in production, `warn` in development, `off` by explicit override).
+- Backward compatibility is preserved for existing CLI command names and `community-modules.json` module entry shape.
 
 ## 🤝 Contributing
 

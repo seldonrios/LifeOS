@@ -1,5 +1,6 @@
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { validateModuleManifest } from './module-create';
@@ -36,12 +37,33 @@ export interface MarketplaceRefreshResult {
   count: number;
 }
 
+export type MarketplaceTrustMode = 'strict' | 'warn' | 'off';
+
+export interface MarketplaceCatalogSourceStatus {
+  source: string;
+  catalogPath: string;
+  kind: 'local' | 'cache' | 'remote' | 'default';
+  lastUpdated: string | null;
+  staleAfterDays: number;
+  isStale: boolean;
+  trusted: boolean;
+  verified: boolean;
+  verificationMode: MarketplaceTrustMode;
+  verificationError?: string;
+  count: number;
+  priority: number;
+}
+
 export interface MarketplaceCatalogStatus {
   source: string;
   catalogPath: string;
   lastUpdated: string | null;
   staleAfterDays: number;
   isStale: boolean;
+  trustMode: MarketplaceTrustMode;
+  trustedSourceCount: number;
+  totalSourceCount: number;
+  sources: MarketplaceCatalogSourceStatus[];
 }
 
 const DEFAULT_CATALOG: MarketplaceEntry[] = [
@@ -112,9 +134,46 @@ interface CommunityModulesFileEntry {
   resourceHint?: unknown;
 }
 
+interface CatalogSignatureBlock {
+  keyId?: unknown;
+  algorithm?: unknown;
+  value?: unknown;
+}
+
 interface CommunityModulesFile {
   lastUpdated?: unknown;
   modules?: unknown;
+  signature?: unknown;
+}
+
+interface ParsedCatalogEnvelope {
+  entries: MarketplaceEntry[];
+  lastUpdated: string | null;
+  signature: { keyId: string; algorithm: string; value: string } | null;
+}
+
+interface CatalogSourceDescriptor {
+  source: string;
+  kind: 'local' | 'cache' | 'remote';
+  catalogPath: string;
+  priority: number;
+}
+
+interface CatalogReadResult {
+  source: CatalogSourceDescriptor;
+  entries: MarketplaceEntry[];
+  lastUpdated: string | null;
+  isStale: boolean;
+  trusted: boolean;
+  verified: boolean;
+  verificationError?: string;
+}
+
+interface MergeCandidate {
+  entry: MarketplaceEntry;
+  verified: boolean;
+  sourcePriority: number;
+  lastUpdatedMs: number;
 }
 
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
@@ -127,10 +186,6 @@ function normalizeRepo(repo: string): string {
     .trim()
     .replace(/\.git$/i, '')
     .toLowerCase();
-}
-
-function resolveBaseDir(options: MarketplaceOptions = {}): string {
-  return options.baseDir ?? process.cwd();
 }
 
 function normalizeRepoId(repo: string): string {
@@ -207,29 +262,7 @@ function normalizeCatalogEntry(entry: CommunityModulesFileEntry): MarketplaceEnt
   };
 }
 
-function resolveCatalogPath(options: MarketplaceOptions = {}): string {
-  if (options.catalogPath) {
-    return options.catalogPath;
-  }
-  const baseDir = resolveBaseDir(options);
-  return join(baseDir, 'community-modules.json');
-}
-
-function resolveRegistryCachePath(options: MarketplaceOptions = {}): string {
-  const env = options.env ?? process.env;
-  return join(resolveHomeDir(env), '.lifeos', 'community-modules.cache.json');
-}
-
-function resolveRegistrySource(options: MarketplaceOptions = {}): string | null {
-  if (options.registryUrl?.trim()) {
-    return options.registryUrl.trim();
-  }
-  const env = options.env ?? process.env;
-  const fromEnv = env.LIFEOS_MARKETPLACE_REGISTRY_URL?.trim();
-  return fromEnv || null;
-}
-
-function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
+function parseCatalogDocument(raw: unknown): ParsedCatalogEnvelope {
   const document =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as CommunityModulesFile) : {};
   const modules = Array.isArray(document.modules) ? document.modules : [];
@@ -242,28 +275,51 @@ function parseCatalogDocument(raw: unknown): MarketplaceEntry[] {
       ),
     )
     .filter((entry): entry is MarketplaceEntry => entry !== null);
+
   const unique = new Map<string, MarketplaceEntry>();
   for (const entry of parsed) {
     if (!unique.has(entry.id)) {
       unique.set(entry.id, entry);
     }
   }
-  return Array.from(unique.values());
+
+  const signatureRaw =
+    document.signature &&
+    typeof document.signature === 'object' &&
+    !Array.isArray(document.signature)
+      ? (document.signature as CatalogSignatureBlock)
+      : null;
+  const keyId =
+    signatureRaw && typeof signatureRaw.keyId === 'string' ? signatureRaw.keyId.trim() : '';
+  const value =
+    signatureRaw && typeof signatureRaw.value === 'string' ? signatureRaw.value.trim() : '';
+  const algorithm =
+    signatureRaw && typeof signatureRaw.algorithm === 'string'
+      ? signatureRaw.algorithm.trim().toLowerCase()
+      : 'hmac-sha256';
+
+  return {
+    entries: Array.from(unique.values()),
+    lastUpdated: extractLastUpdated(raw),
+    signature: keyId && value ? { keyId, value, algorithm } : null,
+  };
 }
 
-function extractLastUpdated(raw: unknown): string | null {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-    return null;
+function resolveBaseDir(options: MarketplaceOptions = {}): string {
+  return options.baseDir ?? process.cwd();
+}
+
+function resolveCatalogPath(options: MarketplaceOptions = {}): string {
+  if (options.catalogPath) {
+    return options.catalogPath;
   }
-  const record = raw as Record<string, unknown>;
-  const candidate = typeof record.lastUpdated === 'string' ? record.lastUpdated.trim() : '';
-  if (!candidate) {
-    return null;
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
-    return null;
-  }
-  return candidate;
+  const baseDir = resolveBaseDir(options);
+  return join(baseDir, 'community-modules.json');
+}
+
+function resolveRegistryCachePath(options: MarketplaceOptions = {}): string {
+  const env = options.env ?? process.env;
+  return join(resolveHomeDir(env), '.lifeos', 'community-modules.cache.json');
 }
 
 function resolveStaleAfterDays(options: MarketplaceOptions = {}): number {
@@ -287,101 +343,436 @@ function isCatalogStale(lastUpdated: string | null, staleAfterDays: number): boo
   return ageDays > staleAfterDays;
 }
 
-async function readCatalogFile(path: string): Promise<MarketplaceEntry[]> {
-  try {
-    const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
-    return parseCatalogDocument(raw);
-  } catch {
-    return [];
-  }
-}
-
-async function readCatalogFileLastUpdated(path: string): Promise<string | null> {
-  try {
-    const raw = JSON.parse(await readFile(path, 'utf8')) as unknown;
-    return extractLastUpdated(raw);
-  } catch {
+function extractLastUpdated(raw: unknown): string | null {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return null;
   }
+  const record = raw as Record<string, unknown>;
+  const candidate = typeof record.lastUpdated === 'string' ? record.lastUpdated.trim() : '';
+  if (!candidate) {
+    return null;
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(candidate)) {
+    return null;
+  }
+  return candidate;
 }
 
-async function writeCatalogFile(path: string, entries: MarketplaceEntry[]): Promise<void> {
-  await mkdir(dirname(path), { recursive: true });
-  const payload = {
-    lastUpdated: new Date().toISOString().slice(0, 10),
-    modules: entries.map((entry) => ({
-      name: entry.id,
-      repo: entry.repo,
-      certified: entry.certified,
-      category: entry.category,
-      description: entry.description,
-      tags: entry.tags,
-      resourceHint: entry.resourceHint,
-      ...(entry.subFeatures.length > 0 ? { subFeatures: entry.subFeatures } : {}),
-    })),
+function stableStringify(value: unknown): string {
+  if (value === null || typeof value !== 'object') {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+  }
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record)
+    .filter((key) => key !== 'signature')
+    .sort((left, right) => left.localeCompare(right));
+  return `{${keys
+    .map((key) => `${JSON.stringify(key)}:${stableStringify(record[key])}`)
+    .join(',')}}`;
+}
+
+function parseTrustMode(env: NodeJS.ProcessEnv): MarketplaceTrustMode {
+  const configured = (env.LIFEOS_MARKETPLACE_TRUST_MODE ?? '').trim().toLowerCase();
+  if (configured === 'strict' || configured === 'warn' || configured === 'off') {
+    return configured;
+  }
+  return (env.NODE_ENV ?? '').trim().toLowerCase() === 'production' ? 'strict' : 'warn';
+}
+
+function parseTrustKeys(env: NodeJS.ProcessEnv): Map<string, string> {
+  const configured = (env.LIFEOS_MARKETPLACE_TRUST_KEYS ?? '').trim();
+  if (!configured) {
+    return new Map<string, string>();
+  }
+
+  if (configured.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(configured) as Record<string, unknown>;
+      const keys = new Map<string, string>();
+      for (const [keyId, value] of Object.entries(parsed)) {
+        if (typeof value !== 'string') {
+          continue;
+        }
+        const normalizedKey = keyId.trim();
+        const normalizedValue = value.trim();
+        if (normalizedKey && normalizedValue) {
+          keys.set(normalizedKey, normalizedValue);
+        }
+      }
+      return keys;
+    } catch {
+      return new Map<string, string>();
+    }
+  }
+
+  const keyMap = new Map<string, string>();
+  for (const pair of configured.split(',')) {
+    const [rawKey, rawValue] = pair.split(':', 2);
+    const keyId = rawKey?.trim() ?? '';
+    const secret = rawValue?.trim() ?? '';
+    if (keyId && secret) {
+      keyMap.set(keyId, secret);
+    }
+  }
+  return keyMap;
+}
+
+function normalizeSignatureValue(value: string): string {
+  return value.replace(/\s+/g, '').trim();
+}
+
+function safeEqualText(left: string, right: string): boolean {
+  const leftBuffer = Buffer.from(left);
+  const rightBuffer = Buffer.from(right);
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function verifyCatalogSignature(
+  rawDocument: unknown,
+  signature: { keyId: string; algorithm: string; value: string } | null,
+  trustKeys: Map<string, string>,
+): { verified: boolean; reason?: string } {
+  if (!signature) {
+    return {
+      verified: false,
+      reason: 'missing_signature',
+    };
+  }
+  if (signature.algorithm !== 'hmac-sha256') {
+    return {
+      verified: false,
+      reason: `unsupported_algorithm:${signature.algorithm}`,
+    };
+  }
+  const key = trustKeys.get(signature.keyId);
+  if (!key) {
+    return {
+      verified: false,
+      reason: `missing_trust_key:${signature.keyId}`,
+    };
+  }
+
+  const canonicalPayload = stableStringify(rawDocument);
+  const digest = createHmac('sha256', key).update(canonicalPayload).digest();
+  const expectedBase64Url = digest
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+  const expectedBase64 = digest.toString('base64');
+  const expectedHex = digest.toString('hex');
+  const provided = normalizeSignatureValue(signature.value);
+
+  if (
+    safeEqualText(provided, expectedBase64Url) ||
+    safeEqualText(provided, expectedBase64) ||
+    safeEqualText(provided.toLowerCase(), expectedHex)
+  ) {
+    return { verified: true };
+  }
+
+  return {
+    verified: false,
+    reason: 'signature_mismatch',
   };
-  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
 }
 
-async function readCatalogFromSource(source: string): Promise<MarketplaceEntry[]> {
-  const normalized = source.trim();
-  if (!normalized) {
+function toSourcePath(source: string, options: MarketplaceOptions): string {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return '';
+  }
+  if (trimmed.startsWith('file://')) {
+    return fileURLToPath(trimmed);
+  }
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  if (isAbsolute(trimmed)) {
+    return trimmed;
+  }
+  return join(resolveBaseDir(options), trimmed);
+}
+
+function parseConfiguredSources(options: MarketplaceOptions = {}): string[] {
+  const env = options.env ?? process.env;
+  const configured = (env.LIFEOS_MARKETPLACE_SOURCES ?? '').trim();
+  if (!configured) {
     return [];
   }
-
-  if (normalized.startsWith('file://')) {
-    const path = fileURLToPath(normalized);
-    return readCatalogFile(path);
-  }
-
-  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-    const response = await fetch(normalized, {
-      method: 'GET',
-      headers: {
-        accept: 'application/json',
-      },
-    });
-    if (!response.ok) {
-      throw new Error(
-        `registry request failed (${response.status}). Ensure the source URL returns community-modules.json.`,
-      );
-    }
-    const raw = (await response.json()) as unknown;
-    return parseCatalogDocument(raw);
-  }
-
-  return readCatalogFile(normalized);
+  return configured
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
 }
 
-async function readCatalog(options: MarketplaceOptions = {}): Promise<MarketplaceEntry[]> {
-  const catalogPath = resolveCatalogPath(options);
-  const local = await readCatalogFile(catalogPath);
-  if (local.length > 0) {
-    return local;
+function resolveRegistrySource(options: MarketplaceOptions = {}): string | null {
+  if (options.registryUrl?.trim()) {
+    return options.registryUrl.trim();
+  }
+  const env = options.env ?? process.env;
+  const fromEnv = env.LIFEOS_MARKETPLACE_REGISTRY_URL?.trim();
+  return fromEnv || null;
+}
+
+function dedupeSources(sources: CatalogSourceDescriptor[]): CatalogSourceDescriptor[] {
+  const seen = new Set<string>();
+  const deduped: CatalogSourceDescriptor[] = [];
+  for (const source of sources) {
+    const key = source.source.trim().toLowerCase();
+    if (!key || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(source);
+  }
+  return deduped;
+}
+
+function resolveCatalogSources(
+  options: MarketplaceOptions,
+  includeStorageDefaults: boolean,
+): CatalogSourceDescriptor[] {
+  const sources: CatalogSourceDescriptor[] = [];
+  const localCatalog = resolveCatalogPath(options);
+  const cachePath = resolveRegistryCachePath(options);
+  let priority = 0;
+
+  if (includeStorageDefaults) {
+    sources.push({
+      source: localCatalog,
+      kind: 'local',
+      catalogPath: localCatalog,
+      priority: priority++,
+    });
   }
 
-  const source = resolveRegistrySource(options);
-  if (source) {
-    try {
-      const remote = await readCatalogFromSource(source);
-      if (remote.length > 0) {
-        await writeCatalogFile(catalogPath, remote);
-        await writeCatalogFile(resolveRegistryCachePath(options), remote);
-        return remote;
+  for (const configured of parseConfiguredSources(options)) {
+    const resolved = toSourcePath(configured, options);
+    if (!resolved) {
+      continue;
+    }
+    const remote = resolved.startsWith('http://') || resolved.startsWith('https://');
+    sources.push({
+      source: resolved,
+      kind: remote ? 'remote' : 'local',
+      catalogPath: resolved,
+      priority: priority++,
+    });
+  }
+
+  const legacySource = resolveRegistrySource(options);
+  if (legacySource) {
+    const resolved = toSourcePath(legacySource, options);
+    if (resolved) {
+      const remote = resolved.startsWith('http://') || resolved.startsWith('https://');
+      sources.push({
+        source: resolved,
+        kind: remote ? 'remote' : 'local',
+        catalogPath: resolved,
+        priority: priority++,
+      });
+    }
+  }
+
+  if (includeStorageDefaults) {
+    sources.push({
+      source: cachePath,
+      kind: 'cache',
+      catalogPath: cachePath,
+      priority: priority++,
+    });
+  }
+
+  return dedupeSources(sources);
+}
+
+async function readCatalogFromSourceDescriptor(
+  descriptor: CatalogSourceDescriptor,
+  options: MarketplaceOptions,
+  trustMode: MarketplaceTrustMode,
+  trustKeys: Map<string, string>,
+): Promise<CatalogReadResult> {
+  const staleAfterDays = resolveStaleAfterDays(options);
+
+  try {
+    let rawDocument: unknown;
+    if (descriptor.source.startsWith('http://') || descriptor.source.startsWith('https://')) {
+      const response = await fetch(descriptor.source, {
+        method: 'GET',
+        headers: {
+          accept: 'application/json',
+        },
+      });
+      if (!response.ok) {
+        throw new Error(`registry request failed (${response.status})`);
       }
-    } catch {
-      const cached = await readCatalogFile(resolveRegistryCachePath(options));
-      if (cached.length > 0) {
-        return cached;
+      rawDocument = (await response.json()) as unknown;
+    } else {
+      rawDocument = JSON.parse(await readFile(descriptor.source, 'utf8')) as unknown;
+    }
+
+    const envelope = parseCatalogDocument(rawDocument);
+    let trusted = true;
+    let verified = descriptor.kind !== 'remote';
+    let verificationError: string | undefined;
+
+    if (descriptor.kind === 'remote' && trustMode !== 'off') {
+      const verification = verifyCatalogSignature(rawDocument, envelope.signature, trustKeys);
+      verified = verification.verified;
+      trusted = verification.verified;
+      verificationError = verification.reason;
+    }
+
+    if (descriptor.kind === 'remote' && trustMode === 'off') {
+      trusted = true;
+      verified = false;
+    }
+
+    const acceptedEntries =
+      descriptor.kind === 'remote' && trustMode === 'strict' && !trusted ? [] : envelope.entries;
+
+    return {
+      source: descriptor,
+      entries: acceptedEntries,
+      lastUpdated: envelope.lastUpdated,
+      isStale: isCatalogStale(envelope.lastUpdated, staleAfterDays),
+      trusted,
+      verified,
+      ...(verificationError ? { verificationError } : {}),
+    };
+  } catch (error: unknown) {
+    return {
+      source: descriptor,
+      entries: [],
+      lastUpdated: null,
+      isStale: false,
+      trusted: descriptor.kind !== 'remote' || trustMode !== 'strict',
+      verified: false,
+      verificationError: error instanceof Error ? error.message : String(error),
+    };
+  }
+}
+
+function shouldReplaceCandidate(current: MergeCandidate, candidate: MergeCandidate): boolean {
+  if (current.verified !== candidate.verified) {
+    return candidate.verified;
+  }
+  if (current.lastUpdatedMs !== candidate.lastUpdatedMs) {
+    return candidate.lastUpdatedMs > current.lastUpdatedMs;
+  }
+  if (current.sourcePriority !== candidate.sourcePriority) {
+    return candidate.sourcePriority < current.sourcePriority;
+  }
+  return candidate.entry.repo.localeCompare(current.entry.repo) < 0;
+}
+
+function parseLastUpdatedMs(lastUpdated: string | null): number {
+  if (!lastUpdated) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  const parsed = Date.parse(`${lastUpdated}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed)) {
+    return Number.NEGATIVE_INFINITY;
+  }
+  return parsed;
+}
+
+function mergeCatalogEntries(results: CatalogReadResult[]): MarketplaceEntry[] {
+  const merged = new Map<string, MergeCandidate>();
+
+  for (const result of results) {
+    for (const entry of result.entries) {
+      const candidate: MergeCandidate = {
+        entry,
+        verified: result.trusted,
+        sourcePriority: result.source.priority,
+        lastUpdatedMs: parseLastUpdatedMs(result.lastUpdated),
+      };
+      const existing = merged.get(entry.id);
+      if (!existing || shouldReplaceCandidate(existing, candidate)) {
+        merged.set(entry.id, candidate);
       }
     }
   }
 
-  const cached = await readCatalogFile(resolveRegistryCachePath(options));
-  if (cached.length > 0) {
-    return cached;
+  return Array.from(merged.values())
+    .map((candidate) => candidate.entry)
+    .sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function toSourceStatus(
+  results: CatalogReadResult[],
+  options: MarketplaceOptions,
+  trustMode: MarketplaceTrustMode,
+): MarketplaceCatalogSourceStatus[] {
+  const staleAfterDays = resolveStaleAfterDays(options);
+  return results.map((result) => ({
+    source: result.source.source,
+    catalogPath: result.source.catalogPath,
+    kind: result.source.kind,
+    lastUpdated: result.lastUpdated,
+    staleAfterDays,
+    isStale: result.isStale,
+    trusted: result.trusted,
+    verified: result.verified,
+    verificationMode: trustMode,
+    ...(result.verificationError ? { verificationError: result.verificationError } : {}),
+    count: result.entries.length,
+    priority: result.source.priority,
+  }));
+}
+
+async function loadMergedCatalog(options: MarketplaceOptions = {}): Promise<{
+  entries: MarketplaceEntry[];
+  sourceStatuses: MarketplaceCatalogSourceStatus[];
+  trustMode: MarketplaceTrustMode;
+}> {
+  const env = options.env ?? process.env;
+  const trustMode = parseTrustMode(env);
+  const trustKeys = parseTrustKeys(env);
+  const descriptors = resolveCatalogSources(options, true);
+
+  const results = await Promise.all(
+    descriptors.map((source) =>
+      readCatalogFromSourceDescriptor(source, options, trustMode, trustKeys),
+    ),
+  );
+
+  let entries = mergeCatalogEntries(results);
+  let sourceStatuses = toSourceStatus(results, options, trustMode);
+
+  if (entries.length === 0) {
+    entries = DEFAULT_CATALOG;
+    sourceStatuses = [
+      ...sourceStatuses,
+      {
+        source: 'default',
+        catalogPath: resolveCatalogPath(options),
+        kind: 'default',
+        lastUpdated: null,
+        staleAfterDays: resolveStaleAfterDays(options),
+        isStale: false,
+        trusted: true,
+        verified: true,
+        verificationMode: trustMode,
+        count: DEFAULT_CATALOG.length,
+        priority: 999,
+      },
+    ];
   }
-  return DEFAULT_CATALOG;
+
+  return {
+    entries,
+    sourceStatuses,
+    trustMode,
+  };
 }
 
 function defaultState(now = new Date()): MarketplaceState {
@@ -429,13 +820,31 @@ async function writeMarketplaceState(
   return normalized;
 }
 
+async function writeCatalogFile(path: string, entries: MarketplaceEntry[]): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const payload = {
+    lastUpdated: new Date().toISOString().slice(0, 10),
+    modules: entries.map((entry) => ({
+      name: entry.id,
+      repo: entry.repo,
+      certified: entry.certified,
+      category: entry.category,
+      description: entry.description,
+      tags: entry.tags,
+      resourceHint: entry.resourceHint,
+      ...(entry.subFeatures.length > 0 ? { subFeatures: entry.subFeatures } : {}),
+    })),
+  };
+  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+}
+
 export async function listMarketplaceEntries(
   options: MarketplaceOptions = {},
 ): Promise<Array<MarketplaceEntry & { installed: boolean }>> {
-  const catalog = await readCatalog(options);
+  const catalog = await loadMergedCatalog(options);
   const state = await readMarketplaceState(options);
   const installedSet = new Set(state.installed);
-  const entries = catalog.map((entry) => ({
+  const entries = catalog.entries.map((entry) => ({
     ...entry,
     installed: installedSet.has(entry.repo.toLowerCase()),
   }));
@@ -449,25 +858,54 @@ export async function refreshMarketplaceRegistry(
   sourceOrUrl: string | undefined,
   options: MarketplaceOptions = {},
 ): Promise<MarketplaceRefreshResult> {
-  const source = sourceOrUrl?.trim() || resolveRegistrySource(options);
-  if (!source) {
+  const env = options.env ?? process.env;
+  const trustMode = parseTrustMode(env);
+  const trustKeys = parseTrustKeys(env);
+
+  const explicitSources = sourceOrUrl?.trim().length
+    ? sourceOrUrl
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+    : [];
+
+  const descriptors =
+    explicitSources.length > 0
+      ? explicitSources.map((entry, index) => {
+          const resolved = toSourcePath(entry, options);
+          const remote = resolved.startsWith('http://') || resolved.startsWith('https://');
+          return {
+            source: resolved,
+            kind: remote ? ('remote' as const) : ('local' as const),
+            catalogPath: resolved,
+            priority: index,
+          };
+        })
+      : resolveCatalogSources(options, false).filter((source) => source.kind === 'remote');
+
+  if (descriptors.length === 0) {
     throw new Error(
-      'Marketplace source URL is required. Provide one via `lifeos marketplace refresh <url>` or LIFEOS_MARKETPLACE_REGISTRY_URL.',
+      'Marketplace source URL is required. Provide one via `lifeos marketplace refresh <url>` or LIFEOS_MARKETPLACE_SOURCES/LIFEOS_MARKETPLACE_REGISTRY_URL.',
     );
   }
 
-  const entries = await readCatalogFromSource(source);
-  if (entries.length === 0) {
+  const results = await Promise.all(
+    descriptors.map((source) =>
+      readCatalogFromSourceDescriptor(source, options, trustMode, trustKeys),
+    ),
+  );
+  const merged = mergeCatalogEntries(results);
+  if (merged.length === 0) {
     throw new Error('Marketplace source returned zero valid modules.');
   }
 
   const catalogPath = resolveCatalogPath(options);
-  await writeCatalogFile(catalogPath, entries);
-  await writeCatalogFile(resolveRegistryCachePath(options), entries);
+  await writeCatalogFile(catalogPath, merged);
+  await writeCatalogFile(resolveRegistryCachePath(options), merged);
   return {
-    source,
+    source: descriptors.map((descriptor) => descriptor.source).join(','),
     catalogPath,
-    count: entries.length,
+    count: merged.length,
   };
 }
 
@@ -493,39 +931,25 @@ export async function searchMarketplaceEntries(
 export async function getMarketplaceCatalogStatus(
   options: MarketplaceOptions = {},
 ): Promise<MarketplaceCatalogStatus> {
-  const staleAfterDays = resolveStaleAfterDays(options);
-  const localCatalogPath = resolveCatalogPath(options);
-  const local = await readCatalogFile(localCatalogPath);
-  if (local.length > 0) {
-    const lastUpdated = await readCatalogFileLastUpdated(localCatalogPath);
-    return {
-      source: 'local',
-      catalogPath: localCatalogPath,
-      lastUpdated,
-      staleAfterDays,
-      isStale: isCatalogStale(lastUpdated, staleAfterDays),
-    };
-  }
+  const loaded = await loadMergedCatalog(options);
+  const statuses = loaded.sourceStatuses;
+  const primary =
+    statuses
+      .filter((status) => status.count > 0)
+      .sort((left, right) => left.priority - right.priority)[0] ?? statuses[0];
 
-  const cachePath = resolveRegistryCachePath(options);
-  const cached = await readCatalogFile(cachePath);
-  if (cached.length > 0) {
-    const lastUpdated = await readCatalogFileLastUpdated(cachePath);
-    return {
-      source: 'cache',
-      catalogPath: cachePath,
-      lastUpdated,
-      staleAfterDays,
-      isStale: isCatalogStale(lastUpdated, staleAfterDays),
-    };
-  }
+  const trustedSourceCount = statuses.filter((status) => status.trusted).length;
 
   return {
-    source: 'default',
-    catalogPath: localCatalogPath,
-    lastUpdated: null,
-    staleAfterDays,
-    isStale: false,
+    source: primary?.source ?? 'default',
+    catalogPath: resolveCatalogPath(options),
+    lastUpdated: primary?.lastUpdated ?? null,
+    staleAfterDays: primary?.staleAfterDays ?? resolveStaleAfterDays(options),
+    isStale: primary?.isStale ?? false,
+    trustMode: loaded.trustMode,
+    trustedSourceCount,
+    totalSourceCount: statuses.length,
+    sources: statuses,
   };
 }
 
@@ -537,7 +961,7 @@ export async function installMarketplaceModule(
   if (!REPO_PATTERN.test(normalizedRepo)) {
     throw new Error('Repository must be in the form "<owner>/<repo>".');
   }
-  const catalog = await readCatalog(options);
+  const catalog = (await loadMergedCatalog(options)).entries;
   const catalogMatch = catalog.find((entry) => entry.repo.toLowerCase() === normalizedRepo);
   const moduleId = catalogMatch?.id ?? normalizeRepoId(normalizedRepo);
   if (!moduleId) {
@@ -570,7 +994,7 @@ export async function certifyMarketplaceModule(
     throw new Error('Repository must be in the form "<owner>/<repo>".');
   }
 
-  const catalog = await readCatalog(options);
+  const catalog = (await loadMergedCatalog(options)).entries;
   const catalogRepoSet = new Set(catalog.map((entry) => entry.repo.toLowerCase()));
   const state = await readMarketplaceState(options);
   const isKnownCatalogRepo = catalogRepoSet.has(normalizedRepo);

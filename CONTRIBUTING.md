@@ -65,6 +65,21 @@ Mesh/runtime changes must also satisfy:
 - Delegation paths are fail-safe (local fallback remains available when remote delegation fails).
 - Mesh RPC auth checks pass for missing token, bad signature, wrong scope, and expired token.
 - Delegation transparency topics remain emitted (`requested`, `accepted`, `completed`, `failed`, `fallback_local`).
+- Leader election remains deterministic (`primary` > `heavy-compute` > `fallback`, freshest heartbeat, lexical node id).
+- Leader events remain emitted (`lifeos.mesh.leader.elected`, `changed`, `lost`) and `mesh status` keeps leader fields accurate.
+- Control-plane actions that need single authority must require healthy leader state.
+
+Marketplace trust requirements:
+
+- Multi-source catalogs must remain merge-deterministic (`verified > unverified`, then newest `lastUpdated`, then source priority).
+- Production trust mode is fail-closed (`LIFEOS_MARKETPLACE_TRUST_MODE=strict`).
+- Development trust mode can warn (`warn`) but must surface source verification status in CLI output.
+
+Resource enforcement requirements:
+
+- Resource tier must be derived from manifest `resources.cpu`/`resources.memory`.
+- `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` supports `strict|warn|off` with defaults `strict` in production and `warn` in development.
+- Deny/warn paths must emit policy/security events with module id, tier, pressure, threshold, and enforcement mode.
 
 ## Modularity Risk Checklist
 

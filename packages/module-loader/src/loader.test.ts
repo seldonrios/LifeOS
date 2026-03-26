@@ -620,3 +620,190 @@ test('ModuleLoader warn runtime mode logs unauthorized actions without blocking'
   assert.equal(loader.has('warn-mode-module'), true);
   assert.ok(logs.some((line) => line.includes('unauthorized event.publish')));
 });
+
+test('ModuleLoader strict resource enforcement blocks module init under high heap pressure', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-resource-strict-'));
+  const manifestDir = join(tempDir, 'modules', 'resource-strict');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'resource-strict',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'high',
+          memory: 'medium',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RESOURCE_ENFORCEMENT: 'strict' },
+    eventBus,
+    heapUsageProvider: () => ({
+      heapUsed: 950,
+      heapLimit: 1000,
+    }),
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'resource-strict',
+      async init() {
+        return;
+      },
+    });
+  });
+
+  const resourceEvent = eventBus.published.find((entry) => {
+    const data = entry.event.data as { action?: string };
+    return (
+      entry.topic === 'lifeos.security.policy.denied' &&
+      data.action === 'resource.enforcement.denied'
+    );
+  });
+  assert.ok(resourceEvent);
+});
+
+test('ModuleLoader warn resource enforcement emits warning but loads module', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-resource-warn-'));
+  const manifestDir = join(tempDir, 'modules', 'resource-warn');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'resource-warn',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'high',
+          memory: 'medium',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RESOURCE_ENFORCEMENT: 'warn' },
+    eventBus,
+    heapUsageProvider: () => ({
+      heapUsed: 950,
+      heapLimit: 1000,
+    }),
+    logger: () => {
+      return;
+    },
+  });
+
+  await loader.load({
+    id: 'resource-warn',
+    async init() {
+      return;
+    },
+  });
+
+  assert.equal(loader.has('resource-warn'), true);
+  const resourceEvent = eventBus.published.find((entry) => {
+    const data = entry.event.data as { action?: string };
+    return (
+      entry.topic === 'lifeos.security.policy.denied' && data.action === 'resource.enforcement.warn'
+    );
+  });
+  assert.ok(resourceEvent);
+});
+
+test('ModuleLoader resource enforcement off bypasses pressure checks', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-resource-off-'));
+  const manifestDir = join(tempDir, 'modules', 'resource-off');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'resource-off',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'high',
+          memory: 'medium',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RESOURCE_ENFORCEMENT: 'off' },
+    eventBus,
+    heapUsageProvider: () => ({
+      heapUsed: 950,
+      heapLimit: 1000,
+    }),
+    logger: () => {
+      return;
+    },
+  });
+
+  await loader.load({
+    id: 'resource-off',
+    async init() {
+      return;
+    },
+  });
+
+  assert.equal(loader.has('resource-off'), true);
+  const resourceEvents = eventBus.published.filter((entry) => {
+    const data = entry.event.data as { action?: string };
+    return (
+      entry.topic === 'lifeos.security.policy.denied' &&
+      typeof data.action === 'string' &&
+      data.action.startsWith('resource.enforcement')
+    );
+  });
+  assert.equal(resourceEvents.length, 0);
+});

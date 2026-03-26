@@ -3629,6 +3629,22 @@ export async function runMarketplaceCommand(
       ),
     );
     writeStdout(chalk.dim(`Catalog path: ${catalogStatus.catalogPath}\n`));
+    writeStdout(
+      chalk.dim(
+        `Trust mode: ${catalogStatus.trustMode} | trusted sources: ${catalogStatus.trustedSourceCount}/${catalogStatus.totalSourceCount}\n`,
+      ),
+    );
+    for (const source of catalogStatus.sources) {
+      const trustLabel = source.trusted ? 'trusted' : 'unverified';
+      writeStdout(
+        chalk.dim(
+          `- [${source.kind}] ${source.source} trust=${trustLabel} verified=${source.verified ? 'yes' : 'no'} count=${source.count} lastUpdated=${source.lastUpdated ?? 'unknown'}\n`,
+        ),
+      );
+      if (source.verificationError) {
+        writeStdout(chalk.yellow(`  source warning: ${source.verificationError}\n`));
+      }
+    }
     if (catalogStatus.isStale) {
       writeStdout(
         chalk.yellow(
@@ -3812,6 +3828,13 @@ export async function runMeshCommand(
       if (!options.capability || !options.nodeId) {
         writeStderr(
           `${chalk.red.bold('Error:')} Usage: lifeos mesh assign <capability> <node-id>\n`,
+        );
+        return 1;
+      }
+      const controlPlaneStatus = await meshCoordinator.getLiveStatus();
+      if (controlPlaneStatus.leaderId && !controlPlaneStatus.leaderHealthy) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Mesh leader "${controlPlaneStatus.leaderId}" is not healthy. Retry after leader failover stabilizes.\n`,
         );
         return 1;
       }
@@ -4147,6 +4170,11 @@ export async function runMeshCommand(
     writeStdout(chalk.bold('LifeOS Mesh Status\n'));
     writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
     writeStdout(chalk.dim(`TTL: ${payload.ttlMs}ms | Updated: ${payload.updatedAt}\n`));
+    writeStdout(
+      chalk.dim(
+        `Leader: ${payload.leaderId ?? 'none'} | term=${payload.term} | leaseUntil=${payload.leaseUntil ?? 'n/a'} | leaderHealthy=${payload.leaderHealthy ? 'yes' : 'no'} | isLeader=${payload.isLeader ? 'yes' : 'no'}\n`,
+      ),
+    );
     if (payload.nodes.length === 0) {
       writeStdout('No nodes have joined yet.\n');
     } else {

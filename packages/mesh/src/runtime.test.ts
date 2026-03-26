@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { Topics } from '@lifeos/event-bus';
 import { JwtService } from '@lifeos/security';
 
 import {
@@ -12,11 +13,34 @@ import {
   MeshRpcServer,
   MeshRuntime,
   readMeshHeartbeatState,
+  readMeshLeaderSnapshot,
   waitForMeshHeartbeat,
+  writeMeshLeaderSnapshot,
 } from './runtime';
 
 function parseJson<T>(raw: string): T {
   return JSON.parse(raw) as T;
+}
+
+class MockEventBus {
+  public readonly published: Array<{ topic: string; event: { data: Record<string, unknown> } }> =
+    [];
+
+  async publish(topic: string, event: { data: Record<string, unknown> }): Promise<void> {
+    this.published.push({ topic, event });
+  }
+
+  async subscribe(): Promise<void> {
+    return;
+  }
+
+  async close(): Promise<void> {
+    return;
+  }
+
+  getTransport() {
+    return 'unknown' as const;
+  }
 }
 
 test('mesh rpc server rejects requests without auth token', async () => {
@@ -368,8 +392,311 @@ test('mesh status snapshot includes healthy flags based on ttl', async () => {
   const snapshot = await coordinator.getLiveStatus();
   assert.equal(snapshot.nodes.length, 1);
   assert.equal(snapshot.nodes[0]?.healthy, true);
+  assert.equal(typeof snapshot.term, 'number');
+  assert.equal(typeof snapshot.leaderHealthy, 'boolean');
 
   const persistedRaw = await readFile(join(home, '.lifeos', 'mesh-heartbeats.json'), 'utf8');
   const persisted = parseJson<{ nodes: Array<{ nodeId: string }> }>(persistedRaw);
   assert.equal(persisted.nodes[0]?.nodeId, 'heavy-server');
+});
+
+test('mesh coordinator elects leader with deterministic role priority', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'lifeos-mesh-leader-priority-'));
+  await mkdir(join(home, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    join(home, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'primary-node',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58101',
+          },
+          {
+            nodeId: 'heavy-node',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58102',
+          },
+        ],
+        assignments: {},
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(home, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'primary-node',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58101',
+            lastSeenAt: new Date(Date.now() - 3_000).toISOString(),
+          },
+          {
+            nodeId: 'heavy-node',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58102',
+            lastSeenAt: new Date().toISOString(),
+          },
+        ],
+        ttlMs: 15_000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const coordinator = new MeshCoordinator({
+    env: {
+      ...process.env,
+      HOME: home,
+      LIFEOS_MESH_NODE_TTL_MS: '15000',
+      LIFEOS_MESH_LEADER_LEASE_MS: '10000',
+      LIFEOS_MESH_NODE_ID: 'primary-node',
+    },
+    eventBus: new MockEventBus() as never,
+  });
+
+  const snapshot = await coordinator.getLiveStatus();
+  assert.equal(snapshot.leaderId, 'primary-node');
+  assert.equal(snapshot.leaderHealthy, true);
+  assert.equal(snapshot.isLeader, true);
+  assert.ok(snapshot.term >= 1);
+
+  const persisted = await readMeshLeaderSnapshot({
+    env: {
+      ...process.env,
+      HOME: home,
+    },
+  });
+  assert.equal(persisted.leaderId, 'primary-node');
+});
+
+test('mesh coordinator retains leader during active lease and re-elects after expiry', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'lifeos-mesh-leader-lease-'));
+  await mkdir(join(home, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    join(home, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-a',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58111',
+          },
+        ],
+        assignments: {},
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(home, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-a',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58111',
+            lastSeenAt: new Date().toISOString(),
+          },
+        ],
+        ttlMs: 15_000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const coordinator = new MeshCoordinator({
+    env: {
+      ...process.env,
+      HOME: home,
+      LIFEOS_MESH_NODE_TTL_MS: '15000',
+      LIFEOS_MESH_LEADER_LEASE_MS: '60000',
+    },
+    eventBus: new MockEventBus() as never,
+  });
+
+  const first = await coordinator.getLiveStatus();
+  assert.equal(first.leaderId, 'heavy-a');
+
+  await writeFile(
+    join(home, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-a',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58111',
+          },
+          {
+            nodeId: 'primary-b',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58112',
+          },
+        ],
+        assignments: {},
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(home, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-a',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58111',
+            lastSeenAt: new Date().toISOString(),
+          },
+          {
+            nodeId: 'primary-b',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58112',
+            lastSeenAt: new Date().toISOString(),
+          },
+        ],
+        ttlMs: 15_000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const retained = await coordinator.getLiveStatus();
+  assert.equal(retained.leaderId, 'heavy-a');
+
+  await writeMeshLeaderSnapshot(
+    {
+      leaderId: 'heavy-a',
+      leaseUntil: new Date(Date.now() - 1_000).toISOString(),
+      electedAt: new Date(Date.now() - 60_000).toISOString(),
+      term: first.term,
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      env: {
+        ...process.env,
+        HOME: home,
+      },
+    },
+  );
+
+  const reElected = await coordinator.getLiveStatus();
+  assert.equal(reElected.leaderId, 'primary-b');
+  assert.ok(reElected.term > first.term);
+});
+
+test('mesh coordinator emits leader-lost event when no healthy nodes remain', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'lifeos-mesh-leader-lost-'));
+  await mkdir(join(home, '.lifeos'), { recursive: true });
+
+  await writeFile(
+    join(home, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'primary-node',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58121',
+          },
+        ],
+        assignments: {},
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(home, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'primary-node',
+            role: 'primary',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58121',
+            lastSeenAt: new Date(Date.now() - 60_000).toISOString(),
+          },
+        ],
+        ttlMs: 5_000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeMeshLeaderSnapshot(
+    {
+      leaderId: 'primary-node',
+      leaseUntil: new Date(Date.now() + 60_000).toISOString(),
+      electedAt: new Date(Date.now() - 120_000).toISOString(),
+      term: 2,
+      updatedAt: new Date().toISOString(),
+    },
+    {
+      env: {
+        ...process.env,
+        HOME: home,
+      },
+    },
+  );
+
+  const eventBus = new MockEventBus();
+  const coordinator = new MeshCoordinator({
+    env: {
+      ...process.env,
+      HOME: home,
+      LIFEOS_MESH_NODE_TTL_MS: '5000',
+      LIFEOS_MESH_LEADER_LEASE_MS: '10000',
+    },
+    eventBus: eventBus as never,
+  });
+
+  const snapshot = await coordinator.getLiveStatus();
+  assert.equal(snapshot.leaderId, null);
+  assert.equal(snapshot.leaderHealthy, false);
+  assert.ok(eventBus.published.some((entry) => entry.topic === Topics.lifeos.meshLeaderLost));
 });
