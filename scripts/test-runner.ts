@@ -37,7 +37,7 @@ for (const pkg of packageDirs) {
 }
 
 if (violations.length > 0) {
-  console.error('Enforcement failed — these packages have test files but no "test" script:');
+  console.error('Enforcement failed - these packages have test files but no "test" script:');
   for (const v of violations) {
     console.error(`  - ${v}`);
   }

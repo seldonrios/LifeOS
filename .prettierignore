@@ -2,3 +2,8 @@ dist/
 node_modules/
 modules/*/dist/
 *.yaml
+.github/ISSUE_TEMPLATE/
+apps/desktop/
+services/
+packages/**/src/*.js
+packages/**/src/*.d.ts

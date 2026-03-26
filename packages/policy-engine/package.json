@@ -11,6 +11,9 @@
       "default": "./src/index.ts"
     }
   },
+  "scripts": {
+    "test": "vitest run src/index.test.ts"
+  },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/security": "workspace:*",

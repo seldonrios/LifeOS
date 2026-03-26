@@ -5,9 +5,9 @@
 
 ## Validation
 
-- [ ] `pnpm run typecheck`
-- [ ] `pnpm run lint`
-- [ ] `pnpm run test`
+- [ ] `pnpm run validate`
+- [ ] If modules changed: `pnpm run build:modules`
+- [ ] If behavior changed: docs updated (`README.md` and/or `docs/*`)
 
 ## Release Integrity
 
