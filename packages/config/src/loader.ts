@@ -109,13 +109,14 @@ function deepMerge(base: unknown, override: unknown): unknown {
   return override === undefined ? base : override;
 }
 
-function formatIssuePath(path: Array<string | number>): string {
+function formatIssuePath(path: ReadonlyArray<PropertyKey>): string {
   return path.reduce<string>((output, segment) => {
     if (typeof segment === 'number') {
       return `${output}[${segment}]`;
     }
 
-    return output ? `${output}.${segment}` : segment;
+    const key = typeof segment === 'string' ? segment : String(segment);
+    return output ? `${output}.${key}` : key;
   }, '');
 }
 
