@@ -1,14 +1,6 @@
-import {
-  applySecretPolicy,
-  type SecretRef,
-  type SecretStore,
-} from '@lifeos/secrets';
+import { applySecretPolicy, type SecretRef, type SecretStore } from '@lifeos/secrets';
 
-import {
-  ConfigError,
-  type FeatureEnabledPredicate,
-  type ResolveSecretRefsResult,
-} from './types';
+import { ConfigError, type FeatureEnabledPredicate, type ResolveSecretRefsResult } from './types';
 
 const SECRET_REF_PATTERN = /^!secret\s+(.+)$/;
 
@@ -97,11 +89,7 @@ export async function resolveSecretRefs<T extends object>(
     if (value && typeof value === 'object') {
       const output: Record<string, unknown> = {};
       for (const [key, nested] of Object.entries(value)) {
-        output[key] = await walk(
-          nested,
-          path ? `${path}.${key}` : key,
-          [...pathSegments, key],
-        );
+        output[key] = await walk(nested, path ? `${path}.${key}` : key, [...pathSegments, key]);
       }
       return output;
     }

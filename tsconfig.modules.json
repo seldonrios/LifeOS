@@ -11,12 +11,6 @@
     "moduleResolution": "Bundler",
     "module": "ESNext"
   },
-  "include": [
-    "modules/**/*.ts"
-  ],
-  "exclude": [
-    "modules/**/dist/**",
-    "modules/**/node_modules/**",
-    "modules/**/*.d.ts"
-  ]
+  "include": ["modules/**/*.ts"],
+  "exclude": ["modules/**/dist/**", "modules/**/node_modules/**", "modules/**/*.d.ts"]
 }

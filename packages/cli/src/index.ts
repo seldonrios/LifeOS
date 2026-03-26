@@ -737,7 +737,9 @@ async function setupEmailSummarizer(
 
   const current = await readCredentials(env);
   const next: ImapCredentials[] = [
-    ...current.filter((entry) => entry.label.toLowerCase() !== label.toLowerCase()),
+    ...current.filter(
+      (entry: ImapCredentials) => entry.label.toLowerCase() !== label.toLowerCase(),
+    ),
     {
       host,
       port,

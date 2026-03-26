@@ -13,6 +13,7 @@
     "paths": {
       "@lifeos/*": ["packages/*/src/index.ts"]
     },
+    "skipLibCheck": true,
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,

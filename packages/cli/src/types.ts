@@ -313,6 +313,8 @@ export interface RunCliDependencies {
       stdio?: 'pipe' | 'inherit';
     },
   ) => ChildProcessLike;
+  checkLinuxMicrophoneTools?: () => Promise<boolean>;
+  modelPullTimeoutMs?: number;
   confirmPrompt?: (options: PromptConfirmOptions) => Promise<boolean>;
   inputPrompt?: (options: PromptInputOptions) => Promise<string>;
   selectPrompt?: (options: PromptSelectOptions) => Promise<string>;

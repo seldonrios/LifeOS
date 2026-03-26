@@ -60,7 +60,10 @@ test('resolveSecretRefs records degraded markers for optional secrets', async ()
   assert.equal(resolved.secretOutcomes.length, 1);
   assert.equal(resolved.secretOutcomes[0]?.path, 'integrations.vision.apiKey');
   assert.equal(resolved.secretOutcomes[0]?.status, 'degraded');
-  assert.match(resolved.degraded[0]?.reason ?? '', /Optional secret 'vision_api_key' is unavailable/);
+  assert.match(
+    resolved.degraded[0]?.reason ?? '',
+    /Optional secret 'vision_api_key' is unavailable/,
+  );
 });
 
 test('resolveSecretRefs honors feature-gated secret policies', async () => {

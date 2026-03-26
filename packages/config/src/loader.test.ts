@@ -116,12 +116,7 @@ test('loadConfig fails fast for invalid env override values', async () => {
 
 test('loadConfig tolerates degraded secret-backed required fields at exact degraded paths', async () => {
   await withLocalConfig(
-    [
-      'profile: assistant',
-      'smtp:',
-      '  host: "!secret smtp_host"',
-      '',
-    ].join('\n'),
+    ['profile: assistant', 'smtp:', '  host: "!secret smtp_host"', ''].join('\n'),
     async () => {
       const { config, degraded, degradedPaths, secretOutcomes } = await loadConfig({
         secretStore: missingSecretStore,
@@ -146,12 +141,7 @@ test('loadConfig tolerates degraded secret-backed required fields at exact degra
 
 test('loadConfig still fails for non-degraded post-resolution schema errors', async () => {
   await withLocalConfig(
-    [
-      'profile: assistant',
-      'smtp:',
-      '  host: "!secret smtp_host"',
-      '',
-    ].join('\n'),
+    ['profile: assistant', 'smtp:', '  host: "!secret smtp_host"', ''].join('\n'),
     async () => {
       const invalidSecretStore: SecretStore = {
         async get(name: string): Promise<string | null> {

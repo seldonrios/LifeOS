@@ -79,7 +79,10 @@ test('runModuleLoaderBoot emits startup diagnostics report event and stdout log'
     assert.equal(report.modules.length, 1);
     assert.equal(report.modules[0]?.state, 'enabled');
     assert.equal(report.degradedSecrets?.length, 1);
-    assert.match(report.recommendations.join(' '), /Optional secret 'voice_api_key' is unavailable\./);
+    assert.match(
+      report.recommendations.join(' '),
+      /Optional secret 'voice_api_key' is unavailable\./,
+    );
     assert.equal(bus.published.length, 1);
     assert.equal(bus.published[0]?.topic, 'system.startup.report');
     assert.equal(
@@ -130,7 +133,7 @@ test('runModuleLoaderBoot handles invalid dist/manifest.js without crashing', as
     [
       'export default {',
       "  id: 'malformed-module',",
-      "  // INVALID SYNTAX BELOW",
+      '  // INVALID SYNTAX BELOW',
       '  invalid_json: {this is not valid',
       '};',
       '',

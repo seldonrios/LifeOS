@@ -402,6 +402,7 @@ test('voice support detection checks for arecord on Linux and proceeds when pres
       }),
       grantVoiceConsent: async () => undefined,
       platform: 'linux',
+      checkLinuxMicrophoneTools: async () => true,
     },
   );
 
@@ -440,6 +441,7 @@ test('voice support detection skips voice on Linux when arecord is missing', asy
         stdout.push(message);
       },
       platform: 'linux',
+      checkLinuxMicrophoneTools: async () => false,
     },
   );
 
@@ -494,10 +496,8 @@ test('model pull timeout terminates the child process', async () => {
         return {
           stdout: null,
           stderr: null,
-          on: () => {
-            throw new Error(
-              'Process creation triggered timeout - test should intercept before this',
-            );
+          on() {
+            return this;
           },
           kill: (signal?: NodeJS.Signals | number) => {
             if (signal === undefined) {
@@ -509,7 +509,9 @@ test('model pull timeout terminates the child process', async () => {
           },
         };
       },
+      modelPullTimeoutMs: 1,
       platform: 'linux',
+      checkLinuxMicrophoneTools: async () => false,
     },
   );
 

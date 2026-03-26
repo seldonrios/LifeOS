@@ -1,8 +1,9 @@
-import { access, readdir, rm, writeFile, unlink } from 'node:fs/promises';
+import { access, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import process from 'node:process';
-import { join, relative } from 'node:path';
+import { dirname, join, relative } from 'node:path';
+import ts from 'typescript';
 
 async function discoverModuleTypeScriptFiles(modulePath: string): Promise<string[]> {
   const typeScriptFiles: string[] = [];
@@ -31,9 +32,19 @@ async function discoverModuleTypeScriptFiles(modulePath: string): Promise<string
   return typeScriptFiles;
 }
 
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function buildModule(moduleName: string): Promise<number> {
   const moduleDir = `modules/${moduleName}`;
   const outDir = `${moduleDir}/dist`;
+  const tsconfigPath = join(moduleDir, 'tsconfig.json');
 
   // Discover all TypeScript files in the module (excluding dist and generated artifacts)
   let include: string[] = [];
@@ -51,35 +62,56 @@ async function buildModule(moduleName: string): Promise<number> {
 
   await rm(outDir, { recursive: true, force: true });
 
-  const tmpConfig = JSON.stringify(
-    {
-      extends: './tsconfig.modules.json',
-      compilerOptions: {
-        outDir,
-        rootDir: moduleDir,
-        paths: {
-          '@lifeos/*': ['packages/*/src/index.ts'],
-        },
-      },
-      include,
-    },
-    null,
-    2,
-  );
-  const tmpPath = `tsconfig.modules.${moduleName}.tmp.json`;
-  await writeFile(tmpPath, tmpConfig, 'utf8');
-
-  try {
-    const result = spawnSync('tsc', ['--project', tmpPath], {
+  if (await pathExists(tsconfigPath)) {
+    const result = spawnSync('pnpm', ['exec', 'tsc', '--build', tsconfigPath, '--force'], {
       stdio: 'inherit',
       shell: process.platform === 'win32',
     });
-
-    if (result.error) throw result.error;
-
+    if (result.error) {
+      console.error(`  Failed to compile ${moduleDir}:`, result.error);
+      return 1;
+    }
     return typeof result.status === 'number' ? result.status : 1;
-  } finally {
-    await unlink(tmpPath).catch(() => undefined);
+  }
+
+  try {
+    for (const sourcePath of include) {
+      const source = await readFile(sourcePath, 'utf8');
+      const transpiled = ts.transpileModule(source, {
+        compilerOptions: {
+          target: ts.ScriptTarget.ES2022,
+          module: ts.ModuleKind.ESNext,
+          moduleResolution: ts.ModuleResolutionKind.Bundler,
+          sourceMap: true,
+          inlineSources: true,
+        },
+        fileName: sourcePath,
+        reportDiagnostics: true,
+      });
+
+      if (transpiled.diagnostics?.length) {
+        const message = ts.formatDiagnosticsWithColorAndContext(transpiled.diagnostics, {
+          getCurrentDirectory: () => process.cwd(),
+          getCanonicalFileName: (fileName) => fileName,
+          getNewLine: () => '\n',
+        });
+        console.error(message);
+        return 1;
+      }
+
+      const relativePath = relative(moduleDir, sourcePath).replace(/\.ts$/, '.js');
+      const outputPath = join(outDir, relativePath);
+      await mkdir(dirname(outputPath), { recursive: true });
+      await writeFile(outputPath, transpiled.outputText, 'utf8');
+      if (transpiled.sourceMapText) {
+        await writeFile(`${outputPath}.map`, transpiled.sourceMapText, 'utf8');
+      }
+    }
+
+    return 0;
+  } catch (error) {
+    console.error(`  Failed to compile ${moduleDir}:`, error);
+    return 1;
   }
 }
 

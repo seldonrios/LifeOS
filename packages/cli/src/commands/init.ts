@@ -31,6 +31,7 @@ import type {
 const DEFAULT_MODEL = 'llama3.1:8b';
 const DEFAULT_OLLAMA_HOST = 'http://127.0.0.1:11434';
 const OLLAMA_TIMEOUT_MS = 3_000;
+const DEFAULT_MODEL_PULL_TIMEOUT_MS = 10 * 60_000;
 
 interface OllamaModelTagsResponse {
   models?: Array<{
@@ -210,6 +211,12 @@ export async function pullModel(model: string, dependencies: RunCliDependencies)
 
   const env = dependencies.env ?? process.env;
   const createSpinner = dependencies.createSpinner ?? createDefaultSpinner;
+  const configuredTimeoutMs = Number.parseInt(env.LIFEOS_INIT_PULL_TIMEOUT_MS ?? '', 10);
+  const modelPullTimeoutMs =
+    dependencies.modelPullTimeoutMs ??
+    (Number.isFinite(configuredTimeoutMs) && configuredTimeoutMs > 0
+      ? configuredTimeoutMs
+      : DEFAULT_MODEL_PULL_TIMEOUT_MS);
   const spawnProcess =
     dependencies.spawnProcess ??
     ((command: string, args: string[], options) =>
@@ -261,7 +268,7 @@ export async function pullModel(model: string, dependencies: RunCliDependencies)
           }
         }
         reject(new Error(`ollama pull ${model} exceeded timeout`));
-      }, 10 * 60_000); // 10 minute timeout
+      }, modelPullTimeoutMs);
 
       child.on('error', (error) => {
         clearTimeout(timeoutHandle);
@@ -427,9 +434,13 @@ function supportsVoice(platform: NodeJS.Platform): boolean {
   return platform === 'win32' || platform === 'darwin';
 }
 
-async function detectVoiceSupport(platform: NodeJS.Platform): Promise<boolean> {
+async function detectVoiceSupport(
+  platform: NodeJS.Platform,
+  checkLinuxTools?: () => Promise<boolean>,
+): Promise<boolean> {
   if (platform === 'linux') {
-    return await checkLinuxMicrophoneTools();
+    const checker = checkLinuxTools ?? checkLinuxMicrophoneTools;
+    return await checker();
   }
   return supportsVoice(platform);
 }
@@ -649,7 +660,7 @@ export async function runInitCommand(
     return 1;
   }
 
-  const voiceSupported = await detectVoiceSupport(platform);
+  const voiceSupported = await detectVoiceSupport(platform, dependencies.checkLinuxMicrophoneTools);
   if (!voiceSupported) {
     writeStdout(
       'Voice requires a supported local microphone setup on this machine. Skipping for now.\n',

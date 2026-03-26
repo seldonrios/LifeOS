@@ -48,7 +48,7 @@ describe('security client', () => {
     const client = createSecurityClient();
     const token = await client.issueServiceToken('module-loader');
 
-    const [head, body, signature] = token.token.split('.');
+    const [head = '', body = '', signature = ''] = token.token.split('.');
     const tamperedBody = body.slice(0, -1) + (body.endsWith('a') ? 'b' : 'a');
     const tampered = `${head}.${tamperedBody}.${signature}`;
     const payload = await client.verifyJwt(tampered);

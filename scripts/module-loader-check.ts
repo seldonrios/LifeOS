@@ -1,6 +1,10 @@
 import { resolve } from 'node:path';
 
-import { buildStartupReport, resolveModules, scanModules } from '../packages/module-loader/src/index.ts';
+import {
+  buildStartupReport,
+  resolveModules,
+  scanModules,
+} from '../packages/module-loader/src/index.ts';
 import { ServiceCatalog } from '../packages/service-catalog/src/catalog.ts';
 
 const run = async () => {
