@@ -74,6 +74,7 @@ test('mesh rpc server rejects requests without auth token', async () => {
 });
 
 test('mesh rpc client can call goal-plan with signed jwt', async () => {
+  const logs: string[] = [];
   const server = new MeshRpcServer({
     host: '127.0.0.1',
     port: 58012,
@@ -86,6 +87,9 @@ test('mesh rpc client can call goal-plan with signed jwt', async () => {
       createdAt: new Date().toISOString(),
     }),
     intentPublisher: async () => undefined,
+    logger: (line) => {
+      logs.push(line);
+    },
   });
 
   await server.start();
@@ -93,9 +97,11 @@ test('mesh rpc client can call goal-plan with signed jwt', async () => {
     const client = new MeshRpcClient(2000);
     const response = await client.goalPlan('http://127.0.0.1:58012', {
       goal: 'Plan quarterly roadmap',
+      traceId: 'trace_goal_123',
     });
     const plan = response.plan as { title?: string };
     assert.equal(plan.title, 'Plan quarterly roadmap');
+    assert.ok(logs.some((line) => line.includes('trace_goal_123')));
   } finally {
     await server.close();
   }

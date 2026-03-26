@@ -85,12 +85,14 @@ export interface MeshGoalPlanRequest {
   goal: string;
   model?: string;
   requestedAt?: string;
+  traceId?: string;
 }
 
 export interface MeshIntentPublishRequest {
   topic: string;
   data: Record<string, unknown>;
   source?: string;
+  traceId?: string;
 }
 
 export interface MeshDelegationResult<TPayload> {
@@ -449,6 +451,9 @@ function normalizeGoalPlanRequest(raw: unknown): MeshGoalPlanRequest | null {
       ? { model: record.model.trim() }
       : {}),
     ...(typeof record.requestedAt === 'string' ? { requestedAt: record.requestedAt } : {}),
+    ...(typeof record.traceId === 'string' && record.traceId.trim()
+      ? { traceId: record.traceId.trim() }
+      : {}),
   };
 }
 
@@ -472,6 +477,9 @@ function normalizeIntentPublishRequest(raw: unknown): MeshIntentPublishRequest |
     data: record.data as Record<string, unknown>,
     ...(typeof record.source === 'string' && record.source.trim()
       ? { source: record.source.trim() }
+      : {}),
+    ...(typeof record.traceId === 'string' && record.traceId.trim()
+      ? { traceId: record.traceId.trim() }
       : {}),
   };
 }
@@ -750,6 +758,9 @@ export class MeshRpcServer {
           sendJson(res, 400, { error: 'invalid_goal_plan_request' });
           return;
         }
+        this.logger(
+          `mesh_rpc_goal_plan_received traceId=${parsed.traceId ?? 'none'} goalLength=${parsed.goal.length}`,
+        );
         const plan = await this.goalPlanner(parsed);
         sendJson(res, 200, { plan });
       } catch (error: unknown) {
@@ -771,6 +782,9 @@ export class MeshRpcServer {
           sendJson(res, 400, { error: 'invalid_intent_publish_request' });
           return;
         }
+        this.logger(
+          `mesh_rpc_intent_publish_received traceId=${parsed.traceId ?? 'none'} topic=${parsed.topic}`,
+        );
         await this.intentPublisher(parsed);
         sendJson(res, 200, { accepted: true });
       } catch (error: unknown) {
@@ -1231,6 +1245,9 @@ export class MeshCoordinator {
     }
 
     try {
+      this.logger(
+        `mesh_delegate_goal_plan_requested traceId=${request.traceId ?? 'none'} node=${node.nodeId}`,
+      );
       const response = await this.rpcClient.goalPlan(node.rpcUrl, request, this.timeoutMs);
       return {
         delegated: true,
@@ -1255,6 +1272,7 @@ export class MeshCoordinator {
     topic: string;
     data: Record<string, unknown>;
     source?: string;
+    traceId?: string;
   }): Promise<MeshDelegationResult<MeshRpcIntentPublishResponse>> {
     const capability = request.capability.trim().toLowerCase();
     const snapshot = await this.buildStatusSnapshot();
@@ -1268,12 +1286,16 @@ export class MeshCoordinator {
     }
 
     try {
+      this.logger(
+        `mesh_delegate_intent_requested traceId=${request.traceId ?? 'none'} capability=${capability} node=${node.nodeId} topic=${request.topic}`,
+      );
       const response = await this.rpcClient.intentPublish(
         node.rpcUrl,
         {
           topic: request.topic,
           data: request.data,
           ...(request.source ? { source: request.source } : {}),
+          ...(request.traceId ? { traceId: request.traceId } : {}),
         },
         this.timeoutMs,
       );

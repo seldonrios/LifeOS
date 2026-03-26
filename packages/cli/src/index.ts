@@ -5,8 +5,8 @@ import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { existsSync } from 'node:fs';
-import { readFile, readdir, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
@@ -62,6 +62,8 @@ import {
   MeshCoordinator,
   MeshRegistry,
   MeshRuntime,
+  readMeshHeartbeatState,
+  readMeshLeaderSnapshot,
   readMeshState,
   waitForMeshHeartbeat,
   writeMeshState,
@@ -784,7 +786,8 @@ function normalizeMeshAction(action: string): MeshCommandOptions['action'] | nul
     action === 'assign' ||
     action === 'demo' ||
     action === 'start' ||
-    action === 'delegate'
+    action === 'delegate' ||
+    action === 'debug'
   ) {
     return action;
   }
@@ -1426,6 +1429,18 @@ function mapMeshCapabilityToIntentTopic(capability: string): string | null {
   return null;
 }
 
+function createMeshTraceContext(source: string): {
+  traceId: string;
+  source: string;
+  requestedAt: string;
+} {
+  return {
+    traceId: randomUUID(),
+    source,
+    requestedAt: new Date().toISOString(),
+  };
+}
+
 function parseJsonObject(value: string | undefined): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -1500,14 +1515,16 @@ function createVoicePublisher(
     if (!capability) {
       return false;
     }
+    const trace = createMeshTraceContext(source);
 
     await publishEventSafely(
       Topics.lifeos.meshDelegateRequested,
       {
         capability,
         topic,
-        requestedAt: new Date().toISOString(),
-        source,
+        requestedAt: trace.requestedAt,
+        source: trace.source,
+        traceId: trace.traceId,
       },
       dependencies,
       env,
@@ -1519,6 +1536,7 @@ function createVoicePublisher(
       topic,
       data,
       source,
+      traceId: trace.traceId,
     });
     if (delegated.delegated) {
       await publishEventSafely(
@@ -1529,6 +1547,7 @@ function createVoicePublisher(
           delegatedTo: delegated.nodeId ?? null,
           rpcUrl: delegated.rpcUrl ?? null,
           acceptedAt: new Date().toISOString(),
+          traceId: trace.traceId,
         },
         dependencies,
         env,
@@ -1541,6 +1560,7 @@ function createVoicePublisher(
           topic,
           delegatedTo: delegated.nodeId ?? null,
           completedAt: new Date().toISOString(),
+          traceId: trace.traceId,
         },
         dependencies,
         env,
@@ -1557,6 +1577,7 @@ function createVoicePublisher(
         delegatedTo: delegated.nodeId ?? null,
         reason: delegated.reason ?? 'delegation_failed',
         failedAt: new Date().toISOString(),
+        traceId: trace.traceId,
       },
       dependencies,
       env,
@@ -1568,6 +1589,7 @@ function createVoicePublisher(
         capability,
         topic,
         fallbackAt: new Date().toISOString(),
+        traceId: trace.traceId,
       },
       dependencies,
       env,
@@ -1703,11 +1725,14 @@ export async function runGoalCommand(
     }
     let plan: GoalPlan;
     const meshCoordinator = new MeshCoordinator({ env });
+    const meshTrace = createMeshTraceContext('lifeos-cli');
     await publishEventSafely(
       Topics.lifeos.meshDelegateRequested,
       {
         capability: 'goal-planning',
-        requestedAt: now().toISOString(),
+        requestedAt: meshTrace.requestedAt,
+        source: meshTrace.source,
+        traceId: meshTrace.traceId,
       },
       dependencies,
       env,
@@ -1716,7 +1741,8 @@ export async function runGoalCommand(
     const delegated = await meshCoordinator.delegateGoalPlan({
       goal: normalizedGoal,
       model: options.model,
-      requestedAt: now().toISOString(),
+      requestedAt: meshTrace.requestedAt,
+      traceId: meshTrace.traceId,
     });
 
     if (delegated.delegated && isGoalPlanCandidate(delegated.payload)) {
@@ -1728,6 +1754,7 @@ export async function runGoalCommand(
           delegatedTo: delegated.nodeId ?? null,
           rpcUrl: delegated.rpcUrl ?? null,
           acceptedAt: now().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -1739,6 +1766,7 @@ export async function runGoalCommand(
           capability: 'goal-planning',
           delegatedTo: delegated.nodeId ?? null,
           completedAt: now().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -1752,6 +1780,7 @@ export async function runGoalCommand(
           delegatedTo: delegated.nodeId ?? null,
           reason: delegated.reason ?? 'delegation_failed',
           failedAt: now().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -1764,6 +1793,7 @@ export async function runGoalCommand(
           delegatedTo: delegated.nodeId ?? null,
           reason: delegated.reason ?? 'no_remote_plan',
           fallbackAt: now().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -2903,12 +2933,15 @@ export async function runResearchCommand(
 
   try {
     const meshCoordinator = new MeshCoordinator({ env });
+    const meshTrace = createMeshTraceContext('lifeos-cli');
     await publishEventSafely(
       Topics.lifeos.meshDelegateRequested,
       {
         capability: 'research',
         topic: Topics.lifeos.voiceIntentResearch,
-        requestedAt: new Date().toISOString(),
+        requestedAt: meshTrace.requestedAt,
+        source: meshTrace.source,
+        traceId: meshTrace.traceId,
       },
       dependencies,
       env,
@@ -2919,6 +2952,7 @@ export async function runResearchCommand(
       topic: Topics.lifeos.voiceIntentResearch,
       data: payload,
       source: 'lifeos-cli',
+      traceId: meshTrace.traceId,
     });
     if (delegated.delegated) {
       await publishEventSafely(
@@ -2929,6 +2963,7 @@ export async function runResearchCommand(
           delegatedTo: delegated.nodeId ?? null,
           rpcUrl: delegated.rpcUrl ?? null,
           acceptedAt: new Date().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -2941,6 +2976,7 @@ export async function runResearchCommand(
           topic: Topics.lifeos.voiceIntentResearch,
           delegatedTo: delegated.nodeId ?? null,
           completedAt: new Date().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -2958,6 +2994,7 @@ export async function runResearchCommand(
         delegatedTo: delegated.nodeId ?? null,
         reason: delegated.reason ?? 'delegation_failed',
         failedAt: new Date().toISOString(),
+        traceId: meshTrace.traceId,
       },
       dependencies,
       env,
@@ -2969,6 +3006,7 @@ export async function runResearchCommand(
         capability: 'research',
         topic: Topics.lifeos.voiceIntentResearch,
         fallbackAt: new Date().toISOString(),
+        traceId: meshTrace.traceId,
       },
       dependencies,
       env,
@@ -3937,14 +3975,16 @@ export async function runMeshCommand(
         );
         return 1;
       }
+      const meshTrace = createMeshTraceContext(options.source?.trim() || 'lifeos-cli');
 
       await publishEventSafely(
         Topics.lifeos.meshDelegateRequested,
         {
           capability,
           topic: options.topic ?? mapMeshCapabilityToIntentTopic(capability),
-          requestedAt: new Date().toISOString(),
-          source: 'lifeos-cli',
+          requestedAt: meshTrace.requestedAt,
+          source: meshTrace.source,
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -3962,7 +4002,8 @@ export async function runMeshCommand(
         const delegated = await meshCoordinator.delegateGoalPlan({
           goal,
           ...(options.model?.trim() ? { model: options.model.trim() } : {}),
-          requestedAt: new Date().toISOString(),
+          requestedAt: meshTrace.requestedAt,
+          traceId: meshTrace.traceId,
         });
 
         if (delegated.delegated && isGoalPlanCandidate(delegated.payload)) {
@@ -3973,6 +4014,7 @@ export async function runMeshCommand(
               delegatedTo: delegated.nodeId ?? null,
               rpcUrl: delegated.rpcUrl ?? null,
               acceptedAt: new Date().toISOString(),
+              traceId: meshTrace.traceId,
             },
             dependencies,
             env,
@@ -3984,6 +4026,7 @@ export async function runMeshCommand(
               capability,
               delegatedTo: delegated.nodeId ?? null,
               completedAt: new Date().toISOString(),
+              traceId: meshTrace.traceId,
             },
             dependencies,
             env,
@@ -4009,6 +4052,7 @@ export async function runMeshCommand(
             delegatedTo: delegated.nodeId ?? null,
             reason: delegated.reason ?? 'delegation_failed',
             failedAt: new Date().toISOString(),
+            traceId: meshTrace.traceId,
           },
           dependencies,
           env,
@@ -4020,6 +4064,7 @@ export async function runMeshCommand(
             capability,
             reason: delegated.reason ?? 'delegation_failed',
             fallbackAt: new Date().toISOString(),
+            traceId: meshTrace.traceId,
           },
           dependencies,
           env,
@@ -4058,7 +4103,8 @@ export async function runMeshCommand(
         capability,
         topic,
         data,
-        source: options.source?.trim() || 'lifeos-cli',
+        source: meshTrace.source,
+        traceId: meshTrace.traceId,
       });
 
       if (delegated.delegated) {
@@ -4070,6 +4116,7 @@ export async function runMeshCommand(
             delegatedTo: delegated.nodeId ?? null,
             rpcUrl: delegated.rpcUrl ?? null,
             acceptedAt: new Date().toISOString(),
+            traceId: meshTrace.traceId,
           },
           dependencies,
           env,
@@ -4082,6 +4129,7 @@ export async function runMeshCommand(
             topic,
             delegatedTo: delegated.nodeId ?? null,
             completedAt: new Date().toISOString(),
+            traceId: meshTrace.traceId,
           },
           dependencies,
           env,
@@ -4107,6 +4155,7 @@ export async function runMeshCommand(
           delegatedTo: delegated.nodeId ?? null,
           reason: delegated.reason ?? 'delegation_failed',
           failedAt: new Date().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -4119,6 +4168,7 @@ export async function runMeshCommand(
           topic,
           reason: delegated.reason ?? 'delegation_failed',
           fallbackAt: new Date().toISOString(),
+          traceId: meshTrace.traceId,
         },
         dependencies,
         env,
@@ -4130,6 +4180,69 @@ export async function runMeshCommand(
         writeStdout(chalk.yellow(`Delegation unavailable: ${delegated.reason ?? 'unknown'}.\n`));
       }
       return delegated.delegated ? 0 : 1;
+    }
+
+    if (options.action === 'debug') {
+      const homeDir = resolveHomeDir(env);
+      const defaultBundlePath = join(homeDir, '.lifeos', `mesh-debug-${Date.now()}.json`);
+      const bundlePath = options.bundlePath?.trim() || defaultBundlePath;
+      const meshStatePath = join(homeDir, '.lifeos', 'mesh.json');
+      const heartbeatStatePath = join(homeDir, '.lifeos', 'mesh-heartbeats.json');
+      const leaderSnapshotPath = join(homeDir, '.lifeos', 'mesh-leader.json');
+
+      const [storedState, heartbeatState, leaderSnapshot, liveStatus] = await Promise.all([
+        readMeshState({ env }),
+        readMeshHeartbeatState({ env }),
+        readMeshLeaderSnapshot({ env }),
+        meshCoordinator.getLiveStatus(),
+      ]);
+
+      const bundle = {
+        generatedAt: new Date().toISOString(),
+        nodeEnv: {
+          nodeId: env.LIFEOS_MESH_NODE_ID ?? null,
+          role: env.LIFEOS_MESH_ROLE ?? null,
+          rpcHost: env.LIFEOS_MESH_RPC_HOST ?? null,
+          rpcPort: env.LIFEOS_MESH_RPC_PORT ?? null,
+          heartbeatIntervalMs: env.LIFEOS_MESH_HEARTBEAT_INTERVAL_MS ?? null,
+          nodeTtlMs: env.LIFEOS_MESH_NODE_TTL_MS ?? null,
+          leaderLeaseMs: env.LIFEOS_MESH_LEADER_LEASE_MS ?? null,
+          delegationTimeoutMs: env.LIFEOS_MESH_DELEGATION_TIMEOUT_MS ?? null,
+          jwtIssuer: env.LIFEOS_JWT_ISSUER ?? null,
+          jwtAudience: env.LIFEOS_JWT_AUDIENCE ?? null,
+          jwtSecretConfigured: Boolean(env.LIFEOS_JWT_SECRET?.trim()),
+        },
+        paths: {
+          meshStatePath,
+          heartbeatStatePath,
+          leaderSnapshotPath,
+          bundlePath,
+        },
+        storedState,
+        heartbeatState,
+        leaderSnapshot,
+        liveStatus,
+      };
+
+      await mkdir(dirname(bundlePath), { recursive: true });
+      await writeFile(bundlePath, `${JSON.stringify(bundle, null, 2)}\n`, 'utf8');
+
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(bundle, null, 2)}\n`);
+      } else {
+        writeStdout(chalk.bold('LifeOS Mesh Debug Bundle\n'));
+        writeStdout(`${chalk.dim('-'.repeat(32))}\n`);
+        writeStdout(`Bundle path: ${bundlePath}\n`);
+        writeStdout(`Stored nodes: ${storedState.nodes.length}\n`);
+        writeStdout(`Heartbeat nodes: ${heartbeatState.nodes.length}\n`);
+        writeStdout(
+          `Leader: ${leaderSnapshot.leaderId ?? 'none'} (term=${leaderSnapshot.term}, leaseUntil=${leaderSnapshot.leaseUntil ?? 'n/a'})\n`,
+        );
+        writeStdout(
+          `Live status: nodes=${liveStatus.nodes.length}, leaderHealthy=${liveStatus.leaderHealthy ? 'yes' : 'no'}\n`,
+        );
+      }
+      return 0;
     }
 
     if (options.action === 'demo') {
@@ -4743,8 +4856,8 @@ function buildProgram(
 
   program
     .command('mesh')
-    .description('Manage multi-node mesh: join, status, assign, start, delegate, demo')
-    .argument('[action]', 'join | status | assign | start | delegate | demo', 'status')
+    .description('Manage multi-node mesh: join, status, assign, start, delegate, debug, demo')
+    .argument('[action]', 'join | status | assign | start | delegate | debug | demo', 'status')
     .argument('[arg1]', 'Node id for join/start, capability for assign/delegate')
     .argument('[arg2]', 'Node id for assign, goal/payload for delegate')
     .option('--json', 'Output JSON only')
@@ -4757,6 +4870,7 @@ function buildProgram(
     .option('--capabilities <csv>', 'Comma-separated node capabilities for join/start')
     .option('--rpc-host <host>', 'RPC host for join/start')
     .option('--rpc-port <port>', 'RPC port for join/start')
+    .option('--bundle <path>', 'Bundle output path for mesh debug')
     .option('--verbose', 'Show safe debug diagnostics')
     .action(
       async (
@@ -4769,7 +4883,7 @@ function buildProgram(
         if (!normalizedAction) {
           setExitCode(1);
           writeStderr(
-            `${chalk.red.bold('Error:')} Invalid mesh action "${action}". Use join, status, assign, start, delegate, or demo.\n`,
+            `${chalk.red.bold('Error:')} Invalid mesh action "${action}". Use join, status, assign, start, delegate, debug, or demo.\n`,
           );
           return;
         }
@@ -4837,6 +4951,9 @@ function buildProgram(
         }
         if (Number.isFinite(parsedRpcPort)) {
           meshOptions.rpcPort = parsedRpcPort as number;
+        }
+        if (commandOptions.bundle) {
+          meshOptions.bundlePath = commandOptions.bundle;
         }
         const commandExitCode = await runMeshCommand(meshOptions, dependencies);
         setExitCode(commandExitCode);

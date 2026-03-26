@@ -2261,6 +2261,40 @@ test('mesh join, assign, and status commands persist node state', async () => {
   assert.equal(typeof payload.term, 'number');
 });
 
+test('mesh debug writes a bundle with state, heartbeat, and leader snapshots', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-debug-'));
+  const bundlePath = join(baseHome, 'mesh-debug.json');
+
+  const joinExit = await runCli(['mesh', 'join', 'debug-node'], {
+    env: {
+      HOME: baseHome,
+      LIFEOS_MESH_ROLE: 'primary',
+      LIFEOS_MESH_CAPABILITIES: 'goal-planning,research',
+    },
+  });
+  assert.equal(joinExit, 0);
+
+  const debugExit = await runCli(['mesh', 'debug', '--bundle', bundlePath, '--json'], {
+    env: { HOME: baseHome },
+  });
+  assert.equal(debugExit, 0);
+
+  const payload = JSON.parse(await readFile(bundlePath, 'utf8')) as {
+    generatedAt: string;
+    paths: { bundlePath: string };
+    storedState: { nodes: Array<{ nodeId: string }> };
+    heartbeatState: { nodes: Array<{ nodeId: string }> };
+    leaderSnapshot: { term: number };
+    liveStatus: { nodes: Array<{ nodeId: string }> };
+  };
+  assert.equal(payload.paths.bundlePath, bundlePath);
+  assert.equal(typeof payload.generatedAt, 'string');
+  assert.ok(payload.storedState.nodes.some((node) => node.nodeId === 'debug-node'));
+  assert.equal(typeof payload.leaderSnapshot.term, 'number');
+  assert.equal(Array.isArray(payload.heartbeatState.nodes), true);
+  assert.equal(Array.isArray(payload.liveStatus.nodes), true);
+});
+
 test('mesh assign rejects capability that target node does not declare', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-capability-'));
   const stderr: string[] = [];

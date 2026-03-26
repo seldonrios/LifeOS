@@ -177,7 +177,7 @@ export interface TrustCommandOptions {
 }
 
 export interface MeshCommandOptions {
-  action: 'join' | 'status' | 'assign' | 'demo' | 'start' | 'delegate';
+  action: 'join' | 'status' | 'assign' | 'demo' | 'start' | 'delegate' | 'debug';
   nodeId?: string;
   capability?: string;
   topic?: string;
@@ -189,6 +189,7 @@ export interface MeshCommandOptions {
   capabilities?: string[];
   rpcHost?: string;
   rpcPort?: number;
+  bundlePath?: string;
   outputJson: boolean;
   verbose: boolean;
 }
