@@ -8,6 +8,7 @@ This is the canonical contributor guide for LifeOS.
 - Propose features with [Feature request issue form](../.github/ISSUE_TEMPLATE/feature_request.yml)
 - Report docs gaps with [Documentation issue form](../.github/ISSUE_TEMPLATE/docs_issue.yml)
 - Review maintainer expectations in [Maintainer Policy](community/maintainer-policy.md)
+- Follow release versioning and tagging in [Release Policy](community/release-policy.md)
 
 ## Folder Conventions and Navigation
 
@@ -94,3 +95,9 @@ Required checks:
 
 - `git show --name-only HEAD` must include the expected runtime files for your change (for Life Graph runtime/client work, ensure both `packages/life-graph/src/manager.ts` and `packages/life-graph/src/index.ts` are listed).
 - `git status -sb` must be clean before push.
+
+## Release Categories
+
+- `patch`: fixes, docs corrections, and internal hardening without behavior breaks
+- `minor`: additive stable capability changes
+- `major`: breaking behavior or interface changes

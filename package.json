@@ -18,7 +18,10 @@
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",
     "typecheck": "tsc --build tsconfig.packages.json",
-    "scaffold": "tsx scripts/scaffold.ts"
+    "scaffold": "tsx scripts/scaffold.ts",
+    "changeset": "changeset",
+    "release:status": "changeset status --verbose",
+    "release:version": "changeset version"
   },
   "lint-staged": {
     "packages/**/*.{ts,tsx}": [
@@ -38,11 +41,13 @@
     ]
   },
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@commitlint/cli": "^19.0.0",
     "@commitlint/config-conventional": "^19.0.0",
     "@types/node": "^22",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
     "@typescript-eslint/parser": "^8.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "eslint": "^9.0.0",
     "eslint-config-prettier": "^9.0.0",
     "husky": "^9.0.0",
@@ -50,7 +55,6 @@
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^3.0.0",
-    "@vitest/coverage-v8": "^3.0.0"
+    "vitest": "^3.0.0"
   }
 }

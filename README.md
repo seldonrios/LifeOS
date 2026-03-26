@@ -382,6 +382,8 @@ Start here:
 - [Goal Interpreter CLI Demo](docs/phase-1/goal-interpreter-cli-demo.md)
 - [Reference Architecture](docs/phase-1/reference-architecture.md)
 - [Contributing Guide](CONTRIBUTING.md)
+- [Release Policy](docs/community/release-policy.md)
+- [Changelog](CHANGELOG.md)
 - [Module Manifest Spec](docs/module-spec/lifeos-manifest.md)
 - [Contributor Map](docs/community/contributor-map.md)
 
