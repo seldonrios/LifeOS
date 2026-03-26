@@ -4,6 +4,7 @@ This guide is the quick start for contributors shipping modules and core improve
 
 For deeper architecture and repository conventions, also see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 Release/versioning behavior is documented in [docs/community/release-policy.md](docs/community/release-policy.md).
+Test expectations are documented in [docs/testing/test-taxonomy.md](docs/testing/test-taxonomy.md).
 
 ## Local Setup
 

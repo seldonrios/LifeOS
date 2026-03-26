@@ -7,9 +7,19 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-03-26
+
 ### Added
 
-- Changesets-based release versioning flow and release policy documentation.
+- GitHub issue forms for bug, feature, and documentation intake with explicit trust/reporting links.
+- Maintainer policy, release policy, and test taxonomy documentation for contributor and operator clarity.
+- Changesets release versioning flow, changelog maintenance baseline, and tag-driven GitHub release workflow.
+- Cross-platform CLI smoke workflow to validate first-run non-interactive commands on Linux and Windows.
+
+### Changed
+
+- README and setup guidance now emphasize recommended vs advanced onboarding paths and Phase 2 productization goals.
+- Contributor guidance now links canonical intake, governance, release, and testing contracts.
 
 ## [0.2.1] - 2026-03-26
 

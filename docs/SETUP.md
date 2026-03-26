@@ -133,6 +133,30 @@ Use this checklist before opening a PR:
 - Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
 - Startup diagnostics report is emitted (full stack path)
 
+## First-Run Journey Smoke Check
+
+Run this exact sequence to verify the recommended contributor path:
+
+```bash
+pnpm install
+pnpm run validate
+pnpm lifeos demo --dry-run
+pnpm lifeos status --json
+```
+
+Expected outcomes:
+
+- `pnpm install` completes with no lockfile drift errors
+- `pnpm run validate` exits 0
+- `pnpm lifeos demo --dry-run` prints demo wiring output without mutating graph state
+- `pnpm lifeos status --json` returns valid JSON and reports runtime/storage metadata
+
+What next:
+
+- run `pnpm lifeos init` for guided local setup
+- run `pnpm lifeos task list` to inspect generated task state
+- run `pnpm lifeos trust status` to inspect local-first trust posture
+
 ## Troubleshooting
 
 | Symptom                                                                                 | Cause                                                            | Fix                                                                                                                                                     |

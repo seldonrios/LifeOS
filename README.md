@@ -350,15 +350,16 @@ Modules that follow the official spec get this badge:
 
 ## 🧭 Project Direction
 
-LifeOS is currently **docs-first + working CLI MVP**.
+LifeOS is in **Phase 2: First Production-Ready OSS Release**.
 
-Short-term focus:
+Current focus:
 
-- make single-node workflows solid and fast
-- strengthen life graph quality and schema safety
-- improve module ecosystem and event-driven automation
+- keep onboarding fast and unambiguous for new users
+- preserve one canonical validation gate in local and CI flows
+- improve contributor trust with clearer governance and release contracts
+- harden repeatable release operations and first-run smoke confidence
 
-Long-term direction:
+Next direction:
 
 - richer module ecosystem (health, finance, calendar, voice)
 - multi-node/federated personal AI patterns
@@ -384,6 +385,8 @@ Start here:
 - [Contributing Guide](CONTRIBUTING.md)
 - [Release Policy](docs/community/release-policy.md)
 - [Changelog](CHANGELOG.md)
+- [Test Taxonomy](docs/testing/test-taxonomy.md)
+- [Roadmap](docs/vision/roadmap.md)
 - [Module Manifest Spec](docs/module-spec/lifeos-manifest.md)
 - [Contributor Map](docs/community/contributor-map.md)
 

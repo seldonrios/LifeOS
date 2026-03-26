@@ -2,11 +2,11 @@
 
 ## Purpose
 
-Describe the staged development path for LifeOS and distinguish current Phase 1 work from future direction.
+Describe the staged development path for LifeOS and clarify what is active now.
 
-## Phase 1: Personal AI Node
+## Phase 1: Personal AI Node (Completed Foundation)
 
-Current focus. Build the local foundation:
+Delivered local-first core foundations:
 
 - reasoning
 - life graph
@@ -18,13 +18,20 @@ Current focus. Build the local foundation:
 
 Primary value: personal productivity and local orchestration.
 
-## Phase 2: Agent Mesh
+## Phase 2: First Production-Ready OSS Release (Current)
 
-Future direction. Expand the bounded Phase 1 agent model into a richer specialist mesh with stronger autonomy, memory, and coordination patterns.
+Current focus is productization and contributor trust:
 
-Primary value: handling more complex multi-step activity.
+- one canonical developer workflow (`pnpm run validate`)
+- predictable setup paths (recommended vs advanced)
+- governance and contribution intake clarity
+- baseline security and supply-chain automation
+- repeatable release process with changelog + tags
+- confidence checks for the first-run CLI journey
 
-## Phase 3: Local AI Networks
+Primary value: easier adoption, safer operation, and repeatable contribution.
+
+## Phase 3: Mesh + Ecosystem Scale
 
 Future direction. Enable peer-level collaboration between trusted nodes and communities.
 
@@ -44,4 +51,4 @@ Primary value: networked intelligence at broad scale.
 
 ## Roadmap Rule
 
-Only Phase 1 should shape current implementation work in this repository. Later phases provide architectural context, not delivery commitments.
+Only the current phase should drive active milestone commitments. Later phases provide architectural context, not release promises.

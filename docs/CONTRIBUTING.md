@@ -9,6 +9,7 @@ This is the canonical contributor guide for LifeOS.
 - Report docs gaps with [Documentation issue form](../.github/ISSUE_TEMPLATE/docs_issue.yml)
 - Review maintainer expectations in [Maintainer Policy](community/maintainer-policy.md)
 - Follow release versioning and tagging in [Release Policy](community/release-policy.md)
+- Follow test expectations in [Test Taxonomy](testing/test-taxonomy.md)
 
 ## Folder Conventions and Navigation
 

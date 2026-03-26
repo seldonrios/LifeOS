@@ -178,6 +178,26 @@ test('goal command prints human output, starts spinner, and saves by default', a
   assert.equal(stderr.length, 0);
 });
 
+test('version flag prints version string', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['--version'], {
+    env: {},
+    cwd: () => '/repo',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /\d+\.\d+\.\d+/);
+  assert.equal(stderr.length, 0);
+});
+
 test('--json outputs only JSON to stdout and suppresses spinner', async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];
