@@ -1,0 +1,27 @@
+name: Module Validate
+
+on:
+  pull_request:
+    paths:
+      - 'packages/**'
+      - 'templates/module/**'
+      - 'community-modules.json'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run typecheck
+      - run: pnpm lifeos module validate --all
+      - run: pnpm lifeos module certify --dry-run
+      - run: pnpm exec vitest run packages/cli --coverage --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100
+      - run: pnpm run test:graph -- --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100
+      - run: pnpm run test:loader -- --coverage.thresholds.lines=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100 --coverage.thresholds.statements=100

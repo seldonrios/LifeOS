@@ -10,7 +10,9 @@
     "prepare": "husky install .husky",
     "lifeos": "pnpm exec tsx packages/cli/src/index.ts",
     "validate": "pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
-    "test": "pnpm --filter @lifeos/core test && pnpm --filter @lifeos/event-bus test && pnpm --filter @lifeos/life-graph test && pnpm --filter @lifeos/goal-engine test && pnpm --filter @lifeos/mesh test && pnpm --filter @lifeos/module-loader test && pnpm --filter @lifeos/module-cache test && pnpm --filter @lifeos/calendar-module test && pnpm --filter @lifeos/scheduler-module test && pnpm --filter @lifeos/reminder-module test && pnpm --filter @lifeos/research-module test && pnpm --filter @lifeos/notes-module test && pnpm --filter @lifeos/weather-module test && pnpm --filter @lifeos/news-module test && pnpm --filter @lifeos/email-summarizer-module test && pnpm --filter @lifeos/personality test && pnpm --filter @lifeos/orchestrator test && pnpm --filter @lifeos/sync-core test && pnpm --filter @lifeos/voice-core test && pnpm --filter @lifeos/google-bridge test && pnpm --filter @lifeos/cli test",
+    "test": "vitest run",
+    "test:graph": "vitest run packages/life-graph --coverage",
+    "test:loader": "vitest run packages/module-loader --coverage",
     "lint": "eslint \"packages/{calendar-module,cli,core,goal-engine,google-bridge,life-graph,mesh,module-cache,news-module,notes-module,orchestrator,personality,research-module,scheduler-module,sync-core,voice-core,weather-module}/src/**/*.ts\" \"modules/email-summarizer/src/**/*.ts\" && tsx scripts/ruff-task.ts check",
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",
@@ -46,6 +48,8 @@
     "lint-staged": "^15.0.0",
     "prettier": "^3.0.0",
     "tsx": "^4.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "vitest": "^3.0.0",
+    "@vitest/coverage-v8": "^3.0.0"
   }
 }

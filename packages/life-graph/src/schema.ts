@@ -131,6 +131,39 @@ export const MemoryEntrySchema = z
   })
   .strict();
 
+const RiskStatusSchema = z.enum(['green', 'yellow', 'red']);
+
+const RiskRadarItemSchema = z
+  .object({
+    id: z.number().int().positive(),
+    name: z.string().trim().min(1),
+    status: RiskStatusSchema,
+    lastChecked: IsoDateTimeSchema,
+    details: z.string().trim().min(1).optional(),
+  })
+  .strict();
+
+const RiskRadarSchema = z
+  .object({
+    overallHealth: RiskStatusSchema,
+    lastUpdated: IsoDateTimeSchema,
+    risks: z.array(RiskRadarItemSchema),
+    recommendations: z.array(z.string().trim().min(1)).default([]),
+  })
+  .strict();
+
+const LifeGraphSystemMetaSchema = z
+  .object({
+    riskRadar: RiskRadarSchema.optional(),
+  })
+  .strict();
+
+const LifeGraphSystemNodeSchema = z
+  .object({
+    meta: LifeGraphSystemMetaSchema.default({}),
+  })
+  .strict();
+
 export const GoalPlanSchema = z
   .object({
     id: z.string().trim().min(1),
@@ -156,6 +189,7 @@ export const LifeGraphDocumentSchema = z
     healthMetricEntries: z.array(HealthMetricEntrySchema).default([]),
     healthDailyStreaks: z.array(HealthDailyStreakSchema).default([]),
     memory: z.array(MemoryEntrySchema).default([]),
+    system: LifeGraphSystemNodeSchema.default({ meta: {} }),
   })
   .strict();
 

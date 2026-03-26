@@ -3,7 +3,9 @@ import { join, resolve } from 'node:path';
 
 const MODULE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
-const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
+const PACKAGE_REQUIREMENT_PATTERN =
+  /^@lifeos\/[a-z0-9-]+(?:@(?:\^|~)?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)?$/;
+const SEMVER_RANGE_PATTERN = /^(?:\^|~)?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
 const SUB_FEATURE_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
@@ -43,6 +45,7 @@ interface RawManifest {
   name: string;
   version: string;
   author: string;
+  graphVersion?: string;
   permissions: RawManifestPermissions;
   resources: RawManifestResources;
   subFeatures?: string[];
@@ -102,6 +105,9 @@ function validateManifest(raw: unknown): string[] {
     name: typeof record.name === 'string' ? record.name.trim() : '',
     version: typeof record.version === 'string' ? record.version.trim() : '',
     author: typeof record.author === 'string' ? record.author.trim() : '',
+    ...(typeof record.graphVersion === 'string'
+      ? { graphVersion: record.graphVersion.trim() }
+      : {}),
     permissions: permissionRecord
       ? {
           graph: toStringArray(permissionRecord.graph),
@@ -146,6 +152,9 @@ function validateManifest(raw: unknown): string[] {
   if (manifest.author.length === 0) {
     errors.push('manifest.author is required.');
   }
+  if (manifest.graphVersion && !SEMVER_RANGE_PATTERN.test(manifest.graphVersion)) {
+    errors.push('manifest.graphVersion must be a semver range (example: ^2.0.0).');
+  }
   if (!CATEGORY_PATTERN.test(manifest.category)) {
     errors.push('manifest.category must be lowercase kebab-case.');
   }
@@ -156,8 +165,10 @@ function validateManifest(raw: unknown): string[] {
     errors.push('manifest.resources.memory must be one of: low, medium.');
   }
   for (const requiredPackage of manifest.requires) {
-    if (!PACKAGE_NAME_PATTERN.test(requiredPackage)) {
-      errors.push(`manifest.requires entry "${requiredPackage}" must be "@lifeos/<package>".`);
+    if (!PACKAGE_REQUIREMENT_PATTERN.test(requiredPackage)) {
+      errors.push(
+        `manifest.requires entry "${requiredPackage}" must be "@lifeos/<package>" or "@lifeos/<package>@<semver-range>".`,
+      );
     }
   }
   for (const tag of manifest.tags) {
@@ -217,6 +228,7 @@ export async function createModuleScaffold(
   }
 
   await mkdir(join(modulePath, 'src'), { recursive: true });
+  await mkdir(join(modulePath, 'migrations'), { recursive: true });
 
   const manifestPath = join(modulePath, 'lifeos.json');
   const manifest = {
@@ -224,17 +236,22 @@ export async function createModuleScaffold(
     version: '0.1.0',
     author: options.author,
     description: `LifeOS module: ${normalizedName}`,
+    graphVersion: '^2.0.0',
     permissions: {
       graph: ['read'],
       network: [],
       voice: [],
-      events: ['subscribe:lifeos.tick'],
+      events: [
+        'subscribe:lifeos.tick',
+        `publish:module.${normalizedName}.success`,
+        `publish:module.${normalizedName}.error`,
+      ],
     },
     resources: {
       cpu: 'low',
       memory: 'low',
     },
-    requires: ['@lifeos/voice-core', '@lifeos/life-graph'],
+    requires: ['@lifeos/voice-core@^1.0.0', '@lifeos/life-graph@^1.0.0'],
     category: 'custom',
     tags: ['custom'],
   };
@@ -246,7 +263,18 @@ export const ${moduleId}Module: LifeOSModule = {
   id: '${normalizedName}',
   async init(context) {
     await context.subscribe('lifeos.tick', async () => {
-      context.log('[${normalizedName}] reacted to lifeos.tick');
+      try {
+        context.log('[${normalizedName}] reacted to lifeos.tick');
+        await context.publish('module.${normalizedName}.success', { handled: 'lifeos.tick' }, '${normalizedName}');
+      } catch (error: unknown) {
+        await context.publish(
+          'module.${normalizedName}.error',
+          {
+            message: error instanceof Error ? error.message : String(error),
+          },
+          '${normalizedName}',
+        );
+      }
     });
   },
 };
@@ -259,16 +287,78 @@ import type { LifeOSModule } from '@lifeos/module-loader';
 
 import { ${moduleId}Module } from './index';
 
-test('${normalizedName} exports a valid module shape', async () => {
+test('${normalizedName} reacts to tick and publishes module events', async () => {
   const moduleCandidate = ${moduleId}Module as LifeOSModule;
   assert.equal(moduleCandidate.id, '${normalizedName}');
   assert.equal(typeof moduleCandidate.init, 'function');
+
+  const subscriptions = new Map<string, (event: unknown) => Promise<void> | void>();
+  const published: string[] = [];
+  const context: Parameters<LifeOSModule['init']>[0] = {
+    env: process.env,
+    eventBus: {
+      async publish() {
+        return;
+      },
+      async subscribe() {
+        return;
+      },
+      async close() {
+        return;
+      },
+      getTransport() {
+        return 'in-memory';
+      },
+    },
+    createLifeGraphClient() {
+      throw new Error('not used in scaffold test');
+    },
+    async subscribe(topic, handler) {
+      subscriptions.set(topic, handler as (event: unknown) => Promise<void> | void);
+    },
+    async publish(topic) {
+      published.push(topic);
+      return {
+        id: 'evt_test',
+        type: topic,
+        timestamp: new Date().toISOString(),
+        source: '${normalizedName}',
+        version: '0.1.0',
+        data: {},
+      };
+    },
+    log() {
+      return;
+    },
+  };
+
+  await moduleCandidate.init(context);
+  const handler = subscriptions.get('lifeos.tick');
+  assert.ok(handler);
+  await handler?.({});
+  assert.ok(published.includes('module.${normalizedName}.success'));
 });
+`;
+
+  const readmeSource = `# ${normalizedName}
+
+Generated with LifeOS module scaffold.
+
+## Modularity Risk Checklist
+
+- [ ] \`requires\` uses semver ranges in \`lifeos.json\`
+- [ ] Includes empty \`migrations/\` folder
+- [ ] Emits \`module.${normalizedName}.success\` and \`module.${normalizedName}.error\` events
+- [ ] Passes \`pnpm lifeos module validate ${normalizedName}\`
+- [ ] Tested against latest compatibility matrix
+- [ ] Resources (\`cpu\`, \`memory\`) are declared in manifest
 `;
 
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
   await writeFile(join(modulePath, 'src', 'index.ts'), source, 'utf8');
   await writeFile(join(modulePath, 'src', 'index.test.ts'), testSource, 'utf8');
+  await writeFile(join(modulePath, 'README.md'), readmeSource, 'utf8');
+  await writeFile(join(modulePath, 'migrations', '.gitkeep'), '', 'utf8');
 
   return {
     moduleName: normalizedName,

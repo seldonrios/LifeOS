@@ -88,6 +88,7 @@ export interface StatusCommandOptions {
   outputJson: boolean;
   graphPath: string;
   verbose: boolean;
+  risks?: boolean;
 }
 
 export interface ReviewCommandOptions {
@@ -116,6 +117,8 @@ export interface DemoCommandOptions {
   model: string;
   graphPath: string;
   verbose: boolean;
+  dryRun?: boolean;
+  modules?: string;
 }
 
 export interface EventsListenCommandOptions {
@@ -143,13 +146,16 @@ export interface ModuleCommandOptions {
     | 'authorize';
   moduleName?: string;
   subFeatures?: GoogleBridgeSubFeature[];
+  validateAll?: boolean;
+  dryRun?: boolean;
 }
 
 export interface MarketplaceCommandOptions {
-  action: 'list' | 'search' | 'refresh';
+  action: 'list' | 'search' | 'refresh' | 'compatibility';
   term?: string;
   outputJson: boolean;
   certifiedOnly: boolean;
+  outputPath?: string;
 }
 
 export interface MeshCommandOptions {

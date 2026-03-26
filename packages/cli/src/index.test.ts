@@ -457,6 +457,37 @@ test('status --json emits summary JSON', async () => {
   assert.equal(parsed.activeGoals[0]?.title, 'Board Meeting Prep');
 });
 
+test('status --risks --json emits modularity risk radar payload', async () => {
+  const stdout: string[] = [];
+  const graph = sampleGraph();
+
+  const exitCode = await runCli(['status', '--risks', '--json'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return graph;
+        },
+        async saveGraph(nextGraph: typeof graph) {
+          Object.assign(graph, nextGraph);
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as {
+    modularityRiskRadar: {
+      overallHealth: string;
+      risks: Array<{ id: number; name: string; status: string }>;
+    };
+  };
+  assert.equal(Array.isArray(parsed.modularityRiskRadar.risks), true);
+  assert.equal(parsed.modularityRiskRadar.risks.length, 8);
+  assert.equal(typeof parsed.modularityRiskRadar.overallHealth, 'string');
+});
+
 test('memory status --json emits memory counters', async () => {
   const stdout: string[] = [];
 
@@ -779,6 +810,22 @@ test('demo runs goal then tick and prints completion guidance', async () => {
   assert.match(output, /Tick complete\. Checked 1 task\(s\), no overdue tasks\./);
   assert.match(output, /Demo complete!/);
   assert.match(output, /Next: `lifeos status`, `lifeos task list`, `lifeos modules`/);
+});
+
+test('demo --dry-run exits without executing goal/tick flow', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['demo', '--dry-run', '--modules', 'all'], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    interpretGoal: async () => {
+      throw new Error('goal flow should not execute in dry-run');
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Demo dry-run complete/);
 });
 
 test('voice demo runs the voice core against a simulated utterance', async () => {
@@ -1296,6 +1343,16 @@ test('module create scaffolds a module with lifeos.json and source template', as
   assert.equal(manifest.author, 'octocat');
   assert.equal(manifest.resources.cpu, 'low');
   assert.equal(manifest.resources.memory, 'low');
+
+  const migrationsKeep = await readFile(
+    join(baseDir, 'modules', 'my-awesome-module', 'migrations', '.gitkeep'),
+    'utf8',
+  );
+  assert.equal(migrationsKeep, '');
+
+  const readme = await readFile(join(baseDir, 'modules', 'my-awesome-module', 'README.md'), 'utf8');
+  assert.match(readme, /Modularity Risk Checklist/);
+  assert.match(readme, /module\.my-awesome-module\.success/);
 });
 
 test('module validate rejects malformed manifest', async () => {
@@ -1941,6 +1998,25 @@ test('marketplace search requires a term', async () => {
   });
   assert.equal(exitCode, 1);
   assert.match(stderr.join(''), /Search term is required/i);
+});
+
+test('marketplace compatibility writes matrix payload to output file', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-marketplace-compat-'));
+  const outputPath = join(baseDir, 'compatibility-matrix.json');
+
+  const exitCode = await runCli(['marketplace', 'compatibility', '--output', outputPath], {
+    cwd: () => baseDir,
+  });
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(await readFile(outputPath, 'utf8')) as {
+    generatedAt: string;
+    total: number;
+    modules: Array<{ id: string; repo: string }>;
+  };
+  assert.equal(typeof payload.generatedAt, 'string');
+  assert.equal(Array.isArray(payload.modules), true);
+  assert.ok(payload.total >= 0);
 });
 
 test('mesh join, assign, and status commands persist node state', async () => {

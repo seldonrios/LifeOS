@@ -1,5 +1,6 @@
+import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import {
@@ -28,8 +29,10 @@ export interface AppendPlanInput<TPlan = Record<string, unknown>> {
   createdAt?: string;
 }
 
-function isErrnoException(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error;
+interface DbContext {
+  graphPath: string;
+  dbPath: string;
+  db: Database.Database;
 }
 
 function stripUtf8Bom(content: string): string {
@@ -37,23 +40,6 @@ function stripUtf8Bom(content: string): string {
     return content.slice(1);
   }
   return content;
-}
-
-function createEmptyDocument(now: Date = new Date()): LifeGraphDocument {
-  return {
-    version: LIFE_GRAPH_VERSION,
-    plans: [],
-    calendarEvents: [],
-    notes: [],
-    researchResults: [],
-    weatherSnapshots: [],
-    newsDigests: [],
-    emailDigests: [],
-    healthMetricEntries: [],
-    healthDailyStreaks: [],
-    memory: [],
-    updatedAt: now.toISOString(),
-  };
 }
 
 function sanitizeString(value: unknown): string | null {
@@ -134,10 +120,12 @@ function normalizeTaskArray(plan: GoalPlanSource): LifeGraphTask[] {
     if (dueDate) {
       normalizedTask.dueDate = dueDate;
     }
+
     const voiceTriggered = toBooleanOrUndefined(taskData.voiceTriggered);
     if (voiceTriggered !== undefined) {
       normalizedTask.voiceTriggered = voiceTriggered;
     }
+
     const suggestedReschedule = toIsoDateTimeOrUndefined(taskData.suggestedReschedule);
     if (suggestedReschedule) {
       normalizedTask.suggestedReschedule = suggestedReschedule;
@@ -200,6 +188,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       healthMetricEntries: [],
       healthDailyStreaks: [],
       memory: [],
+      system: { meta: {} },
     };
   }
 
@@ -218,6 +207,7 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       healthMetricEntries: [],
       healthDailyStreaks: [],
       memory: [],
+      system: { meta: {} },
     };
   }
 
@@ -226,146 +216,436 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
   );
 }
 
+function parseJson<T>(value: string | null, fallback: T): T {
+  if (!value) {
+    return fallback;
+  }
+
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+function toDbPath(graphPath: string): string {
+  if (graphPath.toLowerCase().endsWith('.json')) {
+    return `${graphPath.slice(0, -5)}.db`;
+  }
+  return `${graphPath}.db`;
+}
+
+function toSerializableGraph(graph: LifeGraphDocument): LifeGraphDocument {
+  return {
+    version: LIFE_GRAPH_VERSION,
+    updatedAt: graph.updatedAt,
+    plans: graph.plans,
+    calendarEvents: graph.calendarEvents ?? [],
+    notes: graph.notes ?? [],
+    researchResults: graph.researchResults ?? [],
+    weatherSnapshots: graph.weatherSnapshots ?? [],
+    newsDigests: graph.newsDigests ?? [],
+    emailDigests: graph.emailDigests ?? [],
+    healthMetricEntries: graph.healthMetricEntries ?? [],
+    healthDailyStreaks: graph.healthDailyStreaks ?? [],
+    memory: graph.memory ?? [],
+    system: graph.system ?? { meta: {} },
+  };
+}
+
+function hasExistingGraphData(db: Database.Database): boolean {
+  const metaCount = db.prepare('SELECT COUNT(*) as count FROM meta').get() as { count: number };
+  if (metaCount.count > 0) {
+    return true;
+  }
+
+  const plansCount = db.prepare('SELECT COUNT(*) as count FROM plans').get() as { count: number };
+  return plansCount.count > 0;
+}
+
 export class LifeGraphManager {
+  private readonly dbByPath = new Map<string, Database.Database>();
+
+  private readonly initializationByPath = new Map<string, Promise<void>>();
+
   constructor(private readonly options: LifeGraphManagerOptions = {}) {}
 
   private resolvePath(graphPath?: string): string {
-    return resolveLifeGraphPath(graphPath, this.options);
+    const resolvedPath = resolveLifeGraphPath(graphPath, this.options);
+    if (!resolvedPath || resolvedPath.trim().length === 0) {
+      throw new Error('Invalid graph path: path cannot be empty');
+    }
+    return resolvedPath;
+  }
+
+  private getDb(dbPath: string): Database.Database {
+    const existing = this.dbByPath.get(dbPath);
+    if (existing) {
+      return existing;
+    }
+
+    const db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    this.dbByPath.set(dbPath, db);
+    return db;
+  }
+
+  private initializeSchema(db: Database.Database): void {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS plans (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        deadline TEXT,
+        createdAt TEXT NOT NULL,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS calendar_events (
+        id TEXT PRIMARY KEY,
+        start TEXT,
+        "end" TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS notes (
+        id TEXT PRIMARY KEY,
+        createdAt TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS research_results (
+        id TEXT PRIMARY KEY,
+        threadId TEXT,
+        savedAt TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS weather_snapshots (
+        id TEXT PRIMARY KEY,
+        timestamp TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS news_digests (
+        id TEXT PRIMARY KEY,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS email_digests (
+        id TEXT PRIMARY KEY,
+        receivedAt TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS health_metric_entries (
+        id TEXT PRIMARY KEY,
+        loggedAt TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS health_daily_streaks (
+        id TEXT PRIMARY KEY,
+        lastLoggedDate TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS memory_entries (
+        id TEXT PRIMARY KEY,
+        type TEXT NOT NULL,
+        timestamp TEXT,
+        data TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_plans_created_at ON plans(createdAt);
+      CREATE INDEX IF NOT EXISTS idx_notes_created_at ON notes(createdAt);
+      CREATE INDEX IF NOT EXISTS idx_research_saved_at ON research_results(savedAt);
+      CREATE INDEX IF NOT EXISTS idx_weather_timestamp ON weather_snapshots(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_email_received_at ON email_digests(receivedAt);
+      CREATE INDEX IF NOT EXISTS idx_health_metric_logged_at ON health_metric_entries(loggedAt);
+      CREATE INDEX IF NOT EXISTS idx_health_streak_last_logged_date ON health_daily_streaks(lastLoggedDate);
+      CREATE INDEX IF NOT EXISTS idx_memory_timestamp ON memory_entries(timestamp);
+      CREATE INDEX IF NOT EXISTS idx_memory_type ON memory_entries(type);
+    `);
+  }
+
+  private writeGraphToDb(db: Database.Database, graph: LifeGraphDocument): void {
+    const document = toSerializableGraph(graph);
+
+    const transaction = db.transaction((doc: LifeGraphDocument) => {
+      db.exec(`
+        DELETE FROM plans;
+        DELETE FROM calendar_events;
+        DELETE FROM notes;
+        DELETE FROM research_results;
+        DELETE FROM weather_snapshots;
+        DELETE FROM news_digests;
+        DELETE FROM email_digests;
+        DELETE FROM health_metric_entries;
+        DELETE FROM health_daily_streaks;
+        DELETE FROM memory_entries;
+      `);
+
+      const upsertMeta = db.prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)');
+      upsertMeta.run('version', doc.version);
+      upsertMeta.run('updatedAt', doc.updatedAt);
+      upsertMeta.run('system', JSON.stringify(doc.system ?? { meta: {} }));
+
+      const insertPlan = db.prepare(
+        'INSERT OR REPLACE INTO plans (id, title, description, deadline, createdAt, data) VALUES (?, ?, ?, ?, ?, ?)',
+      );
+      const insertCalendarEvent = db.prepare(
+        'INSERT OR REPLACE INTO calendar_events (id, start, "end", data) VALUES (?, ?, ?, ?)',
+      );
+      const insertNote = db.prepare(
+        'INSERT OR REPLACE INTO notes (id, createdAt, data) VALUES (?, ?, ?)',
+      );
+      const insertResearch = db.prepare(
+        'INSERT OR REPLACE INTO research_results (id, threadId, savedAt, data) VALUES (?, ?, ?, ?)',
+      );
+      const insertWeather = db.prepare(
+        'INSERT OR REPLACE INTO weather_snapshots (id, timestamp, data) VALUES (?, ?, ?)',
+      );
+      const insertNews = db.prepare('INSERT OR REPLACE INTO news_digests (id, data) VALUES (?, ?)');
+      const insertEmail = db.prepare(
+        'INSERT OR REPLACE INTO email_digests (id, receivedAt, data) VALUES (?, ?, ?)',
+      );
+      const insertHealthMetric = db.prepare(
+        'INSERT OR REPLACE INTO health_metric_entries (id, loggedAt, data) VALUES (?, ?, ?)',
+      );
+      const insertHealthStreak = db.prepare(
+        'INSERT OR REPLACE INTO health_daily_streaks (id, lastLoggedDate, data) VALUES (?, ?, ?)',
+      );
+      const insertMemory = db.prepare(
+        'INSERT OR REPLACE INTO memory_entries (id, type, timestamp, data) VALUES (?, ?, ?, ?)',
+      );
+
+      for (const plan of doc.plans) {
+        insertPlan.run(
+          plan.id,
+          plan.title,
+          plan.description,
+          plan.deadline,
+          plan.createdAt,
+          JSON.stringify(plan),
+        );
+      }
+      for (const event of doc.calendarEvents ?? []) {
+        insertCalendarEvent.run(event.id, event.start, event.end, JSON.stringify(event));
+      }
+      for (const note of doc.notes ?? []) {
+        insertNote.run(note.id, note.createdAt, JSON.stringify(note));
+      }
+      for (const result of doc.researchResults ?? []) {
+        insertResearch.run(result.id, result.threadId, result.savedAt, JSON.stringify(result));
+      }
+      for (const snapshot of doc.weatherSnapshots ?? []) {
+        insertWeather.run(snapshot.id, snapshot.timestamp, JSON.stringify(snapshot));
+      }
+      for (const digest of doc.newsDigests ?? []) {
+        insertNews.run(digest.id, JSON.stringify(digest));
+      }
+      for (const digest of doc.emailDigests ?? []) {
+        insertEmail.run(digest.id, digest.receivedAt, JSON.stringify(digest));
+      }
+      for (const entry of doc.healthMetricEntries ?? []) {
+        insertHealthMetric.run(entry.id, entry.loggedAt, JSON.stringify(entry));
+      }
+      for (const streak of doc.healthDailyStreaks ?? []) {
+        insertHealthStreak.run(streak.id, streak.lastLoggedDate, JSON.stringify(streak));
+      }
+      for (const entry of doc.memory ?? []) {
+        insertMemory.run(entry.id, entry.type, entry.timestamp, JSON.stringify(entry));
+      }
+    });
+
+    transaction(document);
+  }
+
+  private readGraphFromDb(db: Database.Database): LifeGraphDocument {
+    const metaRows = db
+      .prepare("SELECT key, value FROM meta WHERE key IN ('version', 'updatedAt', 'system')")
+      .all() as Array<{ key: string; value: string }>;
+
+    const meta = new Map(metaRows.map((row) => [row.key, row.value]));
+
+    const plans = (
+      db
+        .prepare(
+          'SELECT id, title, description, deadline, createdAt, data FROM plans ORDER BY rowid ASC',
+        )
+        .all() as Array<{
+        id: string;
+        title: string;
+        description: string;
+        deadline: string | null;
+        createdAt: string;
+        data: string;
+      }>
+    ).map((row) => {
+      const fromJson = parseJson<GoalPlan | null>(row.data, null);
+      if (fromJson) {
+        return fromJson;
+      }
+
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        deadline: row.deadline,
+        tasks: [],
+        createdAt: row.createdAt,
+      };
+    });
+
+    const calendarEvents = (
+      db.prepare('SELECT data FROM calendar_events ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const notes = (
+      db.prepare('SELECT data FROM notes ORDER BY rowid ASC').all() as Array<{ data: string }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const researchResults = (
+      db.prepare('SELECT data FROM research_results ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const weatherSnapshots = (
+      db.prepare('SELECT data FROM weather_snapshots ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const newsDigests = (
+      db.prepare('SELECT data FROM news_digests ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const emailDigests = (
+      db.prepare('SELECT data FROM email_digests ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const healthMetricEntries = (
+      db.prepare('SELECT data FROM health_metric_entries ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const healthDailyStreaks = (
+      db.prepare('SELECT data FROM health_daily_streaks ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const memory = (
+      db.prepare('SELECT data FROM memory_entries ORDER BY rowid ASC').all() as Array<{
+        data: string;
+      }>
+    ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
+
+    const system = parseJson<Record<string, unknown>>(meta.get('system') ?? null, { meta: {} });
+
+    const candidate = {
+      version: meta.get('version') ?? LIFE_GRAPH_VERSION,
+      updatedAt: meta.get('updatedAt') ?? new Date().toISOString(),
+      plans,
+      calendarEvents,
+      notes,
+      researchResults,
+      weatherSnapshots,
+      newsDigests,
+      emailDigests,
+      healthMetricEntries,
+      healthDailyStreaks,
+      memory,
+      system,
+    };
+
+    return LifeGraphDocumentSchema.parse(candidate) as LifeGraphDocument;
+  }
+
+  private async migrateFromJsonIfNeeded(db: Database.Database, graphPath: string): Promise<void> {
+    try {
+      await access(graphPath);
+    } catch {
+      return;
+    }
+
+    // Never let legacy JSON clobber a graph that already exists in SQLite.
+    if (hasExistingGraphData(db)) {
+      return;
+    }
+
+    const raw = await readFile(graphPath, 'utf8');
+    const parsed = JSON.parse(stripUtf8Bom(raw)) as unknown;
+    const graph = normalizeDocument(parsed, new Date());
+    this.writeGraphToDb(db, graph);
+
+    const backupPath = `${graphPath}.backup-${Date.now()}`;
+    await rename(graphPath, backupPath);
+  }
+
+  private async getContext(graphPath?: string): Promise<DbContext> {
+    const resolvedGraphPath = this.resolvePath(graphPath);
+    const dbPath = toDbPath(resolvedGraphPath);
+    await mkdir(dirname(dbPath), { recursive: true });
+
+    const db = this.getDb(dbPath);
+
+    const inFlight = this.initializationByPath.get(dbPath);
+    if (inFlight) {
+      await inFlight;
+    } else {
+      const initializePromise = (async () => {
+        this.initializeSchema(db);
+        await this.migrateFromJsonIfNeeded(db, resolvedGraphPath);
+      })();
+      this.initializationByPath.set(dbPath, initializePromise);
+      try {
+        await initializePromise;
+      } catch (error) {
+        this.initializationByPath.delete(dbPath);
+        throw error;
+      }
+    }
+
+    return {
+      graphPath: resolvedGraphPath,
+      dbPath,
+      db,
+    };
   }
 
   async load(graphPath?: string): Promise<LifeGraphDocument> {
-    const resolvedPath = this.resolvePath(graphPath);
-
-    if (!resolvedPath || resolvedPath.trim().length === 0) {
-      throw new Error('Invalid graph path: path cannot be empty');
-    }
-
-    try {
-      const content = await readFile(resolvedPath, 'utf8');
-      const parsed = JSON.parse(stripUtf8Bom(content)) as unknown;
-      return normalizeDocument(parsed, new Date());
-    } catch (error: unknown) {
-      if (isErrnoException(error)) {
-        if (error.code === 'ENOENT') {
-          return createEmptyDocument();
-        }
-        if (error.code === 'EACCES') {
-          throw new Error(`Permission denied reading life graph at ${resolvedPath}`);
-        }
-        if (error.code === 'EISDIR') {
-          throw new Error(`Path is a directory, not a file: ${resolvedPath}`);
-        }
-        if (error.code === 'EMFILE') {
-          throw new Error('Too many open files. Please close some applications');
-        }
-      }
-
-      if (error instanceof SyntaxError) {
-        throw new Error(`Invalid JSON in life graph at ${resolvedPath}: ${error.message}`);
-      }
-
-      if (error instanceof Error) {
-        if (error.message.includes('Zod')) {
-          throw new Error(
-            `Life graph format is incompatible or corrupted at ${resolvedPath}: ${error.message}`,
-          );
-        }
-        throw new Error(`Failed to load life graph at ${resolvedPath}: ${error.message}`);
-      }
-
-      throw new Error(`Failed to load life graph at ${resolvedPath}`);
-    }
+    const context = await this.getContext(graphPath);
+    return this.readGraphFromDb(context.db);
   }
 
   async save(graph: LifeGraphDocument, graphPath?: string): Promise<void> {
-    const resolvedPath = this.resolvePath(graphPath);
-
-    if (!resolvedPath || resolvedPath.trim().length === 0) {
-      throw new Error('Invalid graph path: path cannot be empty');
-    }
-
-    // Validate graph before writing
-    try {
-      const parsed = LifeGraphDocumentSchema.parse(graph) as LifeGraphDocument;
-
-      if (!parsed.version) {
-        throw new Error('Graph must have a version');
-      }
-
-      // Ensure directory exists with error handling
-      const dirPath = dirname(resolvedPath);
-      try {
-        await mkdir(dirPath, { recursive: true });
-      } catch (dirError: unknown) {
-        if (isErrnoException(dirError)) {
-          if (dirError.code === 'EACCES') {
-            throw new Error(`Permission denied creating directory: ${dirPath}`);
-          }
-          if (dirError.code === 'EEXIST') {
-            // Directory already exists, continue
-          } else {
-            throw dirError;
-          }
-        } else {
-          throw dirError;
-        }
-      }
-
-      // Use atomic write: write to temp, then rename
-      const tempPath = `${resolvedPath}.${process.pid}.${Date.now()}.tmp`;
-
-      try {
-        await writeFile(tempPath, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
-      } catch (writeError: unknown) {
-        if (isErrnoException(writeError)) {
-          if (writeError.code === 'EACCES') {
-            throw new Error(`Permission denied writing to ${resolvedPath}`);
-          }
-          if (writeError.code === 'ENOSPC') {
-            throw new Error('Disk full: cannot save life graph');
-          }
-          if (writeError.code === 'EMFILE') {
-            throw new Error('Too many open files: cannot save life graph');
-          }
-        }
-        throw writeError;
-      }
-
-      // Atomic rename
-      try {
-        await rename(tempPath, resolvedPath);
-      } catch (renameError: unknown) {
-        // Clean up temp file on rename failure
-        try {
-          await readFile(tempPath).then(() => {
-            // File still exists, try to delete it
-            return new Promise<void>((resolve) => {
-              setTimeout(resolve, 100); // Give time for lock release
-            });
-          });
-        } catch {
-          // Ignore cleanup errors
-        }
-
-        if (isErrnoException(renameError)) {
-          throw new Error(`Failed to finalize graph save: ${renameError.message}`);
-        }
-        throw renameError;
-      }
-    } catch (error: unknown) {
-      if (error instanceof Error && error.message.includes('Zod')) {
-        throw new Error(`Invalid graph format: ${error.message}`);
-      }
-      throw error;
-    }
+    const context = await this.getContext(graphPath);
+    const parsed = LifeGraphDocumentSchema.parse(graph) as LifeGraphDocument;
+    this.writeGraphToDb(context.db, parsed);
   }
 
   async appendPlan<TPlan = Record<string, unknown>>(
     input: AppendPlanInput<TPlan>,
     graphPath?: string,
   ): Promise<{ record: GoalPlanRecord<TPlan>; graph: LifeGraphDocument }> {
+    const context = await this.getContext(graphPath);
     const nowIso = new Date().toISOString();
-    const graph = await this.load(graphPath);
     const normalizedPlan = toGoalPlan({
       input: input.input,
       plan: input.plan,
@@ -373,22 +653,30 @@ export class LifeGraphManager {
       fallbackCreatedAt: input.createdAt ?? nowIso,
     });
 
-    const nextGraph: LifeGraphDocument = {
-      ...graph,
-      updatedAt: nowIso,
-      plans: [...graph.plans, normalizedPlan],
-      calendarEvents: graph.calendarEvents ?? [],
-      notes: graph.notes ?? [],
-      researchResults: graph.researchResults ?? [],
-      weatherSnapshots: graph.weatherSnapshots ?? [],
-      newsDigests: graph.newsDigests ?? [],
-      emailDigests: graph.emailDigests ?? [],
-      healthMetricEntries: graph.healthMetricEntries ?? [],
-      healthDailyStreaks: graph.healthDailyStreaks ?? [],
-      memory: graph.memory ?? [],
-    };
+    const transaction = context.db.transaction(() => {
+      context.db
+        .prepare(
+          'INSERT OR REPLACE INTO plans (id, title, description, deadline, createdAt, data) VALUES (?, ?, ?, ?, ?, ?)',
+        )
+        .run(
+          normalizedPlan.id,
+          normalizedPlan.title,
+          normalizedPlan.description,
+          normalizedPlan.deadline,
+          normalizedPlan.createdAt,
+          JSON.stringify(normalizedPlan),
+        );
+      context.db
+        .prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
+        .run('version', LIFE_GRAPH_VERSION);
+      context.db
+        .prepare('INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)')
+        .run('updatedAt', nowIso);
+    });
 
-    await this.save(nextGraph, graphPath);
+    transaction();
+
+    const graph = await this.load(graphPath);
 
     return {
       record: {
@@ -397,7 +685,7 @@ export class LifeGraphManager {
         input: input.input,
         plan: input.plan,
       },
-      graph: nextGraph,
+      graph,
     };
   }
 }

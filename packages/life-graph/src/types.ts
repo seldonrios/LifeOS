@@ -369,6 +369,32 @@ export interface LifeGraphDocument {
   healthMetricEntries?: LifeGraphHealthMetricEntry[];
   healthDailyStreaks?: LifeGraphHealthDailyStreak[];
   memory?: LifeGraphMemoryEntry[];
+  system?: LifeGraphSystemNode;
+}
+
+export type LifeGraphRiskStatus = 'green' | 'yellow' | 'red';
+
+export interface LifeGraphRiskRadarItem {
+  id: number;
+  name: string;
+  status: LifeGraphRiskStatus;
+  lastChecked: string;
+  details?: string;
+}
+
+export interface LifeGraphRiskRadar {
+  overallHealth: LifeGraphRiskStatus;
+  lastUpdated: string;
+  risks: LifeGraphRiskRadarItem[];
+  recommendations: string[];
+}
+
+export interface LifeGraphSystemMeta {
+  riskRadar?: LifeGraphRiskRadar;
+}
+
+export interface LifeGraphSystemNode {
+  meta?: LifeGraphSystemMeta;
 }
 
 export interface LifeGraphSummary {

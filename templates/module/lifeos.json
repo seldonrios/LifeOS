@@ -3,17 +3,22 @@
   "version": "0.1.0",
   "author": "your-github-username",
   "description": "Tracks daily steps and suggests adjustments",
+  "graphVersion": "^2.0.0",
   "permissions": {
     "graph": ["read", "append"],
     "network": ["weather"],
     "voice": ["speak"],
-    "events": ["subscribe:lifeos.tick", "publish:lifeos.health.update"]
+    "events": [
+      "subscribe:lifeos.tick",
+      "publish:module.my-health-tracker.success",
+      "publish:module.my-health-tracker.error"
+    ]
   },
   "resources": {
     "cpu": "low",
     "memory": "low"
   },
-  "requires": ["@lifeos/voice-core", "@lifeos/life-graph"],
+  "requires": ["@lifeos/voice-core@^1.0.0", "@lifeos/life-graph@^1.0.0"],
   "category": "health",
   "tags": ["habit", "fitness"]
 }

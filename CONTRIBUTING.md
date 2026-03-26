@@ -53,6 +53,17 @@ pnpm lifeos module validate my-new-module
 - Must pass sandbox tests
 - Must use the official template
 
+## Modularity Risk Checklist
+
+Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --risks`. Required items:
+
+- [ ] `requires` uses semver ranges in `lifeos.json` (example: `"@lifeos/life-graph@^1.0.0"`)
+- [ ] Includes empty `migrations/` folder (for future schema changes)
+- [ ] Emits `module.{id}.success` / `module.{id}.error` events
+- [ ] Passes `pnpm lifeos module validate`
+- [ ] Tested against latest compatibility matrix
+- [ ] Resources (`cpu`, `memory`) declared in manifest
+
 Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
 Marketplace catalog: `community-modules.json` (root).
 

@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -139,6 +139,7 @@ test('appendGoalPlan preserves existing entries and increments plan count', asyn
 test('saveGraphAtomic creates directory and writes valid versioned graph', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
   const graphPath = join(tempDir, '.lifeos', 'nested', 'life-graph.json');
+  const dbPath = join(tempDir, '.lifeos', 'nested', 'life-graph.db');
 
   await saveGraphAtomic(
     {
@@ -149,12 +150,10 @@ test('saveGraphAtomic creates directory and writes valid versioned graph', async
     graphPath,
   );
 
-  const raw = JSON.parse(await readFile(graphPath, 'utf8')) as {
-    version: string;
-    plans: unknown[];
-  };
-  assert.equal(raw.version, '0.1.0');
-  assert.equal(raw.plans.length, 0);
+  const loaded = await loadGraph(graphPath);
+  assert.equal(loaded.version, '0.1.0');
+  assert.equal(loaded.plans.length, 0);
+  await access(dbPath);
 });
 
 test('compatibility wrappers still work with legacy signatures', async () => {
@@ -178,4 +177,54 @@ test('compatibility wrappers still work with legacy signatures', async () => {
   assert.equal(summary.recentGoalTitles[0], 'Compat Plan');
   assert.equal(summary.activeGoals.length, 1);
   assert.equal(summary.activeGoals[0]?.title, 'Compat Plan');
+});
+
+test('legacy JSON migration does not overwrite existing SQLite graph', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+
+  await saveGraphAtomic(
+    {
+      version: '0.1.0',
+      updatedAt: '2026-03-21T12:00:00.000Z',
+      plans: [
+        {
+          id: 'db-plan-1',
+          title: 'SQLite plan',
+          description: 'Persisted in sqlite',
+          deadline: null,
+          tasks: [],
+          createdAt: '2026-03-21T12:00:00.000Z',
+        },
+      ],
+    },
+    graphPath,
+  );
+
+  await writeFile(
+    graphPath,
+    JSON.stringify(
+      {
+        version: '0.1.0',
+        updatedAt: '2026-03-20T12:00:00.000Z',
+        plans: [
+          {
+            id: 'json-plan-1',
+            title: 'Legacy plan',
+            description: 'Should not overwrite sqlite',
+            deadline: null,
+            tasks: [],
+            createdAt: '2026-03-20T12:00:00.000Z',
+          },
+        ],
+      },
+      null,
+      2,
+    ),
+    'utf8',
+  );
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.plans.length, 1);
+  assert.equal(graph.plans[0]?.id, 'db-plan-1');
 });

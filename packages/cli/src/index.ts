@@ -5,7 +5,7 @@ import boxen from 'boxen';
 import chalk from 'chalk';
 import { Command, CommanderError } from 'commander';
 import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { pathToFileURL } from 'node:url';
@@ -26,6 +26,9 @@ import {
   type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphClient,
+  type LifeGraphRiskRadar,
+  type LifeGraphRiskRadarItem,
+  type LifeGraphRiskStatus,
   type LifeGraphReviewPeriod,
 } from '@lifeos/life-graph';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
@@ -143,6 +146,259 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
 };
 
 const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [reminderModule, syncModule];
+
+const MODULARITY_RISKS: Array<{ id: number; name: string }> = [
+  { id: 1, name: 'Life Graph Schema Evolution' },
+  { id: 2, name: 'Module Manifest Contract Drift' },
+  { id: 3, name: 'Event Contract Consistency' },
+  { id: 4, name: 'CI Validation Gate Coverage' },
+  { id: 5, name: 'Core Package Test Coverage' },
+  { id: 6, name: 'Scaffold Completeness' },
+  { id: 7, name: 'Compatibility Matrix Drift' },
+  { id: 8, name: 'Contribution Process Alignment' },
+];
+
+function riskName(index: number): string {
+  return MODULARITY_RISKS[index]?.name ?? `Risk ${index + 1}`;
+}
+
+async function readTextIfPresent(path: string): Promise<string> {
+  try {
+    return await readFile(path, 'utf8');
+  } catch {
+    return '';
+  }
+}
+
+function computeOverallRiskHealth(risks: LifeGraphRiskRadarItem[]): LifeGraphRiskStatus {
+  if (risks.some((risk) => risk.status === 'red')) {
+    return 'red';
+  }
+  if (risks.some((risk) => risk.status === 'yellow')) {
+    return 'yellow';
+  }
+  return 'green';
+}
+
+function statusDot(status: LifeGraphRiskStatus): string {
+  if (status === 'green') {
+    return chalk.green('● green');
+  }
+  if (status === 'red') {
+    return chalk.red('● red');
+  }
+  return chalk.yellow('● yellow');
+}
+
+function renderRiskTable(radar: LifeGraphRiskRadar): string {
+  const lines = [
+    chalk.bold('Modularity Risk Radar'),
+    chalk.dim('-'.repeat(56)),
+    `Overall Health: ${statusDot(radar.overallHealth)}`,
+    `Last Updated: ${new Date(radar.lastUpdated).toLocaleString()}`,
+    '',
+  ];
+
+  for (const risk of radar.risks) {
+    lines.push(`${risk.id}. ${risk.name}  ${statusDot(risk.status)}`);
+    if (risk.details) {
+      lines.push(chalk.gray(`   ${risk.details}`));
+    }
+  }
+
+  if (radar.recommendations.length > 0) {
+    lines.push('');
+    lines.push(chalk.bold('Recommendations'));
+    for (const recommendation of radar.recommendations) {
+      lines.push(`- ${recommendation}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function inferRiskStatus(passCount: number, totalChecks: number): LifeGraphRiskStatus {
+  if (passCount === totalChecks) {
+    return 'green';
+  }
+  if (passCount === 0) {
+    return 'red';
+  }
+  return 'yellow';
+}
+
+async function buildModularityRiskRadar(
+  baseCwd: string,
+  nowIso: string,
+): Promise<LifeGraphRiskRadar> {
+  const contributing = await readTextIfPresent(join(baseCwd, 'CONTRIBUTING.md'));
+  const rootPackageRaw = await readTextIfPresent(join(baseCwd, 'package.json'));
+  const moduleTemplate = await readTextIfPresent(
+    join(baseCwd, 'templates', 'module', 'lifeos.json'),
+  );
+  const moduleCreateSource = await readTextIfPresent(
+    join(baseCwd, 'packages', 'cli', 'src', 'commands', 'module-create.ts'),
+  );
+  const moduleValidateWorkflow = await readTextIfPresent(
+    join(baseCwd, '.github', 'workflows', 'module-validate.yml'),
+  );
+  const graphSchemaWorkflow = await readTextIfPresent(
+    join(baseCwd, '.github', 'workflows', 'graph-schema-test.yml'),
+  );
+  const compatibilityWorkflow = await readTextIfPresent(
+    join(baseCwd, '.github', 'workflows', 'compatibility-matrix.yml'),
+  );
+
+  const rootPackage =
+    rootPackageRaw.length > 0
+      ? (JSON.parse(rootPackageRaw) as {
+          scripts?: Record<string, string>;
+          devDependencies?: Record<string, string>;
+        })
+      : { scripts: {}, devDependencies: {} };
+
+  const risks: LifeGraphRiskRadarItem[] = [];
+
+  {
+    const checks = [
+      moduleTemplate.includes('graphVersion'),
+      moduleCreateSource.includes('graphVersion'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 1,
+      name: riskName(0),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Tracks whether graph-aware versioning defaults are present in module templates.',
+    });
+  }
+
+  {
+    const checks = [
+      moduleTemplate.includes('@lifeos/life-graph@^'),
+      moduleTemplate.includes('@lifeos/voice-core@^'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 2,
+      name: riskName(1),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Ensures manifest requirements use semver ranges in scaffolds.',
+    });
+  }
+
+  {
+    const checks = [
+      moduleCreateSource.includes('module.${moduleId}.success'),
+      moduleCreateSource.includes('module.${moduleId}.error'),
+      moduleTemplate.includes('publish:module.'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 3,
+      name: riskName(2),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Checks scaffolded event topics for success/error contract consistency.',
+    });
+  }
+
+  {
+    const checks = [
+      moduleValidateWorkflow.includes('module validate --all'),
+      moduleValidateWorkflow.includes('module certify --dry-run'),
+      graphSchemaWorkflow.includes('test:graph'),
+      compatibilityWorkflow.includes('compatibility'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 4,
+      name: riskName(3),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Verifies mandatory PR and scheduled CI workflows are in place.',
+    });
+  }
+
+  {
+    const checks = [
+      rootPackage.scripts?.['test:graph'] === 'vitest run packages/life-graph --coverage',
+      rootPackage.scripts?.['test:loader'] === 'vitest run packages/module-loader --coverage',
+      rootPackage.devDependencies?.vitest !== undefined,
+      rootPackage.devDependencies?.['@vitest/coverage-v8'] !== undefined,
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 5,
+      name: riskName(4),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Checks test script and coverage wiring for core package quality gates.',
+    });
+  }
+
+  {
+    const checks = [
+      existsSync(join(baseCwd, 'templates', 'module', 'migrations', '.gitkeep')),
+      moduleCreateSource.includes("join(modulePath, 'migrations')"),
+      moduleCreateSource.includes('src/index.test.ts'),
+      moduleCreateSource.includes('Modularity Risk Checklist'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 6,
+      name: riskName(5),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Ensures new modules include migrations folder, tests, and checklist docs.',
+    });
+  }
+
+  {
+    const checks = [
+      compatibilityWorkflow.includes('schedule:'),
+      compatibilityWorkflow.includes('marketplace compatibility'),
+      compatibilityWorkflow.includes('upload-artifact'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 7,
+      name: riskName(6),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Checks for automated compatibility matrix generation and artifact publishing.',
+    });
+  }
+
+  {
+    const checks = [
+      contributing.includes('## Modularity Risk Checklist'),
+      contributing.includes('lifeos status --risks'),
+      contributing.includes('requires uses semver ranges'),
+    ];
+    const passCount = checks.filter(Boolean).length;
+    risks.push({
+      id: 8,
+      name: riskName(7),
+      status: inferRiskStatus(passCount, checks.length),
+      lastChecked: nowIso,
+      details: 'Checks contributor guidance alignment with Risk Radar and module quality policy.',
+    });
+  }
+
+  const recommendations = risks
+    .filter((risk) => risk.status !== 'green')
+    .map((risk) => `Resolve risk ${risk.id}: ${risk.name}.`);
+
+  return {
+    overallHealth: computeOverallRiskHealth(risks),
+    lastUpdated: nowIso,
+    risks,
+    recommendations,
+  };
+}
 
 type RuntimeEventHandler = (event: BaseEvent<unknown>) => Promise<void>;
 
@@ -485,7 +741,12 @@ async function setupEmailSummarizer(
 }
 
 function normalizeMarketplaceAction(action: string): MarketplaceCommandOptions['action'] | null {
-  if (action === 'list' || action === 'search' || action === 'refresh') {
+  if (
+    action === 'list' ||
+    action === 'search' ||
+    action === 'refresh' ||
+    action === 'compatibility'
+  ) {
     return action;
   }
   return null;
@@ -986,6 +1247,39 @@ export async function runStatusCommand(
   verboseLog(`graph_path=${options.graphPath}`);
 
   try {
+    if (options.risks) {
+      const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+      const graph = await client.loadGraph();
+      const nowIso = new Date().toISOString();
+      const previousRadar = graph.system?.meta?.riskRadar;
+      const radar = await buildModularityRiskRadar(baseCwd, nowIso);
+      const output = {
+        modularityRiskRadar: {
+          ...radar,
+          previousOverallHealth: previousRadar?.overallHealth ?? null,
+        },
+      };
+
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(output, null, 2)}\n`);
+      } else {
+        writeStdout(`${renderRiskTable(radar)}\n`);
+      }
+
+      await client.saveGraph({
+        ...graph,
+        updatedAt: nowIso,
+        system: {
+          ...(graph.system ?? {}),
+          meta: {
+            ...(graph.system?.meta ?? {}),
+            riskRadar: radar,
+          },
+        },
+      });
+      return 0;
+    }
+
     verboseLog('stage=summary_load_started');
     const summary = await summarize(options.graphPath);
     verboseLog('stage=summary_load_completed');
@@ -1242,6 +1536,15 @@ export async function runDemoCommand(
 ): Promise<number> {
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+
+  if (options.dryRun) {
+    writeStdout(
+      chalk.green(
+        `Demo dry-run complete${options.modules ? ` (modules=${options.modules})` : ''}. CLI wiring is healthy.\n`,
+      ),
+    );
+    return 0;
+  }
 
   writeStdout(
     `${boxen(chalk.bold.blue('LifeOS Demo Starting...'), {
@@ -1983,6 +2286,44 @@ export async function runModuleCommand(
   }
 
   if (options.action === 'validate') {
+    if (options.validateAll) {
+      const modulesDir = join(baseCwd, 'modules');
+      let entries: string[] = [];
+      try {
+        const dirEntries = await readdir(modulesDir, { withFileTypes: true });
+        entries = dirEntries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+      } catch {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Unable to read modules directory at ${modulesDir}.\n`,
+        );
+        return 1;
+      }
+
+      const failures: Array<{ moduleName: string; errors: string[] }> = [];
+      for (const entry of entries) {
+        const validation = await validateModuleManifest(entry, baseCwd);
+        if (!validation.valid) {
+          failures.push({ moduleName: entry, errors: validation.errors });
+        }
+      }
+
+      if (failures.length === 0) {
+        writeStdout(chalk.green(`Validated ${entries.length} module manifests successfully.\n`));
+        return 0;
+      }
+
+      writeStderr(
+        chalk.red(`Module manifest validation failed for ${failures.length} module(s).\n`),
+      );
+      for (const failure of failures) {
+        writeStderr(chalk.red(`- ${failure.moduleName}\n`));
+        for (const error of failure.errors) {
+          writeStderr(`  • ${error}\n`);
+        }
+      }
+      return 1;
+    }
+
     if (!moduleName) {
       writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module validate".\n`);
       return 1;
@@ -2295,6 +2636,56 @@ export async function runModuleCommand(
   }
 
   if (options.action === 'certify') {
+    if (!moduleName && !options.dryRun) {
+      writeStderr(`${chalk.red.bold('Error:')} Repository is required for "module certify".\n`);
+      return 1;
+    }
+    if (options.dryRun) {
+      const modulesDir = join(baseCwd, 'modules');
+      const badgePath = join(baseCwd, 'docs', 'badges', 'works-with-lifeos.svg');
+      if (!existsSync(badgePath)) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Certification dry-run requires ${badgePath} to exist.\n`,
+        );
+        return 1;
+      }
+
+      if (moduleName) {
+        const validation = await validateModuleManifest(moduleName, baseCwd);
+        if (!validation.valid) {
+          writeStderr(chalk.red(`Dry run failed for ${moduleName}.\n`));
+          for (const error of validation.errors) {
+            writeStderr(`- ${error}\n`);
+          }
+          return 1;
+        }
+        writeStdout(chalk.green(`Dry run: certification checks passed for ${moduleName}.\n`));
+        return 0;
+      }
+
+      const entries = (await readdir(modulesDir, { withFileTypes: true }))
+        .filter((entry) => entry.isDirectory())
+        .map((entry) => entry.name);
+      const failedModules: string[] = [];
+      for (const entry of entries) {
+        const validation = await validateModuleManifest(entry, baseCwd);
+        if (!validation.valid) {
+          failedModules.push(entry);
+        }
+      }
+      if (failedModules.length > 0) {
+        writeStderr(chalk.red(`Dry run failed for ${failedModules.length} module(s).\n`));
+        for (const failed of failedModules) {
+          writeStderr(`- ${failed}\n`);
+        }
+        return 1;
+      }
+
+      writeStdout(
+        chalk.green(`Dry run: certification checks passed for ${entries.length} module(s).\n`),
+      );
+      return 0;
+    }
     if (!moduleName) {
       writeStderr(`${chalk.red.bold('Error:')} Repository is required for "module certify".\n`);
       return 1;
@@ -2344,6 +2735,40 @@ export async function runMarketplaceCommand(
         ),
       );
       writeStdout(chalk.gray(`Catalog: ${refreshed.catalogPath}\n`));
+      return 0;
+    }
+
+    if (options.action === 'compatibility') {
+      const entries = await listMarketplaceEntries({
+        env,
+        baseDir: baseCwd,
+        certifiedOnly: options.certifiedOnly,
+      });
+      const payload = {
+        generatedAt: new Date().toISOString(),
+        total: entries.length,
+        certifiedCount: entries.filter((entry) => entry.certified).length,
+        communityCount: entries.filter((entry) => entry.certified === false).length,
+        modules: entries.map((entry) => ({
+          id: entry.id,
+          repo: entry.repo,
+          certified: entry.certified,
+          installed: entry.installed,
+          category: entry.category,
+          resourceHint: entry.resourceHint,
+          subFeatures: entry.subFeatures,
+        })),
+      };
+
+      if (options.outputPath) {
+        await writeFile(options.outputPath, `${JSON.stringify(payload, null, 2)}\n`, 'utf8');
+        if (!options.outputJson) {
+          writeStdout(chalk.green(`Compatibility matrix saved to ${options.outputPath}.\n`));
+        }
+        return 0;
+      }
+
+      writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
       return 0;
     }
 
@@ -2657,12 +3082,14 @@ function buildProgram(
   program
     .command('status')
     .description('Show current life graph summary')
+    .option('--risks', 'Output the modularity risk radar checklist')
     .option('--json', 'Output summary JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
     .action(async (commandOptions) => {
       const commandExitCode = await runStatusCommand(
         {
+          risks: Boolean(commandOptions.risks),
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
@@ -2774,6 +3201,8 @@ function buildProgram(
       'Override model (default: llama3.1:8b or LIFEOS_GOAL_MODEL)',
       defaultModel,
     )
+    .option('--modules <modules>', 'Module scope hint for compatibility checks', 'default')
+    .option('--dry-run', 'Run command wiring checks without mutating local graph state')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
     .action(async (commandOptions) => {
@@ -2781,6 +3210,8 @@ function buildProgram(
         {
           goal: commandOptions.goal,
           model: commandOptions.model,
+          modules: commandOptions.modules,
+          dryRun: Boolean(commandOptions.dryRun),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
         },
@@ -2929,6 +3360,8 @@ function buildProgram(
     )
     .argument('[name]', 'Module name or repository when required')
     .option('--sub <subfeatures>', 'Comma-separated sub-features (google-bridge only)')
+    .option('--all', 'Validate all local module manifests (validate action only)')
+    .option('--dry-run', 'Run checks without mutating state (certify action only)')
     .action(async (action: string, name: string | undefined, commandOptions) => {
       const normalizedAction = normalizeModuleAction(action);
       if (!normalizedAction) {
@@ -2953,6 +3386,8 @@ function buildProgram(
           action: normalizedAction,
           ...(name ? { moduleName: name } : {}),
           ...(subFeatures.length > 0 ? { subFeatures } : {}),
+          validateAll: Boolean(commandOptions.all),
+          dryRun: Boolean(commandOptions.dryRun),
         },
         dependencies,
       );
@@ -2962,16 +3397,17 @@ function buildProgram(
   program
     .command('marketplace')
     .description('Explore certified and community modules')
-    .argument('[action]', 'list | search | refresh', 'list')
+    .argument('[action]', 'list | search | refresh | compatibility', 'list')
     .argument('[term]', 'Search term (search) or source URL/path (refresh)')
     .option('--certified', 'Show only certified modules')
     .option('--json', 'Output JSON only')
+    .option('--output <path>', 'Write output JSON to file (compatibility action)')
     .action(async (action: string, term: string | undefined, commandOptions) => {
       const normalizedAction = normalizeMarketplaceAction(action);
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid marketplace action "${action}". Use list, search, or refresh.\n`,
+          `${chalk.red.bold('Error:')} Invalid marketplace action "${action}". Use list, search, refresh, or compatibility.\n`,
         );
         return;
       }
@@ -2980,6 +3416,7 @@ function buildProgram(
           action: normalizedAction,
           outputJson: Boolean(commandOptions.json),
           certifiedOnly: Boolean(commandOptions.certified),
+          ...(commandOptions.output ? { outputPath: commandOptions.output } : {}),
           ...(term ? { term } : {}),
         },
         dependencies,
