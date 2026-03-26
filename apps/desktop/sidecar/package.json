@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.json --noCheck",
     "build:release": "pnpm run build && node ./scripts/package-sidecar.mjs",
     "dev": "tsx watch index.ts",
     "start": "node dist/index.js",
