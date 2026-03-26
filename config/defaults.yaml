@@ -8,12 +8,23 @@ smtp:
 features:
   voice: true
   vision: false
-  localLlm: false
-  cloudLlm: true
+  localLlm: true
+  cloudLlm: false
   automation: true
   scheduling: true
   deviceControl: false
   backgroundAgents: true
+
+security:
+  policyEnforce: true
+  failClosed: true
+  moduleManifestRequired: true
+  moduleRuntimePermissions: strict
+
+transparency:
+  trustDashboardEnabled: true
+  explanationLoggingEnabled: true
+  userOwnershipMessaging: direct-friendly
 
 services:
   secretsService:

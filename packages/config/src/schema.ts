@@ -14,12 +14,29 @@ export const ConfigSchema = z
       .object({
         voice: z.boolean().default(false),
         vision: z.boolean().default(false),
-        localLlm: z.boolean().default(false),
-        cloudLlm: z.boolean().default(true),
+        localLlm: z.boolean().default(true),
+        cloudLlm: z.boolean().default(false),
         automation: z.boolean().default(true),
         scheduling: z.boolean().default(true),
         deviceControl: z.boolean().default(false),
         backgroundAgents: z.boolean().default(true),
+      })
+      .strict(),
+    security: z
+      .object({
+        policyEnforce: z.boolean().default(true),
+        failClosed: z.boolean().default(true),
+        moduleManifestRequired: z.boolean().default(true),
+        moduleRuntimePermissions: z.enum(['strict', 'warn', 'off']).default('strict'),
+      })
+      .strict(),
+    transparency: z
+      .object({
+        trustDashboardEnabled: z.boolean().default(true),
+        explanationLoggingEnabled: z.boolean().default(true),
+        userOwnershipMessaging: z
+          .enum(['direct-friendly', 'subtle', 'bold'])
+          .default('direct-friendly'),
       })
       .strict(),
     services: z

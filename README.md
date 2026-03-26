@@ -72,6 +72,7 @@ pnpm lifeos demo
 
 ```bash
 pnpm lifeos status
+pnpm lifeos trust status
 pnpm lifeos task list
 pnpm lifeos voice start
 pnpm lifeos modules
@@ -100,6 +101,7 @@ lifeos graph [migrate] [--to <version>] [--dry-run] [--json] [--graph-path <path
 lifeos mesh [join|status|assign|demo] [arg1] [arg2] [--json] [--verbose]
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
+lifeos trust [status|explain|report] [action] [--json] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]

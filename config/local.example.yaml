@@ -18,3 +18,13 @@ modules:
   # Example: this list replaces any inherited array for the same key.
   enabled:
     - reasoning-engine
+
+security:
+  # Optional override examples:
+  # moduleRuntimePermissions: strict
+  # policyEnforce: true
+
+transparency:
+  # Optional override examples:
+  # trustDashboardEnabled: true
+  # explanationLoggingEnabled: true
