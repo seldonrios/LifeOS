@@ -88,14 +88,27 @@ class InboxNamespace {
   }
 
   async approve(requestId: string): Promise<void> {
-    void requestId;
-    throw new Error('Not implemented — Sprint 3');
+    await sendHttpRequest(
+      {
+        url: `${this.config.baseUrl}/api/inbox/approve`,
+        method: 'POST',
+        body: { requestId },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
   }
 
   async reject(requestId: string, reason?: string): Promise<void> {
-    void requestId;
-    void reason;
-    throw new Error('Not implemented — Sprint 3');
+    await sendHttpRequest(
+      {
+        url: `${this.config.baseUrl}/api/inbox/reject`,
+        method: 'POST',
+        body: { requestId, reason },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
   }
 }
 
@@ -106,7 +119,17 @@ class CaptureNamespace {
   constructor(private config: SDKConfig) {}
 
   async create(req: CaptureRequest): Promise<CaptureResult> {
-    throw new Error('Not implemented — Sprint 2');
+    const response = await sendHttpRequest<CaptureResult>(
+      {
+        url: `${this.config.baseUrl}/api/capture`,
+        method: 'POST',
+        body: req,
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
   }
 }
 
@@ -175,7 +198,7 @@ class NotificationsNamespace {
         body: req,
       },
       this.config.getAccessToken,
-      this.config
+      this.config,
     );
   }
 }
