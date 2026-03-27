@@ -25,18 +25,29 @@ export default function SettingsScreen() {
   const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
   const [isSigningOut, setIsSigningOut] = useState(false);
 
+  const [notifError, setNotifError] = useState(false);
+
   useEffect(() => {
     const loadPermissionStatus = async () => {
-      const status = await Notifications.getPermissionsAsync();
-      setNotifStatus(status.granted ? "granted" : status.status);
+      try {
+        const status = await Notifications.getPermissionsAsync();
+        setNotifStatus(status.granted ? "granted" : status.status);
+      } catch {
+        setNotifError(true);
+      }
     };
 
     void loadPermissionStatus();
   }, []);
 
   const handleRequestPermissions = async () => {
-    const status = await Notifications.requestPermissionsAsync();
-    setNotifStatus(status.granted ? "granted" : status.status);
+    setNotifError(false);
+    try {
+      const status = await Notifications.requestPermissionsAsync();
+      setNotifStatus(status.granted ? "granted" : status.status);
+    } catch {
+      setNotifError(true);
+    }
   };
 
   const handleSignOut = async () => {
@@ -86,6 +97,9 @@ export default function SettingsScreen() {
               {isGranted ? "Granted" : "Not granted"}
             </Text>
           </View>
+          {notifError ? (
+            <Text style={[styles.statusText, { color: palette.accent.danger }]}>Unable to access notifications. Tap to retry.</Text>
+          ) : null}
           {!isGranted ? (
             <Pressable
               style={[styles.outlineButton, { borderColor: palette.accent.brand }]}
@@ -196,7 +210,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing[3],
     alignItems: "center",
     justifyContent: "center",
-    minHeight: 48,
+    minHeight: spacing[12],
   },
   signOutButtonText: {
     fontSize: typography.fontSize.base,
