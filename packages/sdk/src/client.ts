@@ -5,30 +5,13 @@
 
 import type {
   SDKConfig,
-  LoginRequest,
-  LoginResponse,
-  RefreshResponse,
   InboxItem,
   CaptureRequest,
   CaptureResult,
   TimelineEntry,
   PushTokenRegistration,
 } from '@lifeos/contracts';
-
-/**
- * Auth namespace — stub implementations.
- */
-class AuthNamespace {
-  constructor(private config: SDKConfig) {}
-
-  async signIn(req: LoginRequest): Promise<LoginResponse> {
-    throw new Error('Not implemented — Sprint 2');
-  }
-
-  async refresh(): Promise<RefreshResponse> {
-    throw new Error('Not implemented — Sprint 2');
-  }
-}
+import { AuthClientImpl, type AuthClient } from './auth';
 
 /**
  * Inbox namespace — stub implementations.
@@ -78,7 +61,7 @@ class NotificationsNamespace {
  * Main LifeOS SDK client.
  */
 export class LifeOSClient {
-  readonly auth: AuthNamespace;
+  readonly auth: AuthClient;
   readonly inbox: InboxNamespace;
   readonly capture: CaptureNamespace;
   readonly timeline: TimelineNamespace;
@@ -91,7 +74,7 @@ export class LifeOSClient {
       timeout: config.timeout ?? 15000,
     };
 
-    this.auth = new AuthNamespace(effectiveConfig);
+    this.auth = new AuthClientImpl(effectiveConfig);
     this.inbox = new InboxNamespace(effectiveConfig);
     this.capture = new CaptureNamespace(effectiveConfig);
     this.timeline = new TimelineNamespace(effectiveConfig);

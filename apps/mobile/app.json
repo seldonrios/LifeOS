@@ -14,6 +14,9 @@
       "backgroundColor": "#ffffff"
     },
     "plugins": ["expo-router"],
+    "extra": {
+      "apiUrl": "http://localhost:3005"
+    },
     "ios": {
       "supportsTablet": true
     },

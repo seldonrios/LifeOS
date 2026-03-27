@@ -1,41 +1,44 @@
-import React, { createContext, useContext, useMemo } from "react";
-import { useColorScheme } from "react-native";
-import { QueryClientProvider } from "@tanstack/react-query";
-import { Stack } from "expo-router";
+import { useEffect, useMemo } from "react";
+import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Redirect, Slot, useSegments } from "expo-router";
+import { lightColors } from "@lifeos/ui";
 
-import { colors, type AppTheme } from "../lib/theme";
-import { queryClient } from "../lib/query-client";
-
-type ThemeContextValue = {
-  theme: AppTheme;
-};
-
-const ThemeContext = createContext<ThemeContextValue>({
-  theme: { colors: colors.light },
-});
-
-export function useTheme(): ThemeContextValue {
-  return useContext(ThemeContext);
-}
-
-function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const colorScheme = useColorScheme();
-  const theme = useMemo(
-    () => ({
-      colors: colorScheme === "dark" ? colors.dark : colors.light,
-    }),
-    [colorScheme],
-  );
-
-  return <ThemeContext.Provider value={{ theme }}>{children}</ThemeContext.Provider>;
-}
+import { useSessionStore } from "../lib/session";
 
 export default function RootLayout() {
+  const queryClient = useMemo(() => new QueryClient(), []);
+  const status = useSessionStore((state) => state.status);
+  const segments = useSegments();
+  const inAuthGroup = segments[0] === "(auth)";
+  const inTabsGroup = segments[0] === "(tabs)";
+
+  useEffect(() => {
+    void useSessionStore.getState().restoreSession();
+  }, []);
+
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider>
-        <Stack screenOptions={{ headerShown: false }} />
-      </ThemeProvider>
+      {status === "loading" ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={lightColors.accent.brand} />
+        </View>
+      ) : status === "unauthenticated" ? (
+        inAuthGroup ? <Slot /> : <Redirect href="/(auth)/sign-in" />
+      ) : inTabsGroup ? (
+        <Slot />
+      ) : (
+        <Redirect href="/(tabs)/home" />
+      )}
     </QueryClientProvider>
   );
 }
+
+const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: lightColors.background.primary,
+  },
+});

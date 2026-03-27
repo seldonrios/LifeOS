@@ -3,6 +3,7 @@
  */
 
 export { LifeOSClient } from './client';
+export { AuthClientImpl, type AuthClient } from './auth';
 export type { SDKConfig } from '@lifeos/contracts';
 export { mapHttpStatusToError, type LifeOSError } from './errors';
 export {

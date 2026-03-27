@@ -3,10 +3,9 @@
  */
 
 export {
+  LoginRequestSchema,
   type LoginRequest,
-  type LoginResponse,
-  type RefreshResponse,
-  type DeviceIdentity,
+  type AuthTokens,
   type UserProfile,
 } from './auth';
 

@@ -1,8 +1,23 @@
 {
   "extends": "../../packages/config/tsconfig.react-native.json",
   "compilerOptions": {
+    "ignoreDeprecations": "6.0",
     "jsx": "react-native",
-    "rootDir": "."
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {},
+    "types": ["react", "react-native"]
   },
-  "include": ["app/**/*.tsx", "lib/**/*.ts"]
+  "include": ["app/**/*.tsx", "lib/**/*.ts"],
+  "references": [
+    {
+      "path": "../../packages/contracts"
+    },
+    {
+      "path": "../../packages/sdk"
+    },
+    {
+      "path": "../../packages/ui"
+    }
+  ]
 }
