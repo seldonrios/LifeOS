@@ -65,6 +65,15 @@
       "path": "./packages/voice-core"
     },
     {
+      "path": "./packages/contracts"
+    },
+    {
+      "path": "./packages/sdk"
+    },
+    {
+      "path": "./packages/ui"
+    },
+    {
       "path": "./modules/habit-streak"
     }
   ]

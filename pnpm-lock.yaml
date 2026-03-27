@@ -290,6 +290,8 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
 
+  packages/contracts: {}
+
   packages/core: {}
 
   packages/dependency-engine:
@@ -511,6 +513,12 @@ importers:
       '@lifeos/policy-engine':
         specifier: workspace:*
         version: link:../policy-engine
+
+  packages/sdk:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/secrets: {}
 
@@ -1267,7 +1275,6 @@ packages:
   '@lancedb/lancedb@0.27.1':
     resolution: {integrity: sha512-LqXw19VYXaG1bV/03wN5JrYOSrRv38RPbKHW0hukbyfsNV4+VuZ3VpObk3gDeJGPkkJ56MS3lbbB2pqqg1DiNQ==}
     engines: {node: '>= 18'}
-    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'
