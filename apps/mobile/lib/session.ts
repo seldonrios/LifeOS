@@ -2,6 +2,8 @@ import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import type { LoginRequest, UserProfile } from '@lifeos/contracts';
 
+import { registerPushToken } from './notifications';
+import { useQueueStore } from './queue';
 import { sdk } from './sdk';
 
 type SessionStatus = 'loading' | 'authenticated' | 'unauthenticated';
@@ -67,6 +69,8 @@ export const useSessionStore = create<SessionState>((set) => ({
       accessToken: tokens.accessToken,
       user,
     });
+
+    void registerPushToken();
   },
   async signOut() {
     try {
@@ -74,6 +78,7 @@ export const useSessionStore = create<SessionState>((set) => ({
     } catch {
       // Continue resetting in-memory session even when storage delete fails.
     } finally {
+      useQueueStore.getState().clear();
       set({ status: 'unauthenticated', accessToken: null, user: null });
     }
   },

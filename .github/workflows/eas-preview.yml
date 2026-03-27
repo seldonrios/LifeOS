@@ -1,0 +1,55 @@
+# Required secret: EXPO_TOKEN
+name: EAS Preview
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/mobile/**
+
+permissions:
+  contents: write
+
+concurrency:
+  group: eas-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eas-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: expo/expo-github-action@v8
+        with:
+          expo-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Run EAS preview build
+        working-directory: apps/mobile
+        run: eas build --platform all --profile preview --non-interactive --json > eas-build.json
+      - name: Comment build URL on commit
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const fs = require('fs');
+            const path = 'apps/mobile/eas-build.json';
+            const raw = fs.readFileSync(path, 'utf8').trim();
+            const parsed = JSON.parse(raw);
+            const builds = Array.isArray(parsed) ? parsed : [parsed];
+            const urls = builds
+              .map((b) => b?.buildDetailsPageUrl)
+              .filter((url) => typeof url === 'string' && url.length > 0);
+            const body = urls.length > 0
+              ? `EAS preview build started:\n${urls.map((url) => `- ${url}`).join('\n')}`
+              : 'EAS preview build started, but no build URL was found in output.';
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body,
+            });

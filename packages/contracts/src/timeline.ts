@@ -8,6 +8,7 @@ export type TimelineEventStatus = 'confirmed' | 'tentative' | 'cancelled';
 export interface TimelineEntry {
   id: string;
   title: string;
+  goalId?: string;
   type: 'task' | 'event';
   status: TimelineTaskStatus | TimelineEventStatus;
   start?: string;
