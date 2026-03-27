@@ -1,4 +1,4 @@
-﻿# Release Policy
+# Release Policy
 
 This policy defines how LifeOS cuts repeatable releases.
 

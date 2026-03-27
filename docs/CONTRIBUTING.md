@@ -43,6 +43,7 @@ This is the canonical contributor guide for LifeOS.
 
 1. Run `pnpm run scaffold`, then select `(3) Light AI module`.
 2. Fill `manifest.ts` with provides/requires/optional/hardware/degraded mode details.
+   Use bounded dependency ranges for LifeOS packages while the repo is pre-1.0 (for example `@lifeos/life-graph@>=0.3.0 <0.4.0`).
 3. Fill `events.ts` with at least one subscription or emission stub.
 4. Fill `agent.ts` with the module agent role definition.
 5. Run `pnpm run build:modules` before testing the loader path. The runtime loader reads `modules/<name>/dist/manifest.js` and never imports source `manifest.ts` files directly.

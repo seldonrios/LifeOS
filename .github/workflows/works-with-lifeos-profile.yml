@@ -9,6 +9,9 @@ on:
       - '.github/workflows/works-with-lifeos-profile.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   module-profile:
     runs-on: ubuntu-latest

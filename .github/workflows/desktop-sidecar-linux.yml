@@ -15,6 +15,9 @@ on:
       - pnpm-lock.yaml
       - pnpm-workspace.yaml
 
+permissions:
+  contents: read
+
 jobs:
   package-linux-sidecar:
     name: Package Linux Sidecar

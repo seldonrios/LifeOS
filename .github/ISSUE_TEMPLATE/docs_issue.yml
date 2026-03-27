@@ -1,4 +1,4 @@
-﻿name: Documentation issue
+name: Documentation issue
 description: Report missing, incorrect, or unclear documentation
 labels: ["type:docs"]
 body:

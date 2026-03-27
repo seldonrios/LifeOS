@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { GoalPlan } from '@lifeos/life-graph';
+import { GoalPlanSchema, type GoalPlan } from '@lifeos/life-graph';
 
 import { interpretGoal, type OllamaClient, type OllamaGenerateRequest } from './goal-interpreter';
 
@@ -48,6 +48,7 @@ test('interpretGoal sends chat request with json format and low temperature', as
 
 test('interpretGoal retries with repair prompt after invalid output', async () => {
   const capturedRequests: OllamaGenerateRequest[] = [];
+  const now = new Date('2026-03-21T12:00:00.000Z');
   const client: OllamaClient = {
     async chat(request) {
       capturedRequests.push(request);
@@ -65,9 +66,12 @@ test('interpretGoal retries with repair prompt after invalid output', async () =
 
   const plan = await interpretGoal('Prepare for board meeting', {
     model: 'llama3.1:8b',
+    now,
     client,
   });
 
+  assert.doesNotThrow(() => GoalPlanSchema.parse(plan));
+  assert.equal(plan.createdAt, now.toISOString());
   assert.equal(plan.deadline, '2026-03-26');
   assert.equal(capturedRequests.length, 3);
   assert.match(

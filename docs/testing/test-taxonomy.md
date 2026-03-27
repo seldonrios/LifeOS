@@ -1,4 +1,4 @@
-﻿# Test Taxonomy
+# Test Taxonomy
 
 This document defines the minimum test class expected for each change type.
 

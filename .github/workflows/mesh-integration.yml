@@ -8,6 +8,9 @@ on:
       - '.github/workflows/mesh-integration.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   mesh-integration:
     runs-on: ubuntu-latest

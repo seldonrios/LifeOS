@@ -26,7 +26,7 @@ This manifest is the security contract for module loading, certification, and ma
   },
   "subFeatures": ["calendar", "tasks"],
   "graphVersion": "0.1.0",
-  "requires": ["@lifeos/voice-core@^0.1.0", "@lifeos/life-graph@^0.1.0"],
+  "requires": ["@lifeos/voice-core@>=0.3.0 <0.4.0", "@lifeos/life-graph@>=0.3.0 <0.4.0"],
   "category": "health",
   "tags": ["habit", "fitness"]
 }
@@ -46,6 +46,7 @@ Template reference:
 - `subFeatures` (optional): bridge-specific feature toggles (`calendar`, `tasks`, etc.).
 - `graphVersion`: required Life Graph schema baseline expected by the module.
 - `requires`: required LifeOS package dependencies, each in `@lifeos/<pkg>@<semver-range>` format.
+- Before `1.0.0`, prefer bounded ranges for compatibility clarity (example: `>=0.3.0 <0.4.0`).
 - `category`: lowercase kebab-case category.
 - `tags`: lowercase kebab-case labels.
 

@@ -1,4 +1,4 @@
-﻿# Maintainer Policy
+# Maintainer Policy
 
 This policy defines the minimum maintainer expectations for LifeOS.
 
