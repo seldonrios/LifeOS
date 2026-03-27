@@ -1,4 +1,5 @@
 import type { AuthTokens, LoginRequest, SDKConfig, UserProfile } from '@lifeos/contracts';
+import { sendHttpRequest } from './http';
 
 export interface AuthClient {
   signIn(credentials: LoginRequest): Promise<{ user: UserProfile; tokens: AuthTokens }>;
@@ -10,33 +11,43 @@ export class AuthClientImpl implements AuthClient {
   constructor(private readonly config: SDKConfig) {}
 
   async signIn(credentials: LoginRequest): Promise<{ user: UserProfile; tokens: AuthTokens }> {
-    const normalizedEmail = credentials.email.trim().toLowerCase();
-
-    if (normalizedEmail === 'invalid@lifeos.dev' || credentials.password === 'invalid123') {
-      throw new Error('Invalid email or password');
-    }
-
-    const safeLocalPart = credentials.email.split('@')[0] ?? 'lifeos';
-    const tokenSuffix = this.config.baseUrl.includes('localhost') ? 'local' : 'remote';
-
-    return {
-      user: {
-        id: 'user_stub_001',
-        email: credentials.email,
-        displayName: safeLocalPart,
+    const response = await sendHttpRequest<{ user: UserProfile; tokens: AuthTokens }>(
+      {
+        url: `${this.config.baseUrl}/api/auth/login`,
+        method: 'POST',
+        body: credentials,
       },
-      tokens: {
-        accessToken: `stub-access-token-${tokenSuffix}`,
-        refreshToken: `stub-refresh-token-${tokenSuffix}`,
-      },
-    };
+      () => null, // No auth header for login
+      this.config
+    );
+    return response.data;
   }
 
-  async refresh(_refreshToken: string): Promise<{ accessToken: string }> {
-    return { accessToken: 'stub-access-token-refreshed' };
+  async refresh(refreshToken: string): Promise<{ accessToken: string }> {
+    const response = await sendHttpRequest<{ accessToken: string }>(
+      {
+        url: `${this.config.baseUrl}/api/auth/refresh`,
+        method: 'POST',
+        body: { refreshToken },
+      },
+      () => null, // No auth header for refresh
+      this.config
+    );
+    return response.data;
   }
 
   async signOut(): Promise<void> {
-    return;
+    try {
+      await sendHttpRequest(
+        {
+          url: `${this.config.baseUrl}/api/auth/logout`,
+          method: 'POST',
+        },
+        this.config.getAccessToken,
+        this.config
+      );
+    } catch {
+      // Swallow all errors during logout
+    }
   }
 }

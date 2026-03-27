@@ -1,6 +1,5 @@
 /**
  * LifeOS SDK client for mobile applications.
- * Sprint 1 provides type definitions and stub implementations.
  */
 
 import type {
@@ -12,6 +11,7 @@ import type {
   PushTokenRegistration,
 } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
+import { sendHttpRequest } from './http';
 
 /**
  * Inbox namespace — stub implementations.
@@ -47,13 +47,21 @@ class TimelineNamespace {
 }
 
 /**
- * Notifications namespace — stub implementations.
+ * Notifications namespace.
  */
 class NotificationsNamespace {
   constructor(private config: SDKConfig) {}
 
   async registerPushToken(req: PushTokenRegistration): Promise<void> {
-    throw new Error('Not implemented — Sprint 2');
+    await sendHttpRequest(
+      {
+        url: `${this.config.baseUrl}/api/devices/push-token`,
+        method: 'POST',
+        body: req,
+      },
+      this.config.getAccessToken,
+      this.config
+    );
   }
 }
 
