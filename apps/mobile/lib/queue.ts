@@ -28,6 +28,16 @@ type QueueStore = {
 };
 
 const QUEUE_STORAGE_KEY = 'lifeos.offline_queue';
+let flushInFlight: Promise<void> | null = null;
+
+function normalizePersistedItems(items: QueueItem[] | undefined): QueueItem[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  // Recover interrupted runs by turning persisted transient syncing items back into pending.
+  return items.map((item) => (item.status === 'syncing' ? { ...item, status: 'pending' } : item));
+}
 
 async function executeQueueItem(item: QueueItem): Promise<void> {
   switch (item.type) {
@@ -120,26 +130,42 @@ export const useQueueStore = create<QueueStore>()(
         }));
       },
       async flush() {
-        while (true) {
-          const nextItem = get().items.find((item) => item.status === 'pending');
-          if (!nextItem) {
-            return;
-          }
+        if (flushInFlight) {
+          return flushInFlight;
+        }
 
-          set((state) => ({
-            items: state.items.map((item) =>
-              item.id === nextItem.id ? { ...item, status: 'syncing' } : item,
-            ),
-          }));
+        const worker = (async () => {
+          while (true) {
+            const nextItem = get().items.find((item) => item.status === 'pending');
+            if (!nextItem) {
+              return;
+            }
 
-          try {
-            await executeQueueItem(nextItem);
             set((state) => ({
-              items: state.items.filter((item) => item.id !== nextItem.id),
+              items: state.items.map((item) =>
+                item.id === nextItem.id ? { ...item, status: 'syncing' } : item,
+              ),
             }));
-          } catch (error) {
-            get().markFailed(nextItem.id, error);
-            return;
+
+            try {
+              await executeQueueItem(nextItem);
+              set((state) => ({
+                items: state.items.filter((item) => item.id !== nextItem.id),
+              }));
+            } catch (error) {
+              get().markFailed(nextItem.id, error);
+              return;
+            }
+          }
+        })();
+
+        flushInFlight = worker;
+
+        try {
+          await worker;
+        } finally {
+          if (flushInFlight === worker) {
+            flushInFlight = null;
           }
         }
       },
@@ -150,7 +176,22 @@ export const useQueueStore = create<QueueStore>()(
     {
       name: QUEUE_STORAGE_KEY,
       storage: createJSONStorage(() => AsyncStorage),
-      version: 1,
+      version: 2,
+      migrate: (persistedState) => {
+        const state = persistedState as { items?: QueueItem[] } | undefined;
+        return {
+          ...state,
+          items: normalizePersistedItems(state?.items),
+        };
+      },
+      onRehydrateStorage: () => (state) => {
+        if (!state) {
+          return;
+        }
+
+        state.items = normalizePersistedItems(state.items);
+        void state.flush();
+      },
     },
   ),
 );

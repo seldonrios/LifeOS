@@ -1,20 +1,21 @@
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
 
 import { sdk } from './sdk';
 
 const DEVICE_ID_KEY = 'lifeos.device_id';
-const PUSH_TOKEN_KEY = 'lifeos.push_token';
+export const PUSH_TOKEN_KEY = 'lifeos.push_token';
 
-type PushPlatform = 'ios' | 'android' | 'web';
+type PushPlatform = 'ios' | 'android';
 
-function resolvePlatform(): PushPlatform {
-  const platform = process.env.EXPO_OS;
-  if (platform === 'ios' || platform === 'android' || platform === 'web') {
+function resolvePlatform(): PushPlatform | null {
+  const platform = Platform.OS;
+  if (platform === 'ios' || platform === 'android') {
     return platform;
   }
-  return 'web';
+  return null;
 }
 
 async function getOrCreateDeviceId(): Promise<string> {
@@ -38,6 +39,10 @@ export async function registerPushToken(): Promise<void> {
     }
 
     const platform = resolvePlatform();
+    if (!platform) {
+      return;
+    }
+
     const deviceId = await getOrCreateDeviceId();
     const deviceLabel = Device.deviceName;
     void deviceLabel;

@@ -2,7 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 import { create } from 'zustand';
 import type { LoginRequest, UserProfile } from '@lifeos/contracts';
 
-import { registerPushToken } from './notifications';
+import { PUSH_TOKEN_KEY, registerPushToken } from './notifications';
 import { useQueueStore } from './queue';
 import { sdk } from './sdk';
 
@@ -74,7 +74,10 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
   async signOut() {
     try {
-      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      await Promise.allSettled([
+        SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+        SecureStore.deleteItemAsync(PUSH_TOKEN_KEY),
+      ]);
     } catch {
       // Continue resetting in-memory session even when storage delete fails.
     } finally {
