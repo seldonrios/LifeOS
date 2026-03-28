@@ -18,7 +18,7 @@ export class AuthClientImpl implements AuthClient {
         body: credentials,
       },
       () => null, // No auth header for login
-      this.config
+      this.config,
     );
     return response.data;
   }
@@ -31,7 +31,7 @@ export class AuthClientImpl implements AuthClient {
         body: { refreshToken },
       },
       () => null, // No auth header for refresh
-      this.config
+      this.config,
     );
     return response.data;
   }
@@ -44,7 +44,7 @@ export class AuthClientImpl implements AuthClient {
           method: 'POST',
         },
         this.config.getAccessToken,
-        this.config
+        this.config,
       );
     } catch {
       // Swallow all errors during logout

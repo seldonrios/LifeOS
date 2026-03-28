@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react";
-import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import type { InboxItem } from "@lifeos/contracts";
-import { useRouter } from "expo-router";
+import { useMemo, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import type { InboxItem } from '@lifeos/contracts';
+import { useRouter } from 'expo-router';
 import {
   FlatList,
   Pressable,
@@ -13,12 +13,12 @@ import {
   TextInput,
   useColorScheme,
   View,
-} from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+} from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { queryClient } from "../../lib/query-client";
-import { sdk } from "../../lib/sdk";
+import { ErrorBanner } from '../../components/ErrorBanner';
+import { queryClient } from '../../lib/query-client';
+import { sdk } from '../../lib/sdk';
 
 function timeAgo(createdAt: number): string {
   const now = Date.now();
@@ -28,7 +28,7 @@ function timeAgo(createdAt: number): string {
   const day = 24 * hour;
 
   if (diff < minute) {
-    return "Just now";
+    return 'Just now';
   }
   if (diff < hour) {
     return `${Math.floor(diff / minute)}m ago`;
@@ -37,14 +37,14 @@ function timeAgo(createdAt: number): string {
     return `${Math.floor(diff / hour)}h ago`;
   }
   if (diff < 2 * day) {
-    return "Yesterday";
+    return 'Yesterday';
   }
   return `${Math.floor(diff / day)}d ago`;
 }
 
 function markReadOptimistically(itemId: string) {
-  queryClient.setQueryData<InboxItem[]>(["inbox"], (old) =>
-    (old ?? []).map((item) => (item.id === itemId ? { ...item, read: true } : item))
+  queryClient.setQueryData<InboxItem[]>(['inbox'], (old) =>
+    (old ?? []).map((item) => (item.id === itemId ? { ...item, read: true } : item)),
   );
 }
 
@@ -65,9 +65,16 @@ function ReadIndicator({
         },
       ]}
     >
-      {!read ? <View style={[styles.unreadDot, { backgroundColor: palette.background.primary }]} /> : null}
-      <Text style={[styles.readIndicatorText, { color: read ? palette.text.secondary : palette.background.primary }]}>
-        {read ? "Read" : "Unread"}
+      {!read ? (
+        <View style={[styles.unreadDot, { backgroundColor: palette.background.primary }]} />
+      ) : null}
+      <Text
+        style={[
+          styles.readIndicatorText,
+          { color: read ? palette.text.secondary : palette.background.primary },
+        ]}
+      >
+        {read ? 'Read' : 'Unread'}
       </Text>
     </View>
   );
@@ -75,19 +82,12 @@ function ReadIndicator({
 
 export default function InboxScreen() {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
   const router = useRouter();
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    isRefetching,
-    refetch,
-  } = useQuery({
-    queryKey: ["inbox"],
+  const { data, isLoading, isError, error, isRefetching, refetch } = useQuery({
+    queryKey: ['inbox'],
     queryFn: () => sdk.inbox.list(),
   });
 
@@ -111,7 +111,7 @@ export default function InboxScreen() {
   };
 
   const renderItem = ({ item }: { item: InboxItem }) => {
-    if (item.type === "approval") {
+    if (item.type === 'approval') {
       return (
         <Pressable
           style={[
@@ -125,24 +125,31 @@ export default function InboxScreen() {
           ]}
           onPress={() => {
             markReadOptimistically(item.id);
-            router.push({ pathname: "/modal/approval-detail", params: { itemId: item.id } });
+            router.push({ pathname: '/modal/approval-detail', params: { itemId: item.id } });
           }}
         >
           <View style={styles.headerRow}>
-            <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>
+              {item.title}
+            </Text>
             <ReadIndicator read={item.read} palette={palette} />
           </View>
           {item.description ? (
-            <Text style={[styles.itemDescription, { color: palette.text.secondary }]} numberOfLines={2}>
+            <Text
+              style={[styles.itemDescription, { color: palette.text.secondary }]}
+              numberOfLines={2}
+            >
               {item.description}
             </Text>
           ) : null}
-          <Text style={[styles.metaText, { color: palette.text.muted }]}>{timeAgo(item.createdAt)}</Text>
+          <Text style={[styles.metaText, { color: palette.text.muted }]}>
+            {timeAgo(item.createdAt)}
+          </Text>
         </Pressable>
       );
     }
 
-    if (item.type === "notification") {
+    if (item.type === 'notification') {
       return (
         <Pressable
           style={[
@@ -157,15 +164,22 @@ export default function InboxScreen() {
           }}
         >
           <View style={styles.headerRow}>
-            <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
+            <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>
+              {item.title}
+            </Text>
             <ReadIndicator read={item.read} palette={palette} />
           </View>
           {item.description ? (
-            <Text style={[styles.itemDescription, { color: palette.text.secondary }]} numberOfLines={2}>
+            <Text
+              style={[styles.itemDescription, { color: palette.text.secondary }]}
+              numberOfLines={2}
+            >
               {item.description}
             </Text>
           ) : null}
-          <Text style={[styles.metaText, { color: palette.text.muted }]}>{timeAgo(item.createdAt)}</Text>
+          <Text style={[styles.metaText, { color: palette.text.muted }]}>
+            {timeAgo(item.createdAt)}
+          </Text>
         </Pressable>
       );
     }
@@ -185,21 +199,28 @@ export default function InboxScreen() {
         }}
       >
         <View style={styles.headerRow}>
-          <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>
+            {item.title}
+          </Text>
           <ReadIndicator read={item.read} palette={palette} />
         </View>
         {item.description ? (
-          <Text style={[styles.itemDescription, { color: palette.text.secondary }]} numberOfLines={2}>
+          <Text
+            style={[styles.itemDescription, { color: palette.text.secondary }]}
+            numberOfLines={2}
+          >
             {item.description}
           </Text>
         ) : null}
-        <Text style={[styles.metaText, { color: palette.text.muted }]}>{timeAgo(item.createdAt)}</Text>
+        <Text style={[styles.metaText, { color: palette.text.muted }]}>
+          {timeAgo(item.createdAt)}
+        </Text>
       </Pressable>
     );
   };
 
   if (isError) {
-    const message = error instanceof Error ? error.message : "Unable to load inbox";
+    const message = error instanceof Error ? error.message : 'Unable to load inbox';
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
         <ErrorBanner
@@ -218,7 +239,9 @@ export default function InboxScreen() {
         data={filteredItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={filteredItems.length === 0 ? styles.emptyContent : styles.listContent}
+        contentContainerStyle={
+          filteredItems.length === 0 ? styles.emptyContent : styles.listContent
+        }
         stickyHeaderIndices={[0]}
         refreshControl={
           <RefreshControl
@@ -230,7 +253,7 @@ export default function InboxScreen() {
           />
         }
         ListHeaderComponent={
-          <View style={[styles.searchHeader, { backgroundColor: palette.background.primary }]}> 
+          <View style={[styles.searchHeader, { backgroundColor: palette.background.primary }]}>
             <View
               style={[
                 styles.searchBar,
@@ -250,7 +273,7 @@ export default function InboxScreen() {
               {searchTerm.length > 0 ? (
                 <Pressable
                   onPress={() => {
-                    setSearchTerm("");
+                    setSearchTerm('');
                   }}
                   hitSlop={8}
                   style={styles.clearSearchButton}
@@ -264,7 +287,9 @@ export default function InboxScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: palette.text.secondary }]}>
-              {searchTerm.trim().length > 0 ? `No results for '${searchTerm.trim()}'` : "Your inbox is clear"}
+              {searchTerm.trim().length > 0
+                ? `No results for '${searchTerm.trim()}'`
+                : 'Your inbox is clear'}
             </Text>
           </View>
         }
@@ -292,8 +317,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
     borderRadius: spacing[3],
     borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing[3],
   },
   searchInput: {
@@ -305,13 +330,13 @@ const styles = StyleSheet.create({
   },
   emptyContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing[4],
   },
   emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyText: {
     fontSize: typography.fontSize.base,
@@ -327,12 +352,12 @@ const styles = StyleSheet.create({
     borderLeftWidth: 3,
   },
   reminderCard: {
-    borderStyle: "dashed",
+    borderStyle: 'dashed',
   },
   headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing[2],
   },
   itemTitle: {
@@ -349,8 +374,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.medium,
   },
   readIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderRadius: spacing[4],
     paddingHorizontal: spacing[2],

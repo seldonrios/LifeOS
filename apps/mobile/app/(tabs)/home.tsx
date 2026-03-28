@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef } from "react";
-import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import type { GoalSummary, InboxItem } from "@lifeos/contracts";
-import { useRouter } from "expo-router";
+import { useEffect, useMemo, useRef } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import type { GoalSummary, InboxItem } from '@lifeos/contracts';
+import { useRouter } from 'expo-router';
 import {
   Animated,
   Pressable,
@@ -12,49 +12,49 @@ import {
   Text,
   useColorScheme,
   View,
-} from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+} from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { sdk } from "../../lib/sdk";
-import { useSessionStore } from "../../lib/session";
+import { ErrorBanner } from '../../components/ErrorBanner';
+import { sdk } from '../../lib/sdk';
+import { useSessionStore } from '../../lib/session';
 
 function greetingForHour(hour: number): string {
   if (hour < 12) {
-    return "Good morning";
+    return 'Good morning';
   }
   if (hour < 18) {
-    return "Good afternoon";
+    return 'Good afternoon';
   }
-  return "Good evening";
+  return 'Good evening';
 }
 
 function formatDueDate(dueDate?: string): string {
   if (!dueDate) {
-    return "No due date";
+    return 'No due date';
   }
 
   const parsed = new Date(dueDate);
   if (Number.isNaN(parsed.getTime())) {
-    return "No due date";
+    return 'No due date';
   }
 
   return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
+    month: 'short',
+    day: 'numeric',
   });
 }
 
 function reminderDueDate(item: InboxItem): string | undefined {
-  if (item.type !== "reminder") {
+  if (item.type !== 'reminder') {
     return undefined;
   }
 
   const value = (item.data as { dueDate?: unknown }).dueDate;
-  if (typeof value === "string") {
+  if (typeof value === 'string') {
     return value;
   }
-  if (typeof value === "number") {
+  if (typeof value === 'number') {
     return new Date(value).toISOString();
   }
   return undefined;
@@ -62,7 +62,7 @@ function reminderDueDate(item: InboxItem): string | undefined {
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
   const displayName = useSessionStore((state) => state.user?.displayName);
   const router = useRouter();
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -74,7 +74,7 @@ export default function HomeScreen() {
     error: inboxError,
     refetch: refetchInbox,
   } = useQuery({
-    queryKey: ["inbox"],
+    queryKey: ['inbox'],
     queryFn: () => sdk.inbox.list(),
   });
 
@@ -85,14 +85,14 @@ export default function HomeScreen() {
     error: goalsError,
     refetch: refetchGoals,
   } = useQuery({
-    queryKey: ["goals"],
+    queryKey: ['goals'],
     queryFn: () => sdk.timeline.goals(),
   });
 
   const openTasks = useMemo(
     () =>
       (inbox ?? [])
-        .filter((item) => item.type === "reminder")
+        .filter((item) => item.type === 'reminder')
         .map((item) => ({
           id: item.id,
           title: item.title,
@@ -104,13 +104,12 @@ export default function HomeScreen() {
           return aDue - bDue;
         })
         .slice(0, 3),
-    [inbox]
+    [inbox],
   );
 
   const unreadApprovalCount = useMemo(
-    () =>
-      (inbox ?? []).filter((item) => item.type === "approval" && !item.read).length,
-    [inbox]
+    () => (inbox ?? []).filter((item) => item.type === 'approval' && !item.read).length,
+    [inbox],
   );
 
   useEffect(() => {
@@ -131,7 +130,7 @@ export default function HomeScreen() {
           duration: 450,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
 
     animation.start();
@@ -158,7 +157,7 @@ export default function HomeScreen() {
     const message =
       (inboxError instanceof Error && inboxError.message) ||
       (goalsError instanceof Error && goalsError.message) ||
-      "Unable to load dashboard";
+      'Unable to load dashboard';
 
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
@@ -178,7 +177,9 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View>
           <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
-          <Text style={[styles.name, { color: palette.text.primary }]}>{displayName?.split(" ")[0] ?? "there"}</Text>
+          <Text style={[styles.name, { color: palette.text.primary }]}>
+            {displayName?.split(' ')[0] ?? 'there'}
+          </Text>
         </View>
 
         <View
@@ -200,10 +201,15 @@ export default function HomeScreen() {
 
                 return (
                   <View key={goal.id} style={styles.inlineGoalRow}>
-                    <Text style={[styles.taskTitle, { color: palette.text.primary }]} numberOfLines={1}>
+                    <Text
+                      style={[styles.taskTitle, { color: palette.text.primary }]}
+                      numberOfLines={1}
+                    >
                       {goal.title}
                     </Text>
-                    <View style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}>
+                    <View
+                      style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}
+                    >
                       <View
                         style={[
                           styles.progressFill,
@@ -218,7 +224,9 @@ export default function HomeScreen() {
                 );
               })}
               {(goals ?? []).length > 3 ? (
-                <Text style={[styles.moreGoals, { color: palette.text.muted }]}>+{(goals ?? []).length - 3} more</Text>
+                <Text style={[styles.moreGoals, { color: palette.text.muted }]}>
+                  +{(goals ?? []).length - 3} more
+                </Text>
               ) : null}
             </>
           )}
@@ -235,44 +243,53 @@ export default function HomeScreen() {
         >
           <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Open tasks</Text>
           {openTasks.length === 0 ? (
-            <Text style={[styles.cardBody, { color: palette.text.muted }]}>No open tasks right now</Text>
+            <Text style={[styles.cardBody, { color: palette.text.muted }]}>
+              No open tasks right now
+            </Text>
           ) : (
             openTasks.map((task) => {
               const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
 
               return (
-              <View
-                key={task.id}
-                style={[
-                  styles.taskRow,
-                  isOverdue
-                    ? {
-                        borderLeftWidth: 3,
-                        borderLeftColor: palette.accent.danger,
-                      }
-                    : null,
-                ]}
-              >
-                <Text style={[styles.taskTitle, { color: palette.text.primary }]} numberOfLines={1}>
-                  {task.title}
-                </Text>
                 <View
+                  key={task.id}
                   style={[
-                    styles.dueBadge,
-                    {
-                      borderColor: palette.border.default,
-                      backgroundColor: palette.background.secondary,
-                    },
+                    styles.taskRow,
+                    isOverdue
+                      ? {
+                          borderLeftWidth: 3,
+                          borderLeftColor: palette.accent.danger,
+                        }
+                      : null,
                   ]}
                 >
-                  <Text style={[styles.dueBadgeText, { color: palette.text.secondary }]}>{formatDueDate(task.dueDate)}</Text>
+                  <Text
+                    style={[styles.taskTitle, { color: palette.text.primary }]}
+                    numberOfLines={1}
+                  >
+                    {task.title}
+                  </Text>
+                  <View
+                    style={[
+                      styles.dueBadge,
+                      {
+                        borderColor: palette.border.default,
+                        backgroundColor: palette.background.secondary,
+                      },
+                    ]}
+                  >
+                    <Text style={[styles.dueBadgeText, { color: palette.text.secondary }]}>
+                      {formatDueDate(task.dueDate)}
+                    </Text>
+                  </View>
                 </View>
-              </View>
-            );})
+              );
+            })
           )}
         </View>
 
-        <Pressable onPress={() => router.push("/(tabs)/inbox")}
+        <Pressable
+          onPress={() => router.push('/(tabs)/inbox')}
           style={[
             styles.card,
             {
@@ -283,10 +300,17 @@ export default function HomeScreen() {
         >
           <View style={styles.cardTitleRow}>
             <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Inbox</Text>
-            <Ionicons name="chevron-forward" size={typography.fontSize.base} color={palette.text.muted} style={styles.chevron} />
+            <Ionicons
+              name="chevron-forward"
+              size={typography.fontSize.base}
+              color={palette.text.muted}
+              style={styles.chevron}
+            />
           </View>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing[2] }}>
-            <Text style={[styles.metricValue, { color: palette.text.primary }]}>{unreadApprovalCount}</Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing[2] }}>
+            <Text style={[styles.metricValue, { color: palette.text.primary }]}>
+              {unreadApprovalCount}
+            </Text>
             {unreadApprovalCount > 0 ? (
               <Animated.View
                 style={[
@@ -300,9 +324,13 @@ export default function HomeScreen() {
             ) : null}
           </View>
           {unreadApprovalCount > 0 ? (
-            <Text style={[styles.cardBody, { color: palette.accent.warning }]}>Approvals waiting for your response</Text>
+            <Text style={[styles.cardBody, { color: palette.accent.warning }]}>
+              Approvals waiting for your response
+            </Text>
           ) : (
-            <Text style={[styles.cardBody, { color: palette.text.muted }]}>No unread approvals</Text>
+            <Text style={[styles.cardBody, { color: palette.text.muted }]}>
+              No unread approvals
+            </Text>
           )}
         </Pressable>
       </ScrollView>
@@ -325,7 +353,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.medium,
   },
   name: {
-    fontSize: typography.fontSize["2xl"],
+    fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
     marginTop: spacing[1],
   },
@@ -338,16 +366,16 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   cardTitleRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   metricValue: {
-    fontSize: typography.fontSize["2xl"],
+    fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
   },
   cardBody: {
@@ -360,10 +388,10 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 4,
     borderRadius: 999,
-    overflow: "hidden",
+    overflow: 'hidden',
   },
   progressFill: {
-    height: "100%",
+    height: '100%',
     borderRadius: 999,
   },
   moreGoals: {
@@ -371,9 +399,9 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.medium,
   },
   taskRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: spacing[2],
     paddingLeft: spacing[2],
   },

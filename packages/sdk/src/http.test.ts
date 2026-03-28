@@ -1,6 +1,6 @@
 ﻿import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { sendHttpRequest, type RetryPolicy } from './http';
-import type { SDKConfig, LifeOSError } from '@lifeos/contracts';
+import type { SDKConfig } from '@lifeos/contracts';
 
 describe('sendHttpRequest', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
@@ -28,7 +28,7 @@ describe('sendHttpRequest', () => {
       new Response(JSON.stringify(responseData), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-      })
+      }),
     );
 
     const result = await sendHttpRequest(
@@ -38,7 +38,7 @@ describe('sendHttpRequest', () => {
         body: { test: 'data' },
       },
       () => 'test-token',
-      config
+      config,
     );
 
     expect(result.status).toBe(200);
@@ -62,15 +62,9 @@ describe('sendHttpRequest', () => {
 
     // First two calls return 503, third returns 200
     fetchMock
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({}), { status: 503 })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({}), { status: 503 })
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify(responseData), { status: 200 })
-      );
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify(responseData), { status: 200 }));
 
     const result = await sendHttpRequest(
       {
@@ -79,7 +73,7 @@ describe('sendHttpRequest', () => {
       },
       () => null,
       config,
-      retryPolicy
+      retryPolicy,
     );
 
     expect(result.status).toBe(200);
@@ -94,7 +88,7 @@ describe('sendHttpRequest', () => {
     };
 
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Bad request' }), { status: 400 })
+      new Response(JSON.stringify({ error: 'Bad request' }), { status: 400 }),
     );
 
     const error = await sendHttpRequest(
@@ -105,7 +99,7 @@ describe('sendHttpRequest', () => {
       },
       () => null,
       config,
-      retryPolicy
+      retryPolicy,
     ).catch((e) => e);
 
     // Should only be called once despite retryPolicy
@@ -118,7 +112,7 @@ describe('sendHttpRequest', () => {
 
   it('calls onAuthExpired on 401 and throws AUTH_EXPIRED error', async () => {
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+      new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
     );
 
     const error = await sendHttpRequest(
@@ -127,7 +121,7 @@ describe('sendHttpRequest', () => {
         method: 'GET',
       },
       () => 'expired-token',
-      config
+      config,
     ).catch((e) => e);
 
     expect(onAuthExpiredMock).toHaveBeenCalledTimes(1);
@@ -145,7 +139,7 @@ describe('sendHttpRequest', () => {
     };
 
     fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+      new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 }),
     );
 
     const error = await sendHttpRequest(
@@ -155,7 +149,7 @@ describe('sendHttpRequest', () => {
       },
       () => 'expired-token',
       config,
-      retryPolicy
+      retryPolicy,
     ).catch((e) => e);
 
     // Should only be called once despite retryPolicy
@@ -167,12 +161,10 @@ describe('sendHttpRequest', () => {
 
   it('handles timeout with AbortController', async () => {
     let abortWasCalled = false;
-    let capturedUrl: string | undefined;
 
-    fetchMock.mockImplementation((url: string, options?: RequestInit) => {
-      capturedUrl = url;
+    fetchMock.mockImplementation((_url: string, options?: RequestInit) => {
       const signal = options?.signal;
-      
+
       // Simulate checking for abort during fetch
       if (signal?.aborted) {
         const error = new Error('Aborted');
@@ -211,7 +203,7 @@ describe('sendHttpRequest', () => {
         method: 'GET',
       },
       () => null,
-      { timeout: 50, onAuthExpired: () => {} }
+      { timeout: 50, onAuthExpired: () => {} },
     ).catch((e) => e);
 
     // Should throw AbortError due to timeout
@@ -223,9 +215,7 @@ describe('sendHttpRequest', () => {
 
   it('injects Authorization header when token is available', async () => {
     const responseData = { data: 'test' };
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseData), { status: 200 })
-    );
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(responseData), { status: 200 }));
 
     await sendHttpRequest(
       {
@@ -234,7 +224,7 @@ describe('sendHttpRequest', () => {
         body: { test: 'data' },
       },
       () => 'my-token',
-      config
+      config,
     );
 
     const callArgs = fetchMock.mock.calls[0];
@@ -246,9 +236,7 @@ describe('sendHttpRequest', () => {
 
   it('does not inject Authorization header when token is null', async () => {
     const responseData = { data: 'test' };
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseData), { status: 200 })
-    );
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(responseData), { status: 200 }));
 
     await sendHttpRequest(
       {
@@ -257,7 +245,7 @@ describe('sendHttpRequest', () => {
         body: { test: 'data' },
       },
       () => null,
-      config
+      config,
     );
 
     const callArgs = fetchMock.mock.calls[0];
@@ -269,9 +257,7 @@ describe('sendHttpRequest', () => {
 
   it('sets Content-Type header for POST with body', async () => {
     const responseData = { data: 'test' };
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseData), { status: 200 })
-    );
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(responseData), { status: 200 }));
 
     await sendHttpRequest(
       {
@@ -280,7 +266,7 @@ describe('sendHttpRequest', () => {
         body: { test: 'data' },
       },
       () => null,
-      config
+      config,
     );
 
     const callArgs = fetchMock.mock.calls[0];
@@ -292,9 +278,7 @@ describe('sendHttpRequest', () => {
 
   it('preserves custom headers from request', async () => {
     const responseData = { data: 'test' };
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify(responseData), { status: 200 })
-    );
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify(responseData), { status: 200 }));
 
     await sendHttpRequest(
       {
@@ -304,7 +288,7 @@ describe('sendHttpRequest', () => {
         headers: { 'X-Custom': 'value' },
       },
       () => null,
-      config
+      config,
     );
 
     const callArgs = fetchMock.mock.calls[0];
@@ -314,8 +298,3 @@ describe('sendHttpRequest', () => {
     }
   });
 });
-
-
-
-
-

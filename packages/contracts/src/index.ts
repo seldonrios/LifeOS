@@ -2,12 +2,7 @@
  * @lifeos/contracts — Types for the LifeOS mobile SDK
  */
 
-export {
-  LoginRequestSchema,
-  type LoginRequest,
-  type AuthTokens,
-  type UserProfile,
-} from './auth';
+export { LoginRequestSchema, type LoginRequest, type AuthTokens, type UserProfile } from './auth';
 
 export {
   type InboxItem,
@@ -16,16 +11,9 @@ export {
   type ApprovalResult,
 } from './inbox';
 
-export {
-  type CaptureRequest,
-  type CaptureResult,
-  type CaptureType,
-} from './capture';
+export { type CaptureRequest, type CaptureResult, type CaptureType } from './capture';
 
-export {
-  type TimelineEntry,
-  type GoalSummary,
-} from './timeline';
+export { type TimelineEntry, type GoalSummary } from './timeline';
 
 export {
   type PushTokenRegistration,
@@ -33,10 +21,7 @@ export {
   type NotificationRoute,
 } from './notifications';
 
-export {
-  type DeviceInfo,
-  type RevokeDeviceRequest,
-} from './devices';
+export { type DeviceInfo, type RevokeDeviceRequest } from './devices';
 
 export type { LifeOSError } from './errors';
 export type { SDKConfig } from './sdk';

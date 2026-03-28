@@ -1,4 +1,4 @@
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 export const colors = {
   light: lightColors,
@@ -12,5 +12,5 @@ export const theme = {
 } as const;
 
 export type AppTheme = {
-  colors: (typeof colors)["light"] | (typeof colors)["dark"];
+  colors: (typeof colors)['light'] | (typeof colors)['dark'];
 };

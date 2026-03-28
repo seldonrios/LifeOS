@@ -366,13 +366,16 @@ test('memory thread retrieval keeps role and preference metadata with date filte
   const graphPath = join(tempDir, 'life-graph.json');
   const client = createLifeGraphClient({ graphPath });
   const threadId = '6dc43712-5709-41de-a4ca-6589f19a8159';
+  const now = Date.now();
+  const olderTimestamp = new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString();
+  const recentTimestamp = new Date(now - 24 * 60 * 60 * 1000).toISOString();
 
   await client.appendMemoryEntry({
     type: 'conversation',
     content: 'I prefer short answers.',
     role: 'user',
     threadId,
-    timestamp: '2026-03-20T09:00:00.000Z',
+    timestamp: olderTimestamp,
     relatedTo: ['voice'],
   });
   await client.appendMemoryEntry({
@@ -382,7 +385,7 @@ test('memory thread retrieval keeps role and preference metadata with date filte
     value: 'concise',
     role: 'system',
     threadId,
-    timestamp: '2026-03-25T09:00:00.000Z',
+    timestamp: recentTimestamp,
     relatedTo: ['profile'],
   });
 

@@ -30,6 +30,10 @@ type QueueStore = {
 const QUEUE_STORAGE_KEY = 'lifeos.offline_queue';
 let flushInFlight: Promise<void> | null = null;
 
+function createQueueItemId(): string {
+  return `queue_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function normalizePersistedItems(items: QueueItem[] | undefined): QueueItem[] {
   if (!Array.isArray(items)) {
     return [];
@@ -63,7 +67,8 @@ async function executeQueueItem(item: QueueItem): Promise<void> {
       return;
     }
     case 'mark_read': {
-      const markRead = (sdk.inbox as unknown as { markRead?: (itemId: string) => Promise<void> }).markRead;
+      const markRead = (sdk.inbox as unknown as { markRead?: (itemId: string) => Promise<void> })
+        .markRead;
       const itemId = item.payload.itemId;
       if (typeof markRead !== 'function') {
         throw new Error('markRead is not implemented in sdk.inbox.');
@@ -86,7 +91,7 @@ export const useQueueStore = create<QueueStore>()(
       enqueue(item) {
         const nextItem: QueueItem = {
           ...item,
-          id: crypto.randomUUID(),
+          id: createQueueItemId(),
           createdAt: Date.now(),
           retryCount: 0,
           status: 'pending',

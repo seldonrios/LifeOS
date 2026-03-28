@@ -13,7 +13,7 @@ export { type LifeOSError } from '@lifeos/contracts';
 export function mapHttpStatusToError(status: number, message?: string): LifeOSError {
   // Stub implementation - Sprint 2 will wire real HTTP logic
   const defaultMessage = message || `HTTP ${status}`;
-  
+
   return {
     code: `HTTP_${status}`,
     message: defaultMessage,

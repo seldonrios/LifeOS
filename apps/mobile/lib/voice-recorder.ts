@@ -82,7 +82,7 @@ export function useVoiceRecorder() {
         return null;
       }
 
-      const durationMs = "durationMillis" in status ? (status.durationMillis ?? 0) : 0;
+      const durationMs = 'durationMillis' in status ? (status.durationMillis ?? 0) : 0;
       return { uri, durationMs };
     } catch {
       setRecordingState('idle');

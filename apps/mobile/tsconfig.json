@@ -8,7 +8,7 @@
     "paths": {},
     "types": ["react", "react-native"]
   },
-  "include": ["app/**/*.tsx", "lib/**/*.ts"],
+  "include": ["app/**/*.tsx", "components/**/*.ts", "components/**/*.tsx", "lib/**/*.ts"],
   "references": [
     {
       "path": "../../packages/contracts"

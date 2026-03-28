@@ -1,7 +1,7 @@
-import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import type { GoalSummary, TimelineEntry } from "@lifeos/contracts";
+import { Ionicons } from '@expo/vector-icons';
+import { useMemo, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import type { GoalSummary, TimelineEntry } from '@lifeos/contracts';
 import {
   FlatList,
   Pressable,
@@ -14,88 +14,87 @@ import {
   TextInput,
   useColorScheme,
   View,
-} from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+} from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { sdk } from "../../lib/sdk";
+import { ErrorBanner } from '../../components/ErrorBanner';
+import { sdk } from '../../lib/sdk';
 
 function formatDueDate(dueDate?: string): string {
   if (!dueDate) {
-    return "";
+    return '';
   }
 
   const parsed = new Date(dueDate);
   if (Number.isNaN(parsed.getTime())) {
-    return "";
+    return '';
   }
 
   return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
 function formatStartTime(start?: string): string {
   if (!start) {
-    return "";
+    return '';
   }
 
   const parsed = new Date(start);
   if (Number.isNaN(parsed.getTime())) {
-    return "";
+    return '';
   }
 
   return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
 function formatDeadline(deadline: string | null): string {
   if (!deadline) {
-    return "No deadline";
+    return 'No deadline';
   }
 
   const parsed = new Date(deadline);
   if (Number.isNaN(parsed.getTime())) {
-    return "No deadline";
+    return 'No deadline';
   }
 
   return parsed.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
+    month: 'short',
+    day: 'numeric',
   });
 }
 
 function buildShareText(entry: TimelineEntry): string {
-  const formattedDate = entry.type === "task" ? formatDueDate(entry.dueDate) : formatStartTime(entry.start);
-  return `${entry.title}${formattedDate ? ` — ${formattedDate}` : ""}`;
+  const formattedDate =
+    entry.type === 'task' ? formatDueDate(entry.dueDate) : formatStartTime(entry.start);
+  return `${entry.title}${formattedDate ? ` — ${formattedDate}` : ''}`;
 }
 
 export default function TimelineScreen() {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
-  const [searchTerm, setSearchTerm] = useState("");
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    isRefetching,
-    refetch,
-  } = useQuery({
-    queryKey: ["timeline"],
+  const { data, isLoading, isError, error, isRefetching, refetch } = useQuery({
+    queryKey: ['timeline'],
     queryFn: () => sdk.timeline.list(),
   });
 
-  const { data: goals, isLoading: isGoalsLoading, isRefetching: isGoalsRefetching, refetch: refetchGoals } = useQuery({
-    queryKey: ["goals"],
+  const {
+    data: goals,
+    isLoading: isGoalsLoading,
+    isRefetching: isGoalsRefetching,
+    refetch: refetchGoals,
+  } = useQuery({
+    queryKey: ['goals'],
     queryFn: () => sdk.timeline.goals(),
   });
 
@@ -118,7 +117,11 @@ export default function TimelineScreen() {
       <View style={styles.goalsSection}>
         <Text style={[styles.sectionLabel, { color: palette.text.secondary }]}>GOALS</Text>
         {isGoalsLoading ? (
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.goalsListContent}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.goalsListContent}
+          >
             {Array.from({ length: 3 }).map((_, index) => (
               <View
                 key={`goal-skeleton-${index}`}
@@ -150,7 +153,10 @@ export default function TimelineScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.goalTitle, { color: palette.text.primary }]} numberOfLines={2}>
+                  <Text
+                    style={[styles.goalTitle, { color: palette.text.primary }]}
+                    numberOfLines={2}
+                  >
                     {item.title}
                   </Text>
                   <View style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}>
@@ -187,21 +193,21 @@ export default function TimelineScreen() {
   };
 
   const renderEntry = ({ item }: { item: TimelineEntry }) => {
-    const meta = item.type === "task" ? formatDueDate(item.dueDate) : formatStartTime(item.start);
+    const meta = item.type === 'task' ? formatDueDate(item.dueDate) : formatStartTime(item.start);
 
     let badgeBackgroundColor: string = palette.background.secondary;
     let badgeTextColor: string = palette.text.muted;
 
-    if (item.status === "in-progress") {
+    if (item.status === 'in-progress') {
       badgeBackgroundColor = palette.accent.brand;
       badgeTextColor = palette.background.primary;
-    } else if (item.status === "done") {
+    } else if (item.status === 'done') {
       badgeBackgroundColor = palette.accent.success;
       badgeTextColor = palette.background.primary;
-    } else if (item.status === "confirmed") {
+    } else if (item.status === 'confirmed') {
       badgeBackgroundColor = palette.accent.brand;
       badgeTextColor = palette.background.primary;
-    } else if (item.status === "tentative") {
+    } else if (item.status === 'tentative') {
       badgeBackgroundColor = palette.accent.warning;
       badgeTextColor = palette.background.primary;
     }
@@ -217,9 +223,11 @@ export default function TimelineScreen() {
         ]}
       >
         <View style={styles.headerRow}>
-          <Text style={[styles.entryTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
+          <Text style={[styles.entryTitle, { color: palette.text.primary }]} numberOfLines={1}>
+            {item.title}
+          </Text>
           <View style={styles.headerRight}>
-            <View style={[styles.badge, { backgroundColor: badgeBackgroundColor }]}> 
+            <View style={[styles.badge, { backgroundColor: badgeBackgroundColor }]}>
               <Text style={[styles.badgeText, { color: badgeTextColor }]}>{item.status}</Text>
             </View>
             <Pressable
@@ -249,7 +257,7 @@ export default function TimelineScreen() {
   }
 
   if (isError) {
-    const message = error instanceof Error ? error.message : "Unable to load timeline";
+    const message = error instanceof Error ? error.message : 'Unable to load timeline';
 
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
@@ -307,7 +315,7 @@ export default function TimelineScreen() {
               {searchTerm.length > 0 ? (
                 <Pressable
                   onPress={() => {
-                    setSearchTerm("");
+                    setSearchTerm('');
                   }}
                   hitSlop={8}
                   style={styles.clearSearchButton}
@@ -321,7 +329,9 @@ export default function TimelineScreen() {
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={[styles.emptyText, { color: palette.text.secondary }]}>
-              {searchTerm.trim().length > 0 ? `No items match '${searchTerm.trim()}'` : "No upcoming items"}
+              {searchTerm.trim().length > 0
+                ? `No items match '${searchTerm.trim()}'`
+                : 'No upcoming items'}
             </Text>
           </View>
         }
@@ -353,8 +363,8 @@ const styles = StyleSheet.create({
     minHeight: 42,
     borderRadius: spacing[3],
     borderWidth: 1,
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: spacing[3],
   },
   searchInput: {
@@ -370,13 +380,13 @@ const styles = StyleSheet.create({
   },
   emptyContent: {
     flexGrow: 1,
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: 'center',
+    alignItems: 'center',
     paddingHorizontal: spacing[4],
   },
   emptyState: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   emptyText: {
     fontSize: typography.fontSize.base,
@@ -397,24 +407,24 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   headerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: spacing[2],
   },
   headerRight: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing[2],
   },
   shareButton: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   sectionLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   entryTitle: {
@@ -429,10 +439,10 @@ const styles = StyleSheet.create({
   progressTrack: {
     height: 4,
     borderRadius: 999,
-    overflow: "hidden",
+    overflow: 'hidden',
   },
   progressFill: {
-    height: "100%",
+    height: '100%',
     borderRadius: 999,
   },
   goalLabel: {
@@ -449,7 +459,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.semibold,
-    textTransform: "capitalize",
+    textTransform: 'capitalize',
   },
   metaText: {
     fontSize: typography.fontSize.xs,

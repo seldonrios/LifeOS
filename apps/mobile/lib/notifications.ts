@@ -10,6 +10,10 @@ export const PUSH_TOKEN_KEY = 'lifeos.push_token';
 
 type PushPlatform = 'ios' | 'android';
 
+function createId(prefix: string): string {
+  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function resolvePlatform(): PushPlatform | null {
   const platform = Platform.OS;
   if (platform === 'ios' || platform === 'android') {
@@ -24,7 +28,7 @@ async function getOrCreateDeviceId(): Promise<string> {
     return existing;
   }
 
-  const created = crypto.randomUUID();
+  const created = createId('device');
   await SecureStore.setItemAsync(DEVICE_ID_KEY, created);
   return created;
 }

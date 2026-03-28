@@ -1,17 +1,26 @@
-import { useState } from "react";
-import { useController, useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
-import { ActivityIndicator, Pressable, SafeAreaView, StyleSheet, Text, TextInput, useColorScheme, View } from "react-native";
-import { LoginRequestSchema, type LoginRequest as LoginRequestType } from "@lifeos/contracts";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+import { useState } from 'react';
+import { useController, useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import {
+  ActivityIndicator,
+  Pressable,
+  SafeAreaView,
+  StyleSheet,
+  Text,
+  TextInput,
+  useColorScheme,
+  View,
+} from 'react-native';
+import { LoginRequestSchema, type LoginRequest as LoginRequestType } from '@lifeos/contracts';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
-import { useSessionStore } from "../../lib/session";
+import { useSessionStore } from '../../lib/session';
 
 export default function SignInScreen() {
   const [serverError, setServerError] = useState<string | null>(null);
   const signIn = useSessionStore((state) => state.signIn);
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
 
   const {
     control,
@@ -20,19 +29,19 @@ export default function SignInScreen() {
   } = useForm<LoginRequestType>({
     resolver: zodResolver(LoginRequestSchema),
     defaultValues: {
-      email: "",
-      password: "",
+      email: '',
+      password: '',
     },
   });
 
   const { field: emailField } = useController({
     control,
-    name: "email",
+    name: 'email',
   });
 
   const { field: passwordField } = useController({
     control,
-    name: "password",
+    name: 'password',
   });
 
   const onSubmit = async (data: LoginRequestType) => {
@@ -41,7 +50,7 @@ export default function SignInScreen() {
     try {
       await signIn(data);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Unable to sign in";
+      const message = error instanceof Error ? error.message : 'Unable to sign in';
       setServerError(message);
     }
   };
@@ -50,7 +59,9 @@ export default function SignInScreen() {
     <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
       <Text style={[styles.logo, { color: palette.accent.brand }]}>LifeOS</Text>
       <Text style={[styles.title, { color: palette.text.primary }]}>Sign in to LifeOS</Text>
-      <Text style={[styles.subtitle, { color: palette.text.secondary }]}>Your sovereign AI node</Text>
+      <Text style={[styles.subtitle, { color: palette.text.secondary }]}>
+        Your sovereign AI node
+      </Text>
 
       <View style={styles.formSection}>
         <TextInput
@@ -72,7 +83,11 @@ export default function SignInScreen() {
             },
           ]}
         />
-        {errors.email ? <Text style={[styles.errorText, { color: palette.accent.danger }]}>{errors.email.message}</Text> : null}
+        {errors.email ? (
+          <Text style={[styles.errorText, { color: palette.accent.danger }]}>
+            {errors.email.message}
+          </Text>
+        ) : null}
 
         <TextInput
           value={passwordField.value}
@@ -92,9 +107,15 @@ export default function SignInScreen() {
             },
           ]}
         />
-        {errors.password ? <Text style={[styles.errorText, { color: palette.accent.danger }]}>{errors.password.message}</Text> : null}
+        {errors.password ? (
+          <Text style={[styles.errorText, { color: palette.accent.danger }]}>
+            {errors.password.message}
+          </Text>
+        ) : null}
 
-        {serverError ? <Text style={[styles.errorText, { color: palette.accent.danger }]}>{serverError}</Text> : null}
+        {serverError ? (
+          <Text style={[styles.errorText, { color: palette.accent.danger }]}>{serverError}</Text>
+        ) : null}
       </View>
 
       <Pressable
@@ -109,7 +130,9 @@ export default function SignInScreen() {
         )}
       </Pressable>
 
-      <Text style={[styles.footnote, { color: palette.text.muted }]}>All data stays on your device by default</Text>
+      <Text style={[styles.footnote, { color: palette.text.muted }]}>
+        All data stays on your device by default
+      </Text>
     </SafeAreaView>
   );
 }
@@ -117,25 +140,25 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    justifyContent: "center",
+    justifyContent: 'center',
     paddingHorizontal: spacing[6],
     gap: spacing[3],
   },
   logo: {
-    fontSize: typography.fontSize["2xl"],
+    fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
-    textAlign: "center",
+    textAlign: 'center',
     marginBottom: spacing[2],
   },
   title: {
     fontSize: typography.fontSize.xl,
     fontWeight: typography.fontWeight.bold,
-    textAlign: "center",
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.regular,
-    textAlign: "center",
+    textAlign: 'center',
     marginBottom: spacing[4],
   },
   formSection: {
@@ -155,7 +178,7 @@ const styles = StyleSheet.create({
   button: {
     marginTop: spacing[4],
     borderRadius: spacing[2],
-    alignItems: "center",
+    alignItems: 'center',
     paddingVertical: spacing[3],
   },
   buttonText: {
@@ -165,6 +188,6 @@ const styles = StyleSheet.create({
   footnote: {
     marginTop: spacing[4],
     fontSize: typography.fontSize.sm,
-    textAlign: "center",
+    textAlign: 'center',
   },
 });

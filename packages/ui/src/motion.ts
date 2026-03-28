@@ -5,8 +5,8 @@ export const duration = {
 } as const;
 
 export const easing = {
-  linear: "linear",
-  easeIn: "ease-in",
-  easeOut: "ease-out",
-  easeInOut: "ease-in-out",
+  linear: 'linear',
+  easeIn: 'ease-in',
+  easeOut: 'ease-out',
+  easeInOut: 'ease-in-out',
 } as const;

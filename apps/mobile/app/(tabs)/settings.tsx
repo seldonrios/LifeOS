@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -10,22 +10,22 @@ import {
   Text,
   useColorScheme,
   View,
-} from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
-import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
-import { Ionicons } from "@expo/vector-icons";
-import { useQuery } from "@tanstack/react-query";
-import type { DeviceInfo } from "@lifeos/contracts";
+} from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
+import Constants from 'expo-constants';
+import * as Notifications from 'expo-notifications';
+import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from '@tanstack/react-query';
+import type { DeviceInfo } from '@lifeos/contracts';
 
-import { useSessionStore } from "../../lib/session";
-import { ErrorBanner } from "../../components/ErrorBanner";
-import { queryClient } from "../../lib/query-client";
-import { sdk } from "../../lib/sdk";
+import { useSessionStore } from '../../lib/session';
+import { ErrorBanner } from '../../components/ErrorBanner';
+import { queryClient } from '../../lib/query-client';
+import { sdk } from '../../lib/sdk';
 
 export default function SettingsScreen() {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
 
   const user = useSessionStore((state) => state.user);
   const signOut = useSessionStore((state) => state.signOut);
@@ -33,14 +33,16 @@ export default function SettingsScreen() {
   const biometricEnabled = useSessionStore((state) => state.biometricEnabled);
   const setBiometricEnabled = useSessionStore((state) => state.setBiometricEnabled);
 
-  const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
+  const [notifStatus, setNotifStatus] = useState<'granted' | 'denied' | 'undetermined'>(
+    'undetermined',
+  );
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const [notifError, setNotifError] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
 
   const { data: devices, isLoading: devicesLoading } = useQuery({
-    queryKey: ["devices"],
+    queryKey: ['devices'],
     queryFn: () => sdk.devices.list(),
   });
 
@@ -48,7 +50,7 @@ export default function SettingsScreen() {
     const loadPermissionStatus = async () => {
       try {
         const status = await Notifications.getPermissionsAsync();
-        setNotifStatus(status.granted ? "granted" : status.status);
+        setNotifStatus(status.granted ? 'granted' : status.status);
       } catch {
         setNotifError(true);
       }
@@ -61,7 +63,7 @@ export default function SettingsScreen() {
     setNotifError(false);
     try {
       const status = await Notifications.requestPermissionsAsync();
-      setNotifStatus(status.granted ? "granted" : status.status);
+      setNotifStatus(status.granted ? 'granted' : status.status);
     } catch {
       setNotifError(true);
     }
@@ -73,42 +75,40 @@ export default function SettingsScreen() {
     setIsSigningOut(false);
   };
 
-  const appVersion = Constants.expoConfig?.version ?? "0.1.0";
-  const isGranted = notifStatus === "granted";
+  const appVersion = Constants.expoConfig?.version ?? '0.1.0';
+  const isGranted = notifStatus === 'granted';
 
-  function platformIcon(platform: DeviceInfo["platform"]): React.ComponentProps<typeof Ionicons>["name"] {
-    if (platform === "ios") return "phone-portrait";
-    if (platform === "android") return "logo-android";
-    return "desktop";
+  function platformIcon(
+    platform: DeviceInfo['platform'],
+  ): React.ComponentProps<typeof Ionicons>['name'] {
+    if (platform === 'ios') return 'phone-portrait';
+    if (platform === 'android') return 'logo-android';
+    return 'desktop';
   }
 
   const handleRevoke = async (item: DeviceInfo) => {
     if (item.isCurrentDevice) {
-      Alert.alert(
-        "Sign out of this device?",
-        "This will sign you out on this device. Continue?",
-        [
-          { text: "Cancel", style: "cancel" },
-          {
-            text: "Confirm",
-            style: "destructive",
-            onPress: async () => {
-              await sdk.devices.revoke(item.id);
-              await signOut();
-            },
+      Alert.alert('Sign out of this device?', 'This will sign you out on this device. Continue?', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Confirm',
+          style: 'destructive',
+          onPress: async () => {
+            await sdk.devices.revoke(item.id);
+            await signOut();
           },
-        ],
-      );
+        },
+      ]);
       return;
     }
 
     try {
       await sdk.devices.revoke(item.id);
-      queryClient.setQueryData<DeviceInfo[]>(["devices"], (old) =>
+      queryClient.setQueryData<DeviceInfo[]>(['devices'], (old) =>
         (old ?? []).filter((d) => d.id !== item.id),
       );
     } catch {
-      setRevokeError("Failed to revoke device. Please try again.");
+      setRevokeError('Failed to revoke device. Please try again.');
     }
   };
 
@@ -125,8 +125,12 @@ export default function SettingsScreen() {
           ]}
         >
           <Text style={[styles.sectionLabel, { color: palette.text.muted }]}>ACCOUNT</Text>
-          <Text style={[styles.primaryText, { color: palette.text.primary }]}>{user?.displayName ?? "Unknown user"}</Text>
-          <Text style={[styles.secondaryText, { color: palette.text.secondary }]}>{user?.email ?? "No email"}</Text>
+          <Text style={[styles.primaryText, { color: palette.text.primary }]}>
+            {user?.displayName ?? 'Unknown user'}
+          </Text>
+          <Text style={[styles.secondaryText, { color: palette.text.secondary }]}>
+            {user?.email ?? 'No email'}
+          </Text>
         </View>
 
         <View
@@ -147,11 +151,13 @@ export default function SettingsScreen() {
                 { color: isGranted ? palette.accent.success : palette.text.muted },
               ]}
             >
-              {isGranted ? "Granted" : "Not granted"}
+              {isGranted ? 'Granted' : 'Not granted'}
             </Text>
           </View>
           {notifError ? (
-            <Text style={[styles.statusText, { color: palette.accent.danger }]}>Unable to access notifications. Tap to retry.</Text>
+            <Text style={[styles.statusText, { color: palette.accent.danger }]}>
+              Unable to access notifications. Tap to retry.
+            </Text>
           ) : null}
           {!isGranted ? (
             <Pressable
@@ -160,7 +166,9 @@ export default function SettingsScreen() {
                 void handleRequestPermissions();
               }}
             >
-              <Text style={[styles.outlineButtonText, { color: palette.accent.brand }]}>Request permissions</Text>
+              <Text style={[styles.outlineButtonText, { color: palette.accent.brand }]}>
+                Request permissions
+              </Text>
             </Pressable>
           ) : null}
         </View>
@@ -177,7 +185,9 @@ export default function SettingsScreen() {
           >
             <Text style={[styles.sectionLabel, { color: palette.text.muted }]}>SECURITY</Text>
             <View style={styles.rowBetween}>
-              <Text style={[styles.labelText, { color: palette.text.secondary }]}>Biometric unlock</Text>
+              <Text style={[styles.labelText, { color: palette.text.secondary }]}>
+                Biometric unlock
+              </Text>
               <Switch
                 value={biometricEnabled}
                 onValueChange={(value) => {
@@ -206,9 +216,15 @@ export default function SettingsScreen() {
           {(devices ?? []).map((item: DeviceInfo) => (
             <View key={item.id} style={styles.rowBetween}>
               <View style={styles.deviceMeta}>
-                <Ionicons name={platformIcon(item.platform)} size={20} color={palette.text.secondary} />
+                <Ionicons
+                  name={platformIcon(item.platform)}
+                  size={20}
+                  color={palette.text.secondary}
+                />
                 <View>
-                  <Text style={[styles.labelText, { color: palette.text.primary }]}>{item.label}</Text>
+                  <Text style={[styles.labelText, { color: palette.text.primary }]}>
+                    {item.label}
+                  </Text>
                   <Text style={[styles.secondaryText, { color: palette.text.muted }]}>
                     {new Date(item.registeredAt).toLocaleDateString()}
                   </Text>
@@ -216,14 +232,20 @@ export default function SettingsScreen() {
               </View>
               {item.isCurrentDevice ? (
                 <View style={[styles.currentBadge, { backgroundColor: palette.accent.brand }]}>
-                  <Text style={[styles.currentBadgeText, { color: palette.background.primary }]}>This device</Text>
+                  <Text style={[styles.currentBadgeText, { color: palette.background.primary }]}>
+                    This device
+                  </Text>
                 </View>
               ) : (
                 <Pressable
                   style={[styles.outlineButton, { borderColor: palette.accent.danger }]}
-                  onPress={() => { void handleRevoke(item); }}
+                  onPress={() => {
+                    void handleRevoke(item);
+                  }}
                 >
-                  <Text style={[styles.outlineButtonText, { color: palette.accent.danger }]}>Revoke</Text>
+                  <Text style={[styles.outlineButtonText, { color: palette.accent.danger }]}>
+                    Revoke
+                  </Text>
                 </Pressable>
               )}
             </View>
@@ -256,7 +278,9 @@ export default function SettingsScreen() {
           {isSigningOut ? (
             <ActivityIndicator color={palette.background.primary} />
           ) : (
-            <Text style={[styles.signOutButtonText, { color: palette.background.primary }]}>Sign out</Text>
+            <Text style={[styles.signOutButtonText, { color: palette.background.primary }]}>
+              Sign out
+            </Text>
           )}
         </Pressable>
       </ScrollView>
@@ -277,7 +301,7 @@ const styles = StyleSheet.create({
   sectionLabel: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   card: {
@@ -287,9 +311,9 @@ const styles = StyleSheet.create({
     gap: spacing[2],
   },
   rowBetween: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     gap: spacing[2],
   },
   labelText: {
@@ -317,7 +341,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing[2],
     paddingVertical: spacing[2],
     paddingHorizontal: spacing[3],
-    alignSelf: "flex-start",
+    alignSelf: 'flex-start',
   },
   outlineButtonText: {
     fontSize: typography.fontSize.sm,
@@ -326,8 +350,8 @@ const styles = StyleSheet.create({
   signOutButton: {
     borderRadius: spacing[3],
     paddingVertical: spacing[3],
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     minHeight: spacing[12],
   },
   signOutButtonText: {
@@ -335,8 +359,8 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.semibold,
   },
   deviceMeta: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing[2],
     flex: 1,
   },

@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, Text, useColorScheme, View } from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+import { Pressable, StyleSheet, Text, useColorScheme, View } from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 type ErrorBannerProps = {
   message: string;
@@ -8,7 +8,7 @@ type ErrorBannerProps = {
 
 export function ErrorBanner({ message, onRetry }: ErrorBannerProps) {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
 
   return (
     <View
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
     fontWeight: typography.fontWeight.medium,
   },
   retryButton: {
-    alignSelf: "flex-start",
+    alignSelf: 'flex-start',
     borderWidth: 1,
     borderRadius: spacing[2],
     paddingHorizontal: spacing[3],

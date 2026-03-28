@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import * as FileSystem from "expo-file-system";
-import type { CaptureResult } from "@lifeos/contracts";
+import { useEffect, useRef, useState } from 'react';
+import * as FileSystem from 'expo-file-system';
+import type { CaptureResult } from '@lifeos/contracts';
 import {
   ActivityIndicator,
   Animated,
@@ -13,25 +13,25 @@ import {
   TextInput,
   useColorScheme,
   View,
-} from "react-native";
-import { darkColors, lightColors, spacing, typography } from "@lifeos/ui";
+} from 'react-native';
+import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
-import { useQueueStore } from "../../lib/queue";
-import { sdk } from "../../lib/sdk";
-import { useVoiceRecorder } from "../../lib/voice-recorder";
+import { useQueueStore } from '../../lib/queue';
+import { sdk } from '../../lib/sdk';
+import { useVoiceRecorder } from '../../lib/voice-recorder';
 
 function formatDuration(durationMs: number): string {
   const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = totalSeconds % 60;
-  return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
 export default function CaptureScreen() {
   const colorScheme = useColorScheme();
-  const palette = colorScheme === "dark" ? darkColors : lightColors;
-  const [mode, setMode] = useState<"text" | "voice">("text");
-  const [content, setContent] = useState("");
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
+  const [mode, setMode] = useState<'text' | 'voice'>('text');
+  const [content, setContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [offlineBanner, setOfflineBanner] = useState(false);
   const [captureResult, setCaptureResult] = useState<CaptureResult | null>(null);
@@ -47,11 +47,11 @@ export default function CaptureScreen() {
     clearError,
   } = useVoiceRecorder();
   const pendingCaptures = useQueueStore((state) =>
-    state.items.filter((item) => item.type === "capture" && item.status === "pending")
+    state.items.filter((item) => item.type === 'capture' && item.status === 'pending'),
   ).slice(0, 3);
 
   useEffect(() => {
-    if (recordingState !== "recording") {
+    if (recordingState !== 'recording') {
       return;
     }
 
@@ -73,7 +73,7 @@ export default function CaptureScreen() {
   }, [recordingState]);
 
   useEffect(() => {
-    if (recordingState !== "recording") {
+    if (recordingState !== 'recording') {
       pulseAnimation.stopAnimation();
       pulseAnimation.setValue(0);
       return;
@@ -91,7 +91,7 @@ export default function CaptureScreen() {
           duration: 1000,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
 
     pulse.start();
@@ -105,7 +105,7 @@ export default function CaptureScreen() {
 
   const trimmedContent = content.trim();
   const isSendDisabled = trimmedContent.length === 0 || isLoading;
-  const isCaptureSuccess = captureResult !== null && captureResult.status === "success";
+  const isCaptureSuccess = captureResult !== null && captureResult.status === 'success';
 
   const handleContentChange = (value: string) => {
     setContent(value);
@@ -122,18 +122,18 @@ export default function CaptureScreen() {
     setIsLoading(true);
 
     try {
-      const result = await sdk.capture.create({ type: "text", content: trimmedContent });
-      setContent("");
+      const result = await sdk.capture.create({ type: 'text', content: trimmedContent });
+      setContent('');
       setOfflineBanner(false);
       setCaptureResult(result);
     } catch {
       useQueueStore.getState().enqueue({
-        type: "capture",
-        payload: { type: "text", content: trimmedContent },
-        conflictPolicy: "last-write-wins",
+        type: 'capture',
+        payload: { type: 'text', content: trimmedContent },
+        conflictPolicy: 'last-write-wins',
       });
       setOfflineBanner(true);
-      setContent("");
+      setContent('');
       setCaptureResult(null);
     } finally {
       setIsLoading(false);
@@ -163,7 +163,7 @@ export default function CaptureScreen() {
 
     setVoiceElapsedMs(recording.durationMs);
 
-    let audioBase64 = "";
+    let audioBase64 = '';
 
     try {
       audioBase64 = await FileSystem.readAsStringAsync(recording.uri, {
@@ -171,8 +171,8 @@ export default function CaptureScreen() {
       });
 
       const result = await sdk.capture.create({
-        type: "voice",
-        content: "",
+        type: 'voice',
+        content: '',
         metadata: {
           audioBase64,
           durationMs: recording.durationMs,
@@ -183,16 +183,16 @@ export default function CaptureScreen() {
       setCaptureResult(result);
     } catch {
       useQueueStore.getState().enqueue({
-        type: "capture",
+        type: 'capture',
         payload: {
-          type: "voice",
-          content: "",
+          type: 'voice',
+          content: '',
           metadata: {
             audioBase64,
             durationMs: recording.durationMs,
           },
         },
-        conflictPolicy: "last-write-wins",
+        conflictPolicy: 'last-write-wins',
       });
       setOfflineBanner(true);
       setCaptureResult(null);
@@ -213,7 +213,7 @@ export default function CaptureScreen() {
   });
 
   const formattedVoiceDuration = formatDuration(voiceElapsedMs);
-  const isVoiceProcessing = recordingState === "processing";
+  const isVoiceProcessing = recordingState === 'processing';
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
@@ -226,19 +226,18 @@ export default function CaptureScreen() {
               styles.modeButton,
               {
                 backgroundColor:
-                  mode === "text" ? palette.accent.brand : palette.background.secondary,
+                  mode === 'text' ? palette.accent.brand : palette.background.secondary,
               },
             ]}
             onPress={() => {
-              setMode("text");
+              setMode('text');
             }}
           >
             <Text
               style={[
                 styles.modeButtonText,
                 {
-                  color:
-                    mode === "text" ? palette.background.primary : palette.text.primary,
+                  color: mode === 'text' ? palette.background.primary : palette.text.primary,
                 },
               ]}
             >
@@ -250,19 +249,18 @@ export default function CaptureScreen() {
               styles.modeButton,
               {
                 backgroundColor:
-                  mode === "voice" ? palette.accent.brand : palette.background.secondary,
+                  mode === 'voice' ? palette.accent.brand : palette.background.secondary,
               },
             ]}
             onPress={() => {
-              setMode("voice");
+              setMode('voice');
             }}
           >
             <Text
               style={[
                 styles.modeButtonText,
                 {
-                  color:
-                    mode === "voice" ? palette.background.primary : palette.text.primary,
+                  color: mode === 'voice' ? palette.background.primary : palette.text.primary,
                 },
               ]}
             >
@@ -271,7 +269,7 @@ export default function CaptureScreen() {
           </Pressable>
         </View>
 
-        {mode === "text" ? (
+        {mode === 'text' ? (
           <View style={styles.section}>
             <TextInput
               multiline
@@ -301,12 +299,14 @@ export default function CaptureScreen() {
             {isVoiceProcessing ? (
               <View style={styles.voiceProcessingState}>
                 <ActivityIndicator color={palette.accent.brand} />
-                <Text style={[styles.voiceProcessingText, { color: palette.text.secondary }]}>Processing voice capture...</Text>
+                <Text style={[styles.voiceProcessingText, { color: palette.text.secondary }]}>
+                  Processing voice capture...
+                </Text>
               </View>
             ) : (
               <>
                 <View style={styles.voiceButtonWrap}>
-                  {recordingState === "recording" ? (
+                  {recordingState === 'recording' ? (
                     <Animated.View
                       pointerEvents="none"
                       style={[
@@ -324,11 +324,13 @@ export default function CaptureScreen() {
                       styles.voiceButton,
                       {
                         backgroundColor:
-                          recordingState === "recording" ? palette.accent.danger : palette.accent.brand,
+                          recordingState === 'recording'
+                            ? palette.accent.danger
+                            : palette.accent.brand,
                       },
                     ]}
                     onPress={() => {
-                      if (recordingState === "recording") {
+                      if (recordingState === 'recording') {
                         void handleStopVoiceRecording();
                         return;
                       }
@@ -337,16 +339,22 @@ export default function CaptureScreen() {
                     }}
                   >
                     <Text style={[styles.voiceButtonIcon, { color: palette.background.primary }]}>
-                      {recordingState === "recording" ? "■" : "🎤"}
+                      {recordingState === 'recording' ? '■' : '🎤'}
                     </Text>
                   </Pressable>
                 </View>
-                {recordingState === "recording" ? (
-                  <Text style={[styles.voiceDurationText, { color: palette.text.secondary }]}>{formattedVoiceDuration}</Text>
+                {recordingState === 'recording' ? (
+                  <Text style={[styles.voiceDurationText, { color: palette.text.secondary }]}>
+                    {formattedVoiceDuration}
+                  </Text>
                 ) : null}
               </>
             )}
-            {voiceError ? <Text style={[styles.voiceErrorText, { color: palette.accent.danger }]}>{voiceError}</Text> : null}
+            {voiceError ? (
+              <Text style={[styles.voiceErrorText, { color: palette.accent.danger }]}>
+                {voiceError}
+              </Text>
+            ) : null}
           </View>
         )}
 
@@ -367,8 +375,8 @@ export default function CaptureScreen() {
                 }
 
                 void Share.share({
-                  message: captureResult.content || "LifeOS capture",
-                  title: "LifeOS",
+                  message: captureResult.content || 'LifeOS capture',
+                  title: 'LifeOS',
                 });
               }}
             >
@@ -377,12 +385,14 @@ export default function CaptureScreen() {
           </View>
         ) : null}
 
-        {mode === "text" ? (
+        {mode === 'text' ? (
           <Pressable
             style={[
               styles.sendButton,
               {
-                backgroundColor: isSendDisabled ? palette.background.secondary : palette.accent.brand,
+                backgroundColor: isSendDisabled
+                  ? palette.background.secondary
+                  : palette.accent.brand,
               },
             ]}
             disabled={isSendDisabled}
@@ -393,7 +403,9 @@ export default function CaptureScreen() {
             {isLoading ? (
               <ActivityIndicator color={palette.background.primary} />
             ) : (
-              <Text style={[styles.sendButtonText, { color: palette.background.primary }]}>Send</Text>
+              <Text style={[styles.sendButtonText, { color: palette.background.primary }]}>
+                Send
+              </Text>
             )}
           </Pressable>
         ) : null}
@@ -416,10 +428,13 @@ export default function CaptureScreen() {
 
         {pendingCaptures.length > 0 ? (
           <View style={styles.section}>
-            <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>QUEUED FOR SYNC</Text>
+            <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>
+              QUEUED FOR SYNC
+            </Text>
             {pendingCaptures.map((item) => {
-              const captureText = typeof item.payload.content === "string" ? item.payload.content.trim() : "";
-              const preview = captureText.length > 0 ? captureText : "Pending capture";
+              const captureText =
+                typeof item.payload.content === 'string' ? item.payload.content.trim() : '';
+              const preview = captureText.length > 0 ? captureText : 'Pending capture';
 
               return (
                 <View
@@ -432,7 +447,10 @@ export default function CaptureScreen() {
                     },
                   ]}
                 >
-                  <Text style={[styles.queueCardText, { color: palette.text.primary }]} numberOfLines={1}>
+                  <Text
+                    style={[styles.queueCardText, { color: palette.text.primary }]}
+                    numberOfLines={1}
+                  >
                     {preview}
                   </Text>
                 </View>
@@ -456,11 +474,11 @@ const styles = StyleSheet.create({
     paddingBottom: spacing[8],
   },
   name: {
-    fontSize: typography.fontSize["2xl"],
+    fontSize: typography.fontSize['2xl'],
     fontWeight: typography.fontWeight.bold,
   },
   modeRow: {
-    flexDirection: "row",
+    flexDirection: 'row',
     gap: spacing[2],
   },
   modeButton: {
@@ -468,7 +486,7 @@ const styles = StyleSheet.create({
     borderRadius: spacing[3],
     paddingVertical: spacing[3],
     paddingHorizontal: spacing[4],
-    alignItems: "center",
+    alignItems: 'center',
   },
   modeButtonText: {
     fontSize: typography.fontSize.base,
@@ -485,17 +503,17 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.base,
   },
   counterText: {
-    alignSelf: "flex-end",
+    alignSelf: 'flex-end',
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
   },
   voiceSection: {
-    alignItems: "center",
+    alignItems: 'center',
     gap: spacing[2],
   },
   voiceProcessingState: {
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing[2],
     minHeight: 120,
   },
@@ -506,12 +524,12 @@ const styles = StyleSheet.create({
   voiceButtonWrap: {
     width: 112,
     height: 112,
-    alignItems: "center",
-    justifyContent: "center",
-    position: "relative",
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
   },
   voicePulseRing: {
-    position: "absolute",
+    position: 'absolute',
     width: 104,
     height: 104,
     borderRadius: 52,
@@ -521,8 +539,8 @@ const styles = StyleSheet.create({
     width: 88,
     height: 88,
     borderRadius: 44,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   voiceButtonIcon: {
     fontSize: typography.fontSize.xl,
@@ -535,15 +553,15 @@ const styles = StyleSheet.create({
   voiceErrorText: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    textAlign: "center",
+    textAlign: 'center',
   },
   successText: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
   },
   successRow: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: spacing[3],
   },
   shareButton: {
@@ -559,8 +577,8 @@ const styles = StyleSheet.create({
   sendButton: {
     borderRadius: spacing[3],
     paddingVertical: spacing[3],
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: 'center',
+    justifyContent: 'center',
     minHeight: 48,
   },
   sendButtonText: {
@@ -579,7 +597,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
-    textTransform: "uppercase",
+    textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   queueCard: {

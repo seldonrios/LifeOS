@@ -52,7 +52,7 @@ export async function sendHttpRequest<T = unknown>(
   request: HttpRequest,
   authInjector: AuthHeaderInjector,
   config: Pick<SDKConfig, 'timeout' | 'onAuthExpired'>,
-  retryPolicy?: RetryPolicy
+  retryPolicy?: RetryPolicy,
 ): Promise<HttpResponse<T>> {
   const maxAttempts = retryPolicy?.maxAttempts ?? 1;
   const backoffMs = retryPolicy?.backoffMs ?? 100;
@@ -62,10 +62,7 @@ export async function sendHttpRequest<T = unknown>(
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       const controller = new AbortController();
-      const timeoutHandle = setTimeout(
-        () => controller.abort(),
-        config.timeout ?? 15000
-      );
+      const timeoutHandle = setTimeout(() => controller.abort(), config.timeout ?? 15000);
 
       try {
         const headers = new Headers(request.headers ?? {});
@@ -78,9 +75,7 @@ export async function sendHttpRequest<T = unknown>(
 
         // Set Content-Type for POST/PUT/PATCH with body
         if (
-          (request.method === 'POST' ||
-            request.method === 'PUT' ||
-            request.method === 'PATCH') &&
+          (request.method === 'POST' || request.method === 'PUT' || request.method === 'PATCH') &&
           request.body !== undefined
         ) {
           headers.set('Content-Type', 'application/json');
