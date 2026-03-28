@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
 import type { InboxItem } from "@lifeos/contracts";
 import { useRouter } from "expo-router";
@@ -9,6 +10,7 @@ import {
   SafeAreaView,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from "react-native";
@@ -75,6 +77,7 @@ export default function InboxScreen() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === "dark" ? darkColors : lightColors;
   const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState("");
 
   const {
     data,
@@ -89,6 +92,19 @@ export default function InboxScreen() {
   });
 
   const items = useMemo(() => data ?? [], [data]);
+  const filteredItems = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) {
+      return items;
+    }
+
+    return items.filter((item) => {
+      const titleMatch = item.title.toLowerCase().includes(term);
+      const descriptionMatch = item.description?.toLowerCase().includes(term) ?? false;
+      const typeMatch = item.type.toLowerCase().includes(term);
+      return titleMatch || descriptionMatch || typeMatch;
+    });
+  }, [items, searchTerm]);
 
   const handleNotificationPress = (item: InboxItem) => {
     markReadOptimistically(item.id);
@@ -199,10 +215,11 @@ export default function InboxScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
       <FlatList
-        data={items}
+        data={filteredItems}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={items.length === 0 ? styles.emptyContent : styles.listContent}
+        contentContainerStyle={filteredItems.length === 0 ? styles.emptyContent : styles.listContent}
+        stickyHeaderIndices={[0]}
         refreshControl={
           <RefreshControl
             refreshing={isLoading || isRefetching}
@@ -212,9 +229,43 @@ export default function InboxScreen() {
             tintColor={palette.accent.brand}
           />
         }
+        ListHeaderComponent={
+          <View style={[styles.searchHeader, { backgroundColor: palette.background.primary }]}> 
+            <View
+              style={[
+                styles.searchBar,
+                {
+                  backgroundColor: palette.background.card,
+                  borderColor: palette.border.default,
+                },
+              ]}
+            >
+              <TextInput
+                value={searchTerm}
+                onChangeText={setSearchTerm}
+                placeholder="Search inbox"
+                placeholderTextColor={palette.text.muted}
+                style={[styles.searchInput, { color: palette.text.primary }]}
+              />
+              {searchTerm.length > 0 ? (
+                <Pressable
+                  onPress={() => {
+                    setSearchTerm("");
+                  }}
+                  hitSlop={8}
+                  style={styles.clearSearchButton}
+                >
+                  <Ionicons name="close-circle" size={18} color={palette.text.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: palette.text.secondary }]}>Your inbox is clear</Text>
+            <Text style={[styles.emptyText, { color: palette.text.secondary }]}>
+              {searchTerm.trim().length > 0 ? `No results for '${searchTerm.trim()}'` : "Your inbox is clear"}
+            </Text>
           </View>
         }
       />
@@ -228,9 +279,29 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
+    paddingTop: spacing[2],
     paddingBottom: spacing[8],
     gap: spacing[3],
+  },
+  searchHeader: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[2],
+  },
+  searchBar: {
+    minHeight: 42,
+    borderRadius: spacing[3],
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing[3],
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+  },
+  clearSearchButton: {
+    marginLeft: spacing[2],
   },
   emptyContent: {
     flexGrow: 1,

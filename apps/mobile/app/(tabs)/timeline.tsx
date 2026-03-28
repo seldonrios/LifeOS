@@ -1,12 +1,17 @@
+import { Ionicons } from "@expo/vector-icons";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { GoalSummary, TimelineEntry } from "@lifeos/contracts";
 import {
   FlatList,
+  Pressable,
   RefreshControl,
   SafeAreaView,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from "react-native";
@@ -67,9 +72,15 @@ function formatDeadline(deadline: string | null): string {
   });
 }
 
+function buildShareText(entry: TimelineEntry): string {
+  const formattedDate = entry.type === "task" ? formatDueDate(entry.dueDate) : formatStartTime(entry.start);
+  return `${entry.title}${formattedDate ? ` — ${formattedDate}` : ""}`;
+}
+
 export default function TimelineScreen() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const [searchTerm, setSearchTerm] = useState("");
 
   const {
     data,
@@ -87,6 +98,16 @@ export default function TimelineScreen() {
     queryKey: ["goals"],
     queryFn: () => sdk.timeline.goals(),
   });
+
+  const items = data ?? [];
+  const filteredItems = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase();
+    if (!term) {
+      return items;
+    }
+
+    return items.filter((entry) => entry.title.toLowerCase().includes(term));
+  }, [items, searchTerm]);
 
   const renderGoalsSection = () => {
     if (!isGoalsLoading && (!goals || goals.length === 0)) {
@@ -168,8 +189,8 @@ export default function TimelineScreen() {
   const renderEntry = ({ item }: { item: TimelineEntry }) => {
     const meta = item.type === "task" ? formatDueDate(item.dueDate) : formatStartTime(item.start);
 
-    let badgeBackgroundColor = palette.background.secondary;
-    let badgeTextColor = palette.text.muted;
+    let badgeBackgroundColor: string = palette.background.secondary;
+    let badgeTextColor: string = palette.text.muted;
 
     if (item.status === "in-progress") {
       badgeBackgroundColor = palette.accent.brand;
@@ -197,8 +218,19 @@ export default function TimelineScreen() {
       >
         <View style={styles.headerRow}>
           <Text style={[styles.entryTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
-          <View style={[styles.badge, { backgroundColor: badgeBackgroundColor }]}>
-            <Text style={[styles.badgeText, { color: badgeTextColor }]}>{item.status}</Text>
+          <View style={styles.headerRight}>
+            <View style={[styles.badge, { backgroundColor: badgeBackgroundColor }]}> 
+              <Text style={[styles.badgeText, { color: badgeTextColor }]}>{item.status}</Text>
+            </View>
+            <Pressable
+              onPress={() => {
+                void Share.share({ message: buildShareText(item) });
+              }}
+              hitSlop={8}
+              style={styles.shareButton}
+            >
+              <Ionicons name="share-outline" size={16} color={palette.text.muted} />
+            </Pressable>
           </View>
         </View>
         {meta ? <Text style={[styles.metaText, { color: palette.text.muted }]}>{meta}</Text> : null}
@@ -231,16 +263,15 @@ export default function TimelineScreen() {
     );
   }
 
-  const items = data ?? [];
-
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
       <FlatList
-        data={items}
+        data={filteredItems}
         keyExtractor={(item) => item.id}
         renderItem={renderEntry}
+        stickyHeaderIndices={[0]}
         contentContainerStyle={
-          items.length === 0 && !isGoalsLoading && (!goals || goals.length === 0)
+          filteredItems.length === 0 && !isGoalsLoading && (!goals || goals.length === 0)
             ? styles.emptyContent
             : styles.listContent
         }
@@ -254,10 +285,44 @@ export default function TimelineScreen() {
             tintColor={palette.accent.brand}
           />
         }
-        ListHeaderComponent={renderGoalsSection()}
+        ListHeaderComponent={
+          <View style={[styles.listHeader, { backgroundColor: palette.background.primary }]}>
+            {renderGoalsSection()}
+            <View
+              style={[
+                styles.searchBar,
+                {
+                  backgroundColor: palette.background.card,
+                  borderColor: palette.border.default,
+                },
+              ]}
+            >
+              <TextInput
+                value={searchTerm}
+                onChangeText={setSearchTerm}
+                placeholder="Search timeline"
+                placeholderTextColor={palette.text.muted}
+                style={[styles.searchInput, { color: palette.text.primary }]}
+              />
+              {searchTerm.length > 0 ? (
+                <Pressable
+                  onPress={() => {
+                    setSearchTerm("");
+                  }}
+                  hitSlop={8}
+                  style={styles.clearSearchButton}
+                >
+                  <Ionicons name="close-circle" size={18} color={palette.text.muted} />
+                </Pressable>
+              ) : null}
+            </View>
+          </View>
+        }
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Text style={[styles.emptyText, { color: palette.text.secondary }]}>No upcoming items</Text>
+            <Text style={[styles.emptyText, { color: palette.text.secondary }]}>
+              {searchTerm.trim().length > 0 ? `No items match '${searchTerm.trim()}'` : "No upcoming items"}
+            </Text>
           </View>
         }
       />
@@ -271,13 +336,33 @@ const styles = StyleSheet.create({
   },
   listContent: {
     paddingHorizontal: spacing[4],
-    paddingTop: spacing[4],
+    paddingTop: spacing[2],
     paddingBottom: spacing[8],
+    gap: spacing[3],
+  },
+  listHeader: {
+    paddingHorizontal: spacing[4],
+    paddingTop: spacing[4],
+    paddingBottom: spacing[2],
     gap: spacing[3],
   },
   goalsSection: {
     gap: spacing[3],
-    marginBottom: spacing[4],
+  },
+  searchBar: {
+    minHeight: 42,
+    borderRadius: spacing[3],
+    borderWidth: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing[3],
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: typography.fontSize.base,
+  },
+  clearSearchButton: {
+    marginLeft: spacing[2],
   },
   goalsListContent: {
     gap: spacing[3],
@@ -316,6 +401,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: spacing[2],
+  },
+  headerRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing[2],
+  },
+  shareButton: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   sectionLabel: {
     fontSize: typography.fontSize.sm,

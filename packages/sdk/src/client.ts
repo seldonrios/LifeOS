@@ -133,6 +133,12 @@ class CaptureNamespace {
 
     return response.data;
   }
+
+  async search(query: string): Promise<CaptureResult[]> {
+    void this.config;
+    void query;
+    return [];
+  }
 }
 
 /**
