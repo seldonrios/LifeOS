@@ -33,5 +33,10 @@ export {
   type NotificationRoute,
 } from './notifications';
 
+export {
+  type DeviceInfo,
+  type RevokeDeviceRequest,
+} from './devices';
+
 export type { LifeOSError } from './errors';
 export type { SDKConfig } from './sdk';

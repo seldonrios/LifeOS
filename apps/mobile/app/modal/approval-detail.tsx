@@ -69,10 +69,21 @@ export default function ApprovalDetailModal() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === "dark" ? darkColors : lightColors;
   const router = useRouter();
-  const { itemId } = useLocalSearchParams<{ itemId: string }>();
+  const rawItemId = useLocalSearchParams<{ itemId: string | string[] }>().itemId;
+  const itemId = Array.isArray(rawItemId) ? rawItemId[0] : (rawItemId ?? "");
 
   const item = queryClient.getQueryData<InboxItem[]>(["inbox"])?.find((entry) => entry.id === itemId);
   const approvalData = item?.data as ApprovalRequest | undefined;
+
+  const isValidApproval =
+    item !== undefined &&
+    item.type === "approval" &&
+    typeof approvalData?.requestId === "string" &&
+    approvalData.requestId.length > 0 &&
+    typeof approvalData?.action === "string" &&
+    approvalData.action.length > 0 &&
+    approvalData?.context !== null &&
+    typeof approvalData?.context === "object";
 
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState<"approve" | "reject" | null>(null);
@@ -118,11 +129,18 @@ export default function ApprovalDetailModal() {
     }
   }, [approvalData?.requestId, reason, router]);
 
-  if (!item || !approvalData) {
+  if (!isValidApproval || !approvalData) {
+    const fallbackMessage =
+      !item
+        ? "Approval item not found"
+        : item.type !== "approval"
+          ? "This item is not an approval request"
+          : "Approval request is missing required fields";
+
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
         <View style={styles.content}>
-          <ErrorBanner message="Approval item not found" />
+          <ErrorBanner message={fallbackMessage} />
         </View>
       </SafeAreaView>
     );

@@ -5,6 +5,7 @@
 import type {
   SDKConfig,
   InboxItem,
+  DeviceInfo,
   CaptureRequest,
   CaptureResult,
   TimelineEntry,
@@ -237,6 +238,53 @@ class NotificationsNamespace {
 }
 
 /**
+ * Devices namespace.
+ */
+class DevicesNamespace {
+  constructor(private config: SDKConfig) {}
+
+  async list(): Promise<DeviceInfo[]> {
+    void this.config;
+
+    return [
+      {
+        id: 'device_iphone_15',
+        label: 'iPhone 15 Pro',
+        platform: 'ios',
+        registeredAt: '2026-03-20T09:24:00.000Z',
+        isCurrentDevice: true,
+      },
+      {
+        id: 'device_pixel_8',
+        label: 'Pixel 8',
+        platform: 'android',
+        registeredAt: '2026-02-11T17:10:00.000Z',
+        isCurrentDevice: false,
+      },
+      {
+        id: 'device_chrome_web',
+        label: 'Chrome on Windows',
+        platform: 'web',
+        registeredAt: '2026-01-05T13:42:00.000Z',
+        isCurrentDevice: false,
+      },
+    ];
+  }
+
+  async revoke(deviceId: string): Promise<void> {
+    await sendHttpRequest(
+      {
+        url: `${this.config.baseUrl}/api/devices/revoke`,
+        method: 'POST',
+        body: { deviceId },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+  }
+}
+
+/**
  * Main LifeOS SDK client.
  */
 export class LifeOSClient {
@@ -245,6 +293,7 @@ export class LifeOSClient {
   readonly capture: CaptureNamespace;
   readonly timeline: TimelineNamespace;
   readonly notifications: NotificationsNamespace;
+  readonly devices: DevicesNamespace;
 
   constructor(config: SDKConfig) {
     // Apply default timeout if not specified
@@ -258,5 +307,6 @@ export class LifeOSClient {
     this.capture = new CaptureNamespace(effectiveConfig);
     this.timeline = new TimelineNamespace(effectiveConfig);
     this.notifications = new NotificationsNamespace(effectiveConfig);
+    this.devices = new DevicesNamespace(effectiveConfig);
   }
 }

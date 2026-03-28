@@ -4,7 +4,7 @@
 
 export { LifeOSClient } from './client';
 export { AuthClientImpl, type AuthClient } from './auth';
-export type { SDKConfig, GoalSummary } from '@lifeos/contracts';
+export type { SDKConfig, GoalSummary, DeviceInfo } from '@lifeos/contracts';
 export { mapHttpStatusToError, type LifeOSError } from './errors';
 export {
   type HttpRequest,
