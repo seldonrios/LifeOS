@@ -22,24 +22,38 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
+      - name: Detect Expo token availability
+        id: expo_token
+        run: |
+          if [ -n "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
       - name: Setup pnpm
+        if: steps.expo_token.outputs.available == 'true'
         uses: pnpm/action-setup@v5
       - name: Setup Node.js
+        if: steps.expo_token.outputs.available == 'true'
         uses: actions/setup-node@v6
         with:
           node-version: '20.19.0'
           cache: pnpm
       - name: Install dependencies
+        if: steps.expo_token.outputs.available == 'true'
         run: pnpm install --frozen-lockfile
       - name: Setup Expo
+        if: steps.expo_token.outputs.available == 'true'
         uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Run EAS preview build
+        if: steps.expo_token.outputs.available == 'true'
         working-directory: apps/mobile
         run: npx --yes eas-cli@latest build --platform all --profile preview --non-interactive --json > eas-build.json
       - name: Comment build URL on commit
+        if: steps.expo_token.outputs.available == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -60,3 +74,7 @@ jobs:
               commit_sha: context.sha,
               body,
             });
+      - name: Skip preview when EXPO_TOKEN is unavailable
+        if: steps.expo_token.outputs.available != 'true'
+        run: |
+          echo "::warning::EXPO_TOKEN is not configured. Skipping EAS preview build."
