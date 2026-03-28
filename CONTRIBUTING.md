@@ -4,6 +4,7 @@ This guide is the quick start for contributors shipping modules and core improve
 
 For deeper architecture and repository conventions, also see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md).
 Release/versioning behavior is documented in [docs/community/release-policy.md](docs/community/release-policy.md).
+Platform stability categories are documented in [docs/platform/stability-map.md](docs/platform/stability-map.md).
 Test expectations are documented in [docs/testing/test-taxonomy.md](docs/testing/test-taxonomy.md).
 Module compatibility requirements are documented in [docs/community/works-with-lifeos-checklist.md](docs/community/works-with-lifeos-checklist.md).
 
@@ -96,6 +97,15 @@ Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --
 
 Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
 Marketplace catalog: `community-modules.json` (root).
+
+## Platform work
+
+PRs that change platform contracts must include the following:
+
+- Stability category update (`stable`, `experimental`, `internal`) in `docs/platform/stability-map.md` where relevant.
+- RFC link for breaking contract changes (see `docs/platform/rfc-process.md`).
+- Migration note for breaking or deprecating changes.
+- Compatibility check summary in PR description (manifest/event/graph/interface impact).
 
 Catalog contributions should include a current `lastUpdated` value so CLI freshness reporting remains accurate.
 

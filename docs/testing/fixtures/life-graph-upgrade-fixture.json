@@ -1,0 +1,21 @@
+{
+  "version": "0.1.0",
+  "updatedAt": "2026-03-01T00:00:00.000Z",
+  "plans": [
+    {
+      "id": "plan-upgrade-fixture",
+      "title": "Upgrade fixture plan",
+      "description": "Ensures previous-version graph payload remains accepted",
+      "deadline": null,
+      "tasks": [
+        {
+          "id": "task-upgrade-fixture",
+          "title": "Validate migration compatibility",
+          "status": "todo",
+          "priority": 3
+        }
+      ],
+      "createdAt": "2026-03-01T00:00:00.000Z"
+    }
+  ]
+}

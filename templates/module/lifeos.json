@@ -18,7 +18,7 @@
     "cpu": "low",
     "memory": "low"
   },
-  "requires": ["@lifeos/voice-core@>=0.3.0 <0.4.0", "@lifeos/life-graph@>=0.3.0 <0.4.0"],
+  "requires": ["@lifeos/cli@>=0.1.0 <0.2.0", "@lifeos/module-sdk@>=0.1.0 <0.2.0"],
   "category": "health",
   "tags": ["habit", "fitness"]
 }

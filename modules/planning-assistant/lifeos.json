@@ -1,0 +1,28 @@
+{
+  "name": "planning-assistant",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Personal planning assistant reference module for task decomposition and reminder scheduling.",
+  "permissions": {
+    "graph": ["read", "append"],
+    "network": [],
+    "voice": [],
+    "events": [
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.task.completed",
+      "publish:lifeos.planning-assistant.task.planned",
+      "publish:lifeos.planning-assistant.reminder.scheduled",
+      "publish:lifeos.planning-assistant.plan.updated"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": [
+    "@lifeos/cli@>=0.1.0 <0.2.0",
+    "@lifeos/module-sdk@>=0.1.0 <0.2.0"
+  ],
+  "category": "productivity",
+  "tags": ["planning", "tasks", "reminders"]
+}

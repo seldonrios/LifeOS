@@ -12,6 +12,7 @@ import { pathToFileURL } from 'node:url';
 import ora, { type Ora } from 'ora';
 
 import { runInitCommand } from './commands/init';
+import { runDoctorCommand } from './commands/doctor';
 import {
   Topics,
   createEventBusClient,
@@ -3156,7 +3157,7 @@ export async function runModuleCommand(
 
       const failures: Array<{ moduleName: string; errors: string[] }> = [];
       for (const entry of entries) {
-        const validation = await validateModuleManifest(entry, baseCwd);
+        const validation = await validateModuleManifest(entry, baseCwd, CLI_VERSION);
         if (!validation.valid) {
           failures.push({ moduleName: entry, errors: validation.errors });
         }
@@ -3183,7 +3184,7 @@ export async function runModuleCommand(
       writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module validate".\n`);
       return 1;
     }
-    const validation = await validateModuleManifest(moduleName, baseCwd);
+    const validation = await validateModuleManifest(moduleName, baseCwd, CLI_VERSION);
     if (validation.valid) {
       writeStdout(chalk.green(`Manifest valid: ${validation.manifestPath}\n`));
       return 0;
@@ -4444,6 +4445,24 @@ function buildProgram(
           verbose: Boolean(commandOptions.verbose),
         },
         dependencies,
+      );
+
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('doctor')
+    .description('Run local environment and runtime diagnostics')
+    .option('--json', 'Output diagnostics JSON only')
+    .option('--verbose', 'Show passing checks and extra diagnostics')
+    .action(async (commandOptions) => {
+      const commandExitCode = await runDoctorCommand(
+        {
+          outputJson: Boolean(commandOptions.json),
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+        CLI_VERSION,
       );
 
       setExitCode(commandExitCode);

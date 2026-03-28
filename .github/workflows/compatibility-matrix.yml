@@ -18,9 +18,133 @@ jobs:
           node-version: '20.19.0'
       - uses: pnpm/action-setup@v5
       - run: pnpm install --frozen-lockfile
-      - run: pnpm lifeos demo --modules=all --dry-run
-      - name: Generate matrix
-        run: pnpm lifeos marketplace compatibility --output compatibility-matrix.json
+      - name: Validate each module manifest
+        run: |
+          set -euo pipefail
+          for module_dir in modules/*; do
+            if [ -d "$module_dir" ] && [ -f "$module_dir/lifeos.json" ]; then
+              module_name="$(basename "$module_dir")"
+              echo "Validating $module_name"
+              pnpm lifeos module validate "$module_name"
+            fi
+          done
+      - name: Generate compatibility matrix artifact
+        run: |
+          node <<'NODE'
+          const { readFileSync, readdirSync, existsSync, writeFileSync } = require('node:fs');
+          const { join } = require('node:path');
+
+          function parseSemver(value) {
+            const match = String(value).trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
+            if (!match) return null;
+            return { major: Number(match[1]), minor: Number(match[2]), patch: Number(match[3]) };
+          }
+
+          function compareSemver(a, b) {
+            if (a.major !== b.major) return a.major - b.major;
+            if (a.minor !== b.minor) return a.minor - b.minor;
+            return a.patch - b.patch;
+          }
+
+          function incMinor(v) {
+            return { major: v.major, minor: v.minor + 1, patch: 0 };
+          }
+
+          function incMajor(v) {
+            return { major: v.major + 1, minor: 0, patch: 0 };
+          }
+
+          function satisfies(versionText, rangeText) {
+            const version = parseSemver(versionText);
+            if (!version) return false;
+            const tokens = String(rangeText).trim().split(/\s+/).filter(Boolean);
+            if (tokens.length === 0) return false;
+
+            for (const token of tokens) {
+              if (token.startsWith('>=')) {
+                const min = parseSemver(token.slice(2));
+                if (!min || compareSemver(version, min) < 0) return false;
+                continue;
+              }
+              if (token.startsWith('>')) {
+                const min = parseSemver(token.slice(1));
+                if (!min || compareSemver(version, min) <= 0) return false;
+                continue;
+              }
+              if (token.startsWith('<=')) {
+                const max = parseSemver(token.slice(2));
+                if (!max || compareSemver(version, max) > 0) return false;
+                continue;
+              }
+              if (token.startsWith('<')) {
+                const max = parseSemver(token.slice(1));
+                if (!max || compareSemver(version, max) >= 0) return false;
+                continue;
+              }
+              if (token.startsWith('^')) {
+                const base = parseSemver(token.slice(1));
+                if (!base) return false;
+                const upper = base.major > 0 ? incMajor(base) : incMinor(base);
+                if (compareSemver(version, base) < 0 || compareSemver(version, upper) >= 0) return false;
+                continue;
+              }
+              if (token.startsWith('~')) {
+                const base = parseSemver(token.slice(1));
+                if (!base) return false;
+                const upper = incMinor(base);
+                if (compareSemver(version, base) < 0 || compareSemver(version, upper) >= 0) return false;
+                continue;
+              }
+              const exact = parseSemver(token);
+              if (!exact || compareSemver(version, exact) !== 0) return false;
+            }
+
+            return true;
+          }
+
+          const cliSource = readFileSync('packages/cli/src/index.ts', 'utf8');
+          const versionMatch = cliSource.match(/const CLI_VERSION = '([^']+)'/);
+          const cliVersion = versionMatch ? versionMatch[1] : '0.1.0';
+
+          const modulesDir = 'modules';
+          const rows = [];
+
+          for (const moduleName of readdirSync(modulesDir)) {
+            const manifestPath = join(modulesDir, moduleName, 'lifeos.json');
+            if (!existsSync(manifestPath)) continue;
+            const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+            const requires = Array.isArray(manifest.requires) ? manifest.requires : [];
+            const rangeChecks = requires.map((entry) => {
+              const match = String(entry).match(/^@lifeos\/[a-z0-9-]+(?:@(.+))?$/);
+              const range = match && match[1] ? match[1].trim() : null;
+              const compatible = range ? satisfies(cliVersion, range) : true;
+              return {
+                entry,
+                cliVersion,
+                compatible,
+              };
+            });
+            rows.push({
+              module: moduleName,
+              manifestPath,
+              requires,
+              rangeChecks,
+              compatible: rangeChecks.every((check) => check.compatible),
+            });
+          }
+
+          writeFileSync(
+            'compatibility-matrix.json',
+            `${JSON.stringify({ generatedAt: new Date().toISOString(), cliVersion, modules: rows }, null, 2)}\n`,
+            'utf8',
+          );
+
+          const incompatible = rows.filter((row) => !row.compatible);
+          if (incompatible.length > 0) {
+            console.error('Incompatible requires ranges found:', incompatible.map((row) => row.module).join(', '));
+            process.exit(1);
+          }
+          NODE
       - uses: actions/upload-artifact@v7
         with:
           name: compatibility-matrix

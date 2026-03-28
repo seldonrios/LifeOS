@@ -18,9 +18,9 @@ Delivered local-first core foundations:
 
 Primary value: personal productivity and local orchestration.
 
-## Phase 2: First Production-Ready OSS Release (Current)
+## Phase 2: Production OSS Baseline (Completed)
 
-Current focus is productization and contributor trust:
+Delivered baseline release and trust infrastructure:
 
 - one canonical developer workflow (`pnpm run validate`)
 - predictable setup paths (recommended vs advanced)
@@ -31,19 +31,33 @@ Current focus is productization and contributor trust:
 
 Primary value: easier adoption, safer operation, and repeatable contribution.
 
-## Phase 3: Mesh + Ecosystem Scale
+## Phase 3: Personal Operations OS MVP + Daily-Use Validation (Current)
+
+Current product focus. Ship one repeatable daily workflow users can rely on:
+
+- capture
+- inbox triage
+- planning
+- reminders/next actions
+- daily/weekly review
+
+Primary value: durable day-to-day utility and a stable platform wedge.
+
+Execution details live in [Personal Operations OS MVP Plan](personal-operations-os-mvp.md).
+
+## Phase 4: Mesh + Ecosystem Scale
 
 Future direction. Enable peer-level collaboration between trusted nodes and communities.
 
 Primary value: shared local intelligence and coordination.
 
-## Phase 4: Agentic Web
+## Phase 5: Agentic Web
 
 Future direction. Allow nodes and services to discover one another and cooperate through AI-to-AI protocols.
 
 Primary value: distributed digital coordination.
 
-## Phase 5: Cognitive Internet
+## Phase 6: Cognitive Internet
 
 Future direction. Support large-scale collective reasoning and knowledge exchange across many nodes.
 

@@ -5,23 +5,38 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](SECURITY.md)
 
-**LifeOS** — Sovereign Personal AI Node
+**LifeOS** - Personal Operations OS (local-first)
 
-Your life. Your compute. Your rules.
+LifeOS is an open-source system for running a dependable personal operations loop on your own infrastructure.
 
-> 🚀 A local-first personal AI node for turning goals into executable plans.
+Daily hero loop:
 
-LifeOS is an open-source project focused on **user-owned AI systems** that run on your machine, keep your data local by default, and coordinate work through a persistent life graph + event-driven modules.
+1. Capture incoming tasks, ideas, and requests.
+2. Triage inbox items into approvals, reminders, or plans.
+3. Plan clear next actions.
+4. Execute with reminders and task completion.
+5. Review wins and next steps daily or weekly.
 
-## 👋 Welcome
+## Start Here
 
-If you are new here, start with the CLI MVP.  
-You can go from clone to first working plan in a few minutes.
+If you are new here, start with the CLI MVP and run the full loop in minutes.
 
-Recommended first run:
+### Setup (recommended)
 
 ```bash
+pnpm install
+ollama serve
 pnpm lifeos init
+```
+
+### 60-second hero loop
+
+```bash
+pnpm lifeos goal "Prepare for the quarterly board meeting next Thursday"
+pnpm lifeos task list
+pnpm lifeos next
+pnpm lifeos task complete <task-id>
+pnpm lifeos review --period daily
 ```
 
 Setup paths:
@@ -30,8 +45,6 @@ Setup paths:
 - Advanced path (full Docker profile): `docker compose --profile dormant up`
 
 These commands work in Linux/macOS shells (`bash`/`zsh`) and in PowerShell unless noted otherwise.
-
-The setup wizard checks Ollama, helps with model setup, offers optional modules, and seeds your first goal.
 
 ## Module Marketplace
 
@@ -59,7 +72,7 @@ Operator migration notes:
 - `lifeos trust status` and `lifeos trust report --json` include storage backend/path metadata.
 - Compatibility path remains `life-graph.json`, while runtime persistence is SQLite (`life-graph.db` alongside it).
 
-## ⚡ Quick Start (CLI MVP)
+## Quick Start (Detailed CLI)
 
 ### 1) Install dependencies
 
@@ -101,7 +114,7 @@ pnpm lifeos voice start
 pnpm lifeos modules
 ```
 
-## 🧪 Demo Flow (Manual)
+## Demo Flow (Manual)
 
 ```bash
 pnpm lifeos goal "Help me prepare for the quarterly board meeting next Thursday"
@@ -111,7 +124,7 @@ pnpm lifeos tick
 pnpm lifeos status --json
 ```
 
-## 🛠 CLI Commands
+## CLI Commands
 
 ```text
 lifeos goal "<goal>" [--json] [--no-save] [--model <model>] [--graph-path <path>] [--verbose]
@@ -125,6 +138,7 @@ lifeos mesh [join|status|assign|start|delegate|debug|demo] [arg1] [arg2] [--json
 lifeos voice [start|demo|consent|calendar|briefing] [--text "<utterance>"] [--scenario task|calendar|research|note|weather|news|briefing|proactive] [--graph-path <path>] [--verbose]
 lifeos memory [status] [--json] [--graph-path <path>] [--verbose]
 lifeos trust [status|explain|report] [action] [--json] [--verbose]
+lifeos doctor [--json] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
@@ -157,7 +171,7 @@ pnpm lifeos sync devices
 pnpm lifeos sync demo
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 LifeOS is configured through environment variables and a local YAML config file. The `lifeos init` wizard handles first-run setup automatically.
 
@@ -291,7 +305,7 @@ Mesh/JWT environment variables:
 - `LIFEOS_JWT_SECRET` (required for secure mesh RPC in real deployments)
 - Optional JWT claims config: `LIFEOS_JWT_ISSUER`, `LIFEOS_JWT_AUDIENCE`
 
-## 📦 Docker (Optional)
+## Docker (Optional)
 
 For external event streaming with NATS:
 
@@ -308,7 +322,7 @@ docker compose up -d ollama nats
 
 If NATS is unavailable, LifeOS falls back to an in-memory event bus so local module reactions still work.
 
-## 🌱 Current MVP Scope
+## Current MVP Scope
 
 Active implementation packages:
 
@@ -354,21 +368,21 @@ Compatibility checklist and CI profile:
 - [Works with LifeOS Checklist](docs/community/works-with-lifeos-checklist.md)
 - [External Module CI Example](templates/module/community-module-ci.yml)
 
-## 🧭 Project Direction
+## Project Direction
 
-LifeOS is in **Phase 2: First Production-Ready OSS Release**.
+LifeOS is in **Phase 3: Personal Operations OS MVP + Daily-Use Validation**.
 
 Current focus:
 
-- keep onboarding fast and unambiguous for new users
-- preserve one canonical validation gate in local and CI flows
-- improve contributor trust with clearer governance and release contracts
-- harden repeatable release operations and first-run smoke confidence
+- ship one dependable daily hero loop (capture -> triage -> plan -> execute -> review)
+- stabilize cross-surface contracts used by CLI, web, and mobile
+- instrument and dogfood the hero loop with observable CI/runtime evidence
+- keep onboarding fast and opinionated for first-run success
 
 Next direction:
 
-- richer module ecosystem (health, finance, calendar, voice)
-- multi-node/federated personal AI patterns
+- richer module ecosystem once the hero loop is stable
+- multi-node/federated personal AI patterns in later roadmap phases
 
 ## Release Highlights (v0.3.x)
 
@@ -379,7 +393,7 @@ Next direction:
 
 See [CHANGELOG.md](CHANGELOG.md) for versioned release details.
 
-## 🤝 Contributing
+## Contributing
 
 Contributors are welcome across systems, backend, modules, docs, and UX.
 
@@ -407,6 +421,6 @@ Community launch docs:
 - [v0.2.0 Ecosystem North Star Issue Draft](docs/community/v0.2.0-ecosystem-north-star-issue.md)
 - [v0.2.0 Launch Thread Draft](docs/community/v0.2.0-launch-thread.md)
 
-## 📄 License
+## License
 
 See [LICENSE](LICENSE).

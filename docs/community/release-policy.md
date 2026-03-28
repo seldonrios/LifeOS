@@ -2,6 +2,8 @@
 
 This policy defines how LifeOS cuts repeatable releases.
 
+Deprecation timing and removal guarantees are defined in `docs/platform/deprecation.md`.
+
 ## Versioning
 
 LifeOS uses Semantic Versioning for tagged releases.

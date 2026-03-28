@@ -6,6 +6,7 @@ body:
     attributes:
       value: |
         Thanks for reporting. Share a minimal repro so maintainers can verify quickly.
+        Privacy notice: do not paste personal data (emails, phone numbers, addresses, health/finance details). Use redacted placeholders.
   - type: input
     id: lifeos_version
     attributes:
@@ -28,7 +29,7 @@ body:
     id: repro_steps
     attributes:
       label: Reproduction steps
-      description: Provide exact commands and inputs.
+      description: Provide exact commands and inputs. Include a minimal command sequence maintainers can run.
       render: shell
     validations:
       required: true

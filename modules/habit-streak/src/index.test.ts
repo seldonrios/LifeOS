@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Topics, type BaseEvent } from '@lifeos/event-bus';
-import type { LifeGraphClient } from '@lifeos/life-graph';
-import type { ModuleRuntimeContext } from '@lifeos/module-loader';
+import { Topics, type BaseEvent, type LifeGraphClient, type ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 import { HABIT_TOPICS } from './events';
 import { createHabitStreakModule } from './index';

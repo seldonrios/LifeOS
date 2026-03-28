@@ -12,6 +12,6 @@
     "zod": "^4.3.6"
   },
   "scripts": {
-    "test": "echo \"no tests for pure types\""
+    "test": "tsx --test src/contracts.test.ts"
   }
 }

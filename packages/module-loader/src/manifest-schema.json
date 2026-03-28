@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lifeos.dev/schemas/module-manifest.schema.json",
+  "title": "LifeOS Module Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "name",
+    "version",
+    "author",
+    "permissions",
+    "resources",
+    "requires",
+    "category",
+    "tags"
+  ],
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,62}$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(?:-[0-9A-Za-z-.]+)?(?:\\+[0-9A-Za-z-.]+)?$"
+    },
+    "author": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 2000
+    },
+    "permissions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["graph", "network", "voice", "events"],
+      "properties": {
+        "graph": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "network": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "voice": {
+          "type": "array",
+          "items": { "type": "string" },
+          "maxItems": 10
+        },
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(subscribe|publish):[A-Za-z0-9.*>_-]+(?:\\.[A-Za-z0-9.*>_-]+)*$"
+          },
+          "maxItems": 50
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu", "memory"],
+      "properties": {
+        "cpu": {
+          "type": "string",
+          "enum": ["low", "medium", "high"]
+        },
+        "memory": {
+          "type": "string",
+          "enum": ["low", "medium"]
+        }
+      }
+    },
+    "subFeatures": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
+      },
+      "maxItems": 10
+    },
+    "requires": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^@lifeos\\/[a-z0-9-]+(?:@.+)?$"
+      },
+      "maxItems": 15
+    },
+    "category": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
+    },
+    "tags": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9][a-z0-9-]{1,30}$"
+      },
+      "maxItems": 20
+    }
+  }
+}

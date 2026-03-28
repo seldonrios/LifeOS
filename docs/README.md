@@ -20,18 +20,20 @@ Current executable MVP targets are:
 1. [Vision Overview](vision/overview.md)
 2. [Vision Principles](vision/principles.md)
 3. [Roadmap](vision/roadmap.md)
-4. [Phase 1 Overview](phase-1/README.md)
-5. [Phase 1 Reference Architecture](phase-1/reference-architecture.md)
-6. [Phase 1 Scope](phase-1/scope.md)
-7. [Architecture Overview](architecture/overview.md)
-8. [Reference Stack](architecture/reference-stack.md)
-9. [Contributor Map](community/contributor-map.md)
+4. [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md)
+5. [Phase 1 Overview](phase-1/README.md)
+6. [Phase 1 Reference Architecture](phase-1/reference-architecture.md)
+7. [Phase 1 Scope](phase-1/scope.md)
+8. [Architecture Overview](architecture/overview.md)
+9. [Reference Stack](architecture/reference-stack.md)
+10. [Contributor Map](community/contributor-map.md)
 
 ## Vision
 
 - [Overview](vision/overview.md)
 - [Principles](vision/principles.md)
 - [Roadmap](vision/roadmap.md)
+- [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md)
 
 ## Phase 1
 

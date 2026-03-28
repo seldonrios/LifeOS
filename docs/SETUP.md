@@ -19,7 +19,7 @@ This guide gets a LifeOS development environment running and validates that it i
   - `bash scripts/init-secrets.sh`
   - `bash scripts/provision-nats-identities.sh`
 
-## Primary Path - Dev Container (Recommended)
+## Recommended: Dev Container
 
 1. Clone and enter the repository.
 
@@ -44,7 +44,7 @@ This command must exit 0. It runs build:modules -> typecheck -> lint -> format:c
 docker compose up ollama nats
 ```
 
-This is the recommended CLI/minimal path.
+This is the supported default contributor path.
 
 For the full stack (all profile-gated services), run:
 
@@ -72,7 +72,7 @@ docker compose logs module-loader | Select-String "Startup Diagnostics Report"
 
 9. Continue only when the Ready to Contribute signal is met.
 
-## Alternate Path - Native Install
+## Advanced: Native Install
 
 1. Install prerequisites locally: Node.js >= 20.19.0, pnpm >= 9.15.4, Python >= 3.11, uv, Docker, Git.
 2. Clone and enter the repository.

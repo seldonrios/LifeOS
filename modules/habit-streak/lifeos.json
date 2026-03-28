@@ -22,10 +22,8 @@
     "memory": "low"
   },
   "requires": [
-    "@lifeos/life-graph@>=0.3.0 <0.4.0",
-    "@lifeos/event-bus@>=0.3.0 <0.4.0",
-    "@lifeos/module-loader@>=0.3.0 <0.4.0",
-    "@lifeos/voice-core@>=0.3.0 <0.4.0"
+    "@lifeos/cli@>=0.1.0 <0.2.0",
+    "@lifeos/module-sdk@>=0.1.0 <0.2.0"
   ],
   "category": "productivity",
   "tags": ["habit", "streak", "tracking", "daily"]

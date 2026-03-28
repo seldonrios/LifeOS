@@ -33,3 +33,5 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm run validate
+      - name: Hero loop integration test
+        run: pnpm --filter @lifeos/cli exec tsx --test src/hero-loop.integration.test.ts

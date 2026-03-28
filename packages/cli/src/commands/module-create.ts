@@ -1,15 +1,8 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { validateLifeOSManifest } from '@lifeos/module-loader';
 
 const MODULE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
-const PACKAGE_REQUIREMENT_PATTERN = /^@lifeos\/[a-z0-9-]+@>=0\.\d+\.\d+ <0\.\d+\.\d+$/;
-const SEMVER_RANGE_PATTERN = /^(?:\^|~)?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
-const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
-const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
-const SUB_FEATURE_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
-const CPU_TIERS = new Set(['low', 'medium', 'high']);
-const MEMORY_TIERS = new Set(['low', 'medium']);
 
 export interface ModuleCreateOptions {
   baseDir: string;
@@ -28,180 +21,12 @@ export interface ModuleValidateResult {
   errors: string[];
 }
 
-interface RawManifestPermissions {
-  graph: string[];
-  network: string[];
-  voice: string[];
-  events: string[];
-}
-
-interface RawManifestResources {
-  cpu: string;
-  memory: string;
-}
-
-interface RawManifest {
-  name: string;
-  version: string;
-  author: string;
-  graphVersion?: string;
-  permissions: RawManifestPermissions;
-  resources: RawManifestResources;
-  subFeatures?: string[];
-  requires: string[];
-  category: string;
-  tags: string[];
-}
-
-function parseEventPermission(
-  permission: string,
-): { action: 'subscribe' | 'publish'; topic: string } | null {
-  const parts = permission.split(':', 2);
-  if (parts.length !== 2) {
-    return null;
-  }
-  const action = parts[0];
-  const topic = parts[1];
-  if (!action || !topic || (action !== 'subscribe' && action !== 'publish')) {
-    return null;
-  }
-  return {
-    action,
-    topic,
-  };
-}
-
 function toModuleIdentifier(value: string): string {
   return value
     .split(/[^a-zA-Z0-9]+/)
     .filter((token) => token.length > 0)
     .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
     .join('');
-}
-
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value
-    .map((item) => (typeof item === 'string' ? item.trim() : ''))
-    .filter((item) => item.length > 0);
-}
-
-function validateManifest(raw: unknown): string[] {
-  const record =
-    raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
-  const permissionRecord =
-    record.permissions && typeof record.permissions === 'object'
-      ? (record.permissions as Record<string, unknown>)
-      : null;
-  const resourceRecord =
-    record.resources && typeof record.resources === 'object'
-      ? (record.resources as Record<string, unknown>)
-      : null;
-
-  const manifest: RawManifest = {
-    name: typeof record.name === 'string' ? record.name.trim() : '',
-    version: typeof record.version === 'string' ? record.version.trim() : '',
-    author: typeof record.author === 'string' ? record.author.trim() : '',
-    ...(typeof record.graphVersion === 'string'
-      ? { graphVersion: record.graphVersion.trim() }
-      : {}),
-    permissions: permissionRecord
-      ? {
-          graph: toStringArray(permissionRecord.graph),
-          network: toStringArray(permissionRecord.network),
-          voice: toStringArray(permissionRecord.voice),
-          events: toStringArray(permissionRecord.events),
-        }
-      : {
-          graph: [],
-          network: [],
-          voice: [],
-          events: [],
-        },
-    resources: resourceRecord
-      ? {
-          cpu:
-            typeof resourceRecord.cpu === 'string' ? resourceRecord.cpu.trim().toLowerCase() : '',
-          memory:
-            typeof resourceRecord.memory === 'string'
-              ? resourceRecord.memory.trim().toLowerCase()
-              : '',
-        }
-      : {
-          cpu: '',
-          memory: '',
-        },
-    ...(Array.isArray(record.subFeatures)
-      ? { subFeatures: toStringArray(record.subFeatures) }
-      : {}),
-    requires: toStringArray(record.requires),
-    category: typeof record.category === 'string' ? record.category.trim() : '',
-    tags: toStringArray(record.tags),
-  };
-
-  const errors: string[] = [];
-  if (!MODULE_NAME_PATTERN.test(manifest.name)) {
-    errors.push('manifest.name must be lowercase kebab-case.');
-  }
-  if (!SEMVER_PATTERN.test(manifest.version)) {
-    errors.push('manifest.version must be semver (example: 0.1.0).');
-  }
-  if (manifest.author.length === 0) {
-    errors.push('manifest.author is required.');
-  }
-  if (manifest.graphVersion && !SEMVER_RANGE_PATTERN.test(manifest.graphVersion)) {
-    errors.push('manifest.graphVersion must be a semver range (example: ^2.0.0).');
-  }
-  if (!CATEGORY_PATTERN.test(manifest.category)) {
-    errors.push('manifest.category must be lowercase kebab-case.');
-  }
-  if (!CPU_TIERS.has(manifest.resources.cpu)) {
-    errors.push('manifest.resources.cpu must be one of: low, medium, high.');
-  }
-  if (!MEMORY_TIERS.has(manifest.resources.memory)) {
-    errors.push('manifest.resources.memory must be one of: low, medium.');
-  }
-  for (const requiredPackage of manifest.requires) {
-    if (!PACKAGE_REQUIREMENT_PATTERN.test(requiredPackage)) {
-      errors.push(
-        `manifest.requires entry "${requiredPackage}" must be "@lifeos/<package>@>=0.x.y <0.z.w" while LifeOS is pre-1.0.`,
-      );
-    }
-  }
-  for (const tag of manifest.tags) {
-    if (!TAG_PATTERN.test(tag)) {
-      errors.push(`manifest.tags entry "${tag}" is invalid.`);
-    }
-  }
-  for (const subFeature of manifest.subFeatures ?? []) {
-    if (!SUB_FEATURE_PATTERN.test(subFeature)) {
-      errors.push(`manifest.subFeatures entry "${subFeature}" is invalid.`);
-    }
-  }
-  for (const eventPermission of manifest.permissions.events) {
-    if (!/^(subscribe|publish):[A-Za-z0-9.*>_-]+(?:\.[A-Za-z0-9.*>_-]+)*$/.test(eventPermission)) {
-      errors.push(
-        `manifest.permissions.events entry "${eventPermission}" must be subscribe:<topic> or publish:<topic>.`,
-      );
-      continue;
-    }
-
-    const parsed = parseEventPermission(eventPermission);
-    if (!parsed) {
-      errors.push(`manifest.permissions.events entry "${eventPermission}" is malformed.`);
-      continue;
-    }
-
-    if (parsed.action === 'publish' && (parsed.topic.includes('*') || parsed.topic.includes('>'))) {
-      errors.push(
-        `manifest.permissions.events publish entry "${eventPermission}" is too broad; publish permissions cannot contain "*" or ">".`,
-      );
-    }
-  }
-
-  return errors;
 }
 
 export async function createModuleScaffold(
@@ -250,13 +75,13 @@ export async function createModuleScaffold(
       cpu: 'low',
       memory: 'low',
     },
-    requires: ['@lifeos/voice-core@>=0.3.0 <0.4.0', '@lifeos/life-graph@>=0.3.0 <0.4.0'],
+    requires: ['@lifeos/cli@>=0.1.0 <0.2.0', '@lifeos/module-sdk@>=0.1.0 <0.2.0'],
     category: 'custom',
     tags: ['custom'],
   };
 
   const moduleId = toModuleIdentifier(normalizedName);
-  const source = `import type { LifeOSModule } from '@lifeos/module-loader';
+  const source = `import type { LifeOSModule } from '@lifeos/module-sdk';
 
 export const ${moduleId}Module: LifeOSModule = {
   id: '${normalizedName}',
@@ -282,7 +107,7 @@ export const ${moduleId}Module: LifeOSModule = {
   const testSource = `import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { LifeOSModule } from '@lifeos/module-loader';
+import type { LifeOSModule } from '@lifeos/module-sdk';
 
 import { ${moduleId}Module } from './index';
 
@@ -345,7 +170,7 @@ Generated with LifeOS module scaffold.
 
 ## Modularity Risk Checklist
 
-- [ ] \`requires\` uses bounded semver ranges in \`lifeos.json\` (example: \`@lifeos/life-graph@>=0.3.0 <0.4.0\`)
+- [ ] \`requires\` uses bounded semver ranges in \`lifeos.json\` (example: \`@lifeos/module-sdk@>=0.1.0 <0.2.0\`)
 - [ ] Includes empty \`migrations/\` folder
 - [ ] Emits \`module.${normalizedName}.success\` and \`module.${normalizedName}.error\` events
 - [ ] Passes \`pnpm lifeos module validate ${normalizedName}\`
@@ -369,6 +194,7 @@ Generated with LifeOS module scaffold.
 export async function validateModuleManifest(
   moduleName: string,
   baseDir: string,
+  cliVersion?: string,
 ): Promise<ModuleValidateResult> {
   const normalizedName = moduleName.trim().toLowerCase();
   if (!MODULE_NAME_PATTERN.test(normalizedName)) {
@@ -394,10 +220,10 @@ export async function validateModuleManifest(
     };
   }
 
-  const errors = validateManifest(raw);
+  const result = validateLifeOSManifest(raw, cliVersion ? { cliVersion } : {});
   return {
-    valid: errors.length === 0,
+    valid: result.valid,
     manifestPath,
-    errors,
+    errors: result.errors,
   };
 }

@@ -1,0 +1,32 @@
+name: Upgrade Validation
+
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upgrade-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.19.0'
+      - uses: pnpm/action-setup@v5
+      - run: pnpm install --frozen-lockfile
+      - name: Run status against fixture graph
+        run: |
+          set -euo pipefail
+          OUTPUT=$(pnpm lifeos status --json --graph-path docs/testing/fixtures/life-graph-upgrade-fixture.json)
+          echo "$OUTPUT" > upgrade-status-output.json
+      - name: Assert no schema rejection errors
+        run: |
+          set -euo pipefail
+          if grep -Ei "schema rejection|invalid life graph|zod" upgrade-status-output.json; then
+            echo "Schema rejection detected in upgrade validation output"
+            exit 1
+          fi

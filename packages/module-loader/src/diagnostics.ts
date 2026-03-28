@@ -74,6 +74,10 @@ export async function emitStartupReport(
 
   console.log(
     JSON.stringify({
+      timestamp: new Date().toISOString(),
+      level: 'info',
+      component: 'module-loader-diagnostics',
+      eventType: 'startup-report',
       message: 'Startup Diagnostics Report',
       report,
     }),
@@ -85,6 +89,11 @@ export async function emitStartupReport(
     const message = error instanceof Error ? error.message : 'unknown publish error';
     console.warn(
       JSON.stringify({
+        timestamp: new Date().toISOString(),
+        level: 'warn',
+        component: 'module-loader-diagnostics',
+        eventType: 'startup-report.publish.degraded',
+        errorCode: 'event-bus-unavailable',
         message: 'event bus unavailable, skipping publish',
         error: message,
       }),

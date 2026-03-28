@@ -31,9 +31,14 @@ export interface LifeOSManifestValidationResult {
   manifest?: LifeOSModuleManifest;
 }
 
+export interface LifeOSManifestValidationOptions {
+  cliVersion?: string;
+}
+
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 const NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const PACKAGE_NAME_PATTERN = /^@lifeos\/[a-z0-9-]+$/;
+const PACKAGE_REQUIREMENT_PATTERN = /^(@lifeos\/[a-z0-9-]+)(?:@(.+))?$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
 const SUB_FEATURE_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
@@ -45,6 +50,173 @@ const MAX_DESCRIPTION_LENGTH = 2000;
 const MAX_TAGS = 20;
 const MAX_SUB_FEATURES = 10;
 const MAX_REQUIRES = 15;
+
+interface ParsedSemver {
+  major: number;
+  minor: number;
+  patch: number;
+}
+
+function parseSemver(value: string): ParsedSemver | null {
+  const match = value.trim().match(/^(\d+)\.(\d+)\.(\d+)(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+  };
+}
+
+function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
+  if (left.major !== right.major) {
+    return left.major - right.major;
+  }
+  if (left.minor !== right.minor) {
+    return left.minor - right.minor;
+  }
+  return left.patch - right.patch;
+}
+
+function incrementMinor(version: ParsedSemver): ParsedSemver {
+  return {
+    major: version.major,
+    minor: version.minor + 1,
+    patch: 0,
+  };
+}
+
+function incrementMajor(version: ParsedSemver): ParsedSemver {
+  return {
+    major: version.major + 1,
+    minor: 0,
+    patch: 0,
+  };
+}
+
+function hasValidRangeTokens(range: string): boolean {
+  const trimmed = range.trim();
+  if (!trimmed) {
+    return false;
+  }
+
+  const tokens = trimmed.split(/\s+/).filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  for (const token of tokens) {
+    if (token.startsWith('>=')) {
+      if (!parseSemver(token.slice(2))) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('>')) {
+      if (!parseSemver(token.slice(1))) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('<=')) {
+      if (!parseSemver(token.slice(2))) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('<')) {
+      if (!parseSemver(token.slice(1))) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('^') || token.startsWith('~')) {
+      if (!parseSemver(token.slice(1))) {
+        return false;
+      }
+      continue;
+    }
+    if (!parseSemver(token)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function satisfiesRange(versionText: string, range: string): boolean {
+  const version = parseSemver(versionText);
+  if (!version) {
+    return false;
+  }
+
+  const tokens = range.trim().split(/\s+/).filter((token) => token.length > 0);
+  if (tokens.length === 0) {
+    return false;
+  }
+
+  for (const token of tokens) {
+    if (token.startsWith('>=')) {
+      const min = parseSemver(token.slice(2));
+      if (!min || compareSemver(version, min) < 0) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('>')) {
+      const min = parseSemver(token.slice(1));
+      if (!min || compareSemver(version, min) <= 0) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('<=')) {
+      const max = parseSemver(token.slice(2));
+      if (!max || compareSemver(version, max) > 0) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('<')) {
+      const max = parseSemver(token.slice(1));
+      if (!max || compareSemver(version, max) >= 0) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('^')) {
+      const base = parseSemver(token.slice(1));
+      if (!base) {
+        return false;
+      }
+      const upper = base.major > 0 ? incrementMajor(base) : incrementMinor(base);
+      if (compareSemver(version, base) < 0 || compareSemver(version, upper) >= 0) {
+        return false;
+      }
+      continue;
+    }
+    if (token.startsWith('~')) {
+      const base = parseSemver(token.slice(1));
+      if (!base) {
+        return false;
+      }
+      const upper = incrementMinor(base);
+      if (compareSemver(version, base) < 0 || compareSemver(version, upper) >= 0) {
+        return false;
+      }
+      continue;
+    }
+
+    const exact = parseSemver(token);
+    if (!exact || compareSemver(version, exact) !== 0) {
+      return false;
+    }
+  }
+
+  return true;
+}
 
 function getString(value: unknown, maxLength: number = MAX_STRING_LENGTH): string | null {
   if (typeof value !== 'string') {
@@ -140,7 +312,10 @@ function buildManifestCandidate(raw: unknown): LifeOSModuleManifest {
   };
 }
 
-export function validateLifeOSManifest(raw: unknown): LifeOSManifestValidationResult {
+export function validateLifeOSManifest(
+  raw: unknown,
+  options: LifeOSManifestValidationOptions = {},
+): LifeOSManifestValidationResult {
   const record =
     raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
   const resourceRecord =
@@ -209,9 +384,27 @@ export function validateLifeOSManifest(raw: unknown): LifeOSManifestValidationRe
     errors.push(`manifest.requires cannot exceed ${MAX_REQUIRES} entries.`);
   }
   for (const requiredPackage of manifest.requires) {
-    if (!PACKAGE_NAME_PATTERN.test(requiredPackage)) {
+    const packageMatch = requiredPackage.match(PACKAGE_REQUIREMENT_PATTERN);
+    const packageName = packageMatch?.[1] ?? '';
+    const packageRange = packageMatch?.[2]?.trim() ?? '';
+
+    if (!PACKAGE_NAME_PATTERN.test(packageName)) {
       errors.push(
         `manifest.requires entry "${requiredPackage}" must look like "@lifeos/<package>".`,
+      );
+      continue;
+    }
+
+    if (packageRange && !hasValidRangeTokens(packageRange)) {
+      errors.push(
+        `manifest.requires entry "${requiredPackage}" has invalid semver range "${packageRange}".`,
+      );
+      continue;
+    }
+
+    if (options.cliVersion && packageRange && !satisfiesRange(options.cliVersion, packageRange)) {
+      errors.push(
+        `manifest.requires entry "${requiredPackage}" is incompatible with CLI ${options.cliVersion}.`,
       );
     }
   }

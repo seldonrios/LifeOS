@@ -1,6 +1,11 @@
-import { Topics } from '@lifeos/event-bus';
-import type { LifeGraphClient } from '@lifeos/life-graph';
-import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import {
+  Topics,
+  registerModuleSchema,
+  type LifeGraphClient,
+  type LifeGraphHealthDailyStreak,
+  type LifeOSModule,
+  type ModuleRuntimeContext,
+} from '@lifeos/module-sdk';
 
 import {
   HABIT_TOPICS,
@@ -16,6 +21,11 @@ import { fuzzyMatchHabit, parseHabitCheckin, parseHabitCreate, parseHabitStatus 
 
 interface HabitStreakModuleOptions {
   now?: () => Date;
+}
+
+interface QueuedPublish {
+  topic: string;
+  data: Record<string, unknown>;
 }
 
 function createClient(context: ModuleRuntimeContext): LifeGraphClient {
@@ -134,11 +144,33 @@ async function publishSafe(
   context: ModuleRuntimeContext,
   topic: string,
   data: Record<string, unknown>,
+  offlineQueue: QueuedPublish[],
 ): Promise<void> {
   try {
     await context.publish(topic, data, 'habit-streak');
   } catch (error: unknown) {
     context.log(`[HabitStreak] publish degraded (${topic}): ${toStoreError(error)}`);
+    offlineQueue.push({ topic, data });
+  }
+}
+
+async function flushOfflineQueue(
+  context: ModuleRuntimeContext,
+  offlineQueue: QueuedPublish[],
+): Promise<void> {
+  while (offlineQueue.length > 0) {
+    const queued = offlineQueue[0];
+    if (!queued) {
+      break;
+    }
+
+    try {
+      await context.publish(queued.topic, queued.data, 'habit-streak');
+      offlineQueue.shift();
+    } catch (error: unknown) {
+      context.log(`[HabitStreak] offline queue flush deferred: ${toStoreError(error)}`);
+      return;
+    }
   }
 }
 
@@ -146,6 +178,7 @@ async function handleTickReminder(
   client: LifeGraphClient,
   context: ModuleRuntimeContext,
   now: Date,
+  offlineQueue: QueuedPublish[],
 ): Promise<void> {
   const statuses = await getHabitStatus(client);
   const pendingHabits = statuses.filter((status) => !status.completedToday);
@@ -155,12 +188,17 @@ async function handleTickReminder(
   }
 
   const names = pendingHabits.slice(0, 3).map((status) => status.habit.name);
-  await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
+  await publishSafe(
+    context,
+    Topics.lifeos.orchestratorSuggestion,
+    {
     kind: 'reminder',
     source: 'habit-streak',
     title: 'Habit check-in',
     message: `You have ${names.join(', ')} waiting for a ${now.toISOString().slice(0, 10)} check-in.`,
-  });
+    },
+    offlineQueue,
+  );
 }
 
 function summarizeStatuses(
@@ -190,9 +228,10 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
     id: 'habit-streak',
     async init(context: ModuleRuntimeContext): Promise<void> {
       const client = createClient(context);
+      const offlineQueue: QueuedPublish[] = [];
 
       try {
-        await client.registerModuleSchema(moduleSchema);
+        await registerModuleSchema(context, moduleSchema);
       } catch (error: unknown) {
         context.log(`[HabitStreak] schema registration degraded: ${toStoreError(error)}`);
       }
@@ -208,11 +247,16 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
 
           try {
             const habit = await createHabit(client, payload.name, payload.description);
-            await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
-              kind: 'habit-created',
-              source: 'habit-streak',
-              message: `Habit created: ${habit.name}.`,
-            });
+            await publishSafe(
+              context,
+              Topics.lifeos.orchestratorSuggestion,
+              {
+                kind: 'habit-created',
+                source: 'habit-streak',
+                message: `Habit created: ${habit.name}.`,
+              },
+              offlineQueue,
+            );
           } catch (error: unknown) {
             context.log(`[HabitStreak] create intent degraded: ${toStoreError(error)}`);
           }
@@ -248,12 +292,25 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
               currentStreak: result.streak.currentStreak,
               completedAt: result.entry.completedAt,
             };
-            await publishSafe(context, HABIT_TOPICS.checkinRecorded, { ...checkinEvent });
-            await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
-              kind: 'habit-checkin',
-              source: 'habit-streak',
-              message: `${matchedHabit.name} checked in. Current streak: ${result.streak.currentStreak}.`,
-            });
+            const healthStreakSnapshot: LifeGraphHealthDailyStreak = {
+              id: `habit-streak-${matchedHabit.id}`,
+              metric: matchedHabit.name,
+              currentStreak: result.streak.currentStreak,
+              longestStreak: result.streak.longestStreak,
+              lastLoggedDate: result.streak.lastCompletedDate,
+            };
+            await publishSafe(context, HABIT_TOPICS.checkinRecorded, { ...checkinEvent }, offlineQueue);
+            await publishSafe(
+              context,
+              Topics.lifeos.orchestratorSuggestion,
+              {
+                kind: 'habit-checkin',
+                source: 'habit-streak',
+                message: `${matchedHabit.name} checked in. Current streak: ${result.streak.currentStreak}.`,
+                streak: healthStreakSnapshot,
+              },
+              offlineQueue,
+            );
 
             if (result.milestone !== undefined) {
               const milestoneEvent: HabitStreakMilestoneEvent = {
@@ -263,7 +320,7 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
                 currentStreak: result.streak.currentStreak,
                 achievedAt: result.entry.completedAt,
               };
-              await publishSafe(context, HABIT_TOPICS.streakMilestone, { ...milestoneEvent });
+              await publishSafe(context, HABIT_TOPICS.streakMilestone, { ...milestoneEvent }, offlineQueue);
             }
           } catch (error: unknown) {
             context.log(`[HabitStreak] check-in intent degraded: ${toStoreError(error)}`);
@@ -281,11 +338,16 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
               ? fuzzyMatchHabit(payload.habitName, activeHabits)
               : null;
             const statuses = await getHabitStatus(client, matchedHabit?.id);
-            await publishSafe(context, Topics.lifeos.orchestratorSuggestion, {
-              kind: 'habit-status',
-              source: 'habit-streak',
-              message: summarizeStatuses(statuses),
-            });
+            await publishSafe(
+              context,
+              Topics.lifeos.orchestratorSuggestion,
+              {
+                kind: 'habit-status',
+                source: 'habit-streak',
+                message: summarizeStatuses(statuses),
+              },
+              offlineQueue,
+            );
           } catch (error: unknown) {
             context.log(`[HabitStreak] status intent degraded: ${toStoreError(error)}`);
           }
@@ -294,7 +356,8 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
 
       await context.subscribe<Record<string, unknown>>(Topics.lifeos.tickOverdue, async () => {
         try {
-          await handleTickReminder(client, context, now());
+          await flushOfflineQueue(context, offlineQueue);
+          await handleTickReminder(client, context, now(), offlineQueue);
         } catch (error: unknown) {
           context.log(`[HabitStreak] tick reminder degraded: ${toStoreError(error)}`);
         }

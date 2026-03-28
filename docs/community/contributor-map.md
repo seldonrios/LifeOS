@@ -6,27 +6,23 @@ Show developers where they can contribute first without needing the entire imple
 
 ## High-Value Contribution Areas
 
-- Architecture framing for the Personal AI Node.
-- Life graph entity and relationship design.
-- Event model and automation patterns.
-- Module boundaries and example module proposals.
-- Local integration research and prototype notes.
-- Contributor onboarding and docs refinement.
-- Hardware and deployment profiles for realistic home-lab setups.
-- Voice, telephony, and media-routing architecture.
-- Production, health, and personal economic planning modules.
+- Personal Operations hero loop design (capture -> triage -> plan -> execute -> review).
+- Shared contracts for entities/events across CLI, web, and mobile.
+- Reminder and approval flow reliability (including degraded dependency handling).
+- Inbox triage and review UX clarity for daily/weekly usage.
+- Contributor onboarding and docs refinement for first-run success.
+- Local integration improvements that directly support the hero loop.
+- Mobile companion capabilities (fast capture, notifications, approvals).
 
 ## Good Early Deliverables
 
-- example user workflows
-- conceptual schemas
-- interface sketches
-- prototype integration notes
-- terminology cleanup
-- event taxonomy drafts
-- module capability contracts
-- room-awareness and receptionist proof-of-concept notes
+- hero loop user stories with reproducible command sequences
+- contract proposals (`capture`, `inbox`, `plan`, `reminder`, `review`)
+- integration test cases for happy path and failure mode
+- UI sketches for mobile capture and approval interactions
+- docs edits that reduce first-run ambiguity
+- error-code mapping proposals for user-facing failures
 
 ## Contribution Standard
 
-Contributions should reduce ambiguity, strengthen the Phase 1 foundation, or make future prototyping easier without inflating scope.
+Contributions should reduce ambiguity in the active Personal Operations MVP, improve daily reliability, or tighten cross-surface consistency without inflating scope.

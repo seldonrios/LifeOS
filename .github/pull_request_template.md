@@ -4,6 +4,15 @@
 - List key implementation updates.
 - Link the related issue(s) when available.
 
+## Product Definition of Done (Personal Ops MVP)
+
+- [ ] If this PR changes capture, inbox, planning, reminders, or review behavior, it includes:
+  - [ ] one integration/journey test that exercises the updated flow
+  - [ ] one failure-mode assertion (error path or degraded dependency path)
+  - [ ] docs updates for user-facing behavior (`README.md` and/or `docs/*`)
+  - [ ] UX evidence in the PR body (CLI output snippet or UI screenshot/video)
+- [ ] User-facing failures include a stable error code and actionable message
+
 ## Validation
 
 - [ ] `pnpm run validate`

@@ -27,9 +27,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # This workflow is a focused contract check; full test execution stays in CI and CLI Smoke.
-      - name: Build first-party module artifacts
-        run: pnpm run build:modules
-      - name: Validate module manifests
-        run: pnpm lifeos module validate --all
-      - name: Dry-run marketplace certification
-        run: pnpm lifeos module certify --dry-run
+      - name: Run module contract checks
+        run: |
+          mkdir -p .artifacts/module-validate
+          pnpm run build:modules 2>&1 | tee .artifacts/module-validate/build-modules.log
+          pnpm lifeos module validate --all 2>&1 | tee .artifacts/module-validate/module-validate.log
+          pnpm lifeos module certify --dry-run 2>&1 | tee .artifacts/module-validate/module-certify.log
+      - name: Upload module validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: module-validate-${{ github.run_id }}
+          path: .artifacts/module-validate/

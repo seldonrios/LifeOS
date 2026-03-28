@@ -1,17 +1,97 @@
 /**
- * @lifeos/contracts — Types for the LifeOS mobile SDK
+ * @lifeos/contracts
+ *
+ * Shared contracts for SDK/mobile surfaces and the Personal Operations hero loop.
  */
 
 export { LoginRequestSchema, type LoginRequest, type AuthTokens, type UserProfile } from './auth';
 
 export {
-  type InboxItem,
-  type InboxItemType,
+  CaptureTypeSchema,
+  CaptureRequestSchema,
+  CaptureStatusSchema,
+  CaptureResultSchema,
+  type CaptureType,
+  type CaptureRequest,
+  type CaptureStatus,
+  type CaptureResult,
+} from './capture';
+
+export {
+  ApprovalRequestSchema,
+  ApprovalResultSchema,
+  InboxItemTypeSchema,
+  InboxItemDataSchema,
+  InboxItemSchema,
   type ApprovalRequest,
   type ApprovalResult,
+  type InboxItemType,
+  type InboxItemData,
+  type InboxItem,
 } from './inbox';
 
-export { type CaptureRequest, type CaptureResult, type CaptureType } from './capture';
+export {
+  PlanPrioritySchema,
+  PlanTaskStatusSchema,
+  PlanTaskSchema,
+  PlanSchema,
+  PlanningSuggestionSchema,
+  type PlanPriority,
+  type PlanTaskStatus,
+  type PlanTask,
+  type Plan,
+  type PlanningSuggestion,
+} from './plan';
+
+export {
+  ReminderStatusSchema,
+  ReminderChannelSchema,
+  ReminderSchema,
+  type ReminderStatus,
+  type ReminderChannel,
+  type Reminder,
+} from './reminder';
+
+export {
+  ReviewPeriodSchema,
+  ReviewSourceSchema,
+  ReviewReportSchema,
+  type ReviewPeriod,
+  type ReviewSource,
+  type ReviewReport,
+} from './review';
+
+export { HeroLoopEventSchema, type HeroLoopEvent } from './events';
+
+export {
+  CaptureCreateRequestSchema,
+  CaptureCreateResponseSchema,
+  InboxListResponseSchema,
+  PlanCreateRequestSchema,
+  PlanCreateResponseSchema,
+  ReminderScheduleRequestSchema,
+  ReminderScheduleResponseSchema,
+  ReviewGenerateRequestSchema,
+  ReviewGenerateResponseSchema,
+  ApiErrorResponseSchema,
+  type CaptureCreateRequest,
+  type CaptureCreateResponse,
+  type InboxListResponse,
+  type PlanCreateRequest,
+  type PlanCreateResponse,
+  type ReminderScheduleRequest,
+  type ReminderScheduleResponse,
+  type ReviewGenerateRequest,
+  type ReviewGenerateResponse,
+  type ApiErrorResponse,
+} from './api';
+
+export {
+  HeroLoopEntitySchemas,
+  type HeroLoopEntitySchemaMap,
+  type HeroLoopEntityName,
+  type HeroLoopEntityValue,
+} from './entities';
 
 export { type TimelineEntry, type GoalSummary } from './timeline';
 
@@ -23,5 +103,13 @@ export {
 
 export { type DeviceInfo, type RevokeDeviceRequest } from './devices';
 
-export type { LifeOSError } from './errors';
+export {
+  KnownLifeOSErrorCodeSchema,
+  LifeOSErrorSchema,
+  type KnownLifeOSErrorCode,
+  type LifeOSError,
+} from './errors';
+
 export type { SDKConfig } from './sdk';
+
+export * from './loop/index';

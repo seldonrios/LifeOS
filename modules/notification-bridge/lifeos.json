@@ -1,0 +1,28 @@
+{
+  "name": "notification-bridge",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Reference module that bridges selected LifeOS events to a webhook.",
+  "permissions": {
+    "graph": ["read"],
+    "network": ["webhook"],
+    "voice": [],
+    "events": [
+      "subscribe:lifeos.tick.overdue",
+      "subscribe:lifeos.task.completed",
+      "subscribe:lifeos.habit.checkin.recorded",
+      "publish:lifeos.notification-bridge.sent",
+      "publish:lifeos.notification-bridge.failed"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": [
+    "@lifeos/cli@>=0.1.0 <0.2.0",
+    "@lifeos/module-sdk@>=0.1.0 <0.2.0"
+  ],
+  "category": "integration",
+  "tags": ["notifications", "webhook", "bridge"]
+}

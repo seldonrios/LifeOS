@@ -1,4 +1,4 @@
-import type { ModuleSchema } from '@lifeos/life-graph';
+import type { ModuleSchema } from '@lifeos/module-sdk';
 
 export const moduleSchema: ModuleSchema = {
   meta: {

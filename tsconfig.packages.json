@@ -26,6 +26,9 @@
       "path": "./packages/module-loader"
     },
     {
+      "path": "./packages/module-sdk"
+    },
+    {
       "path": "./packages/module-cache"
     },
     {
@@ -78,6 +81,12 @@
     },
     {
       "path": "./modules/habit-streak"
+    },
+    {
+      "path": "./modules/planning-assistant"
+    },
+    {
+      "path": "./modules/notification-bridge"
     }
   ]
 }

@@ -1,4 +1,4 @@
-import type { LifeGraphClient } from '@lifeos/life-graph';
+import type { LifeGraphClient } from '@lifeos/module-sdk';
 
 const HABIT_MEMORY_KEY_PREFIX = 'habit.habit.';
 const ENTRY_MEMORY_KEY_PREFIX = 'habit.entry.';
