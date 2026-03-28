@@ -286,8 +286,8 @@ async function buildModularityRiskRadar(
 
   {
     const checks = [
-      moduleTemplate.includes('@lifeos/life-graph@^'),
-      moduleTemplate.includes('@lifeos/voice-core@^'),
+      moduleTemplate.includes('@lifeos/life-graph@>=0.3.0 <0.4.0'),
+      moduleTemplate.includes('@lifeos/voice-core@>=0.3.0 <0.4.0'),
     ];
     const passCount = checks.filter(Boolean).length;
     risks.push({
@@ -295,7 +295,7 @@ async function buildModularityRiskRadar(
       name: riskName(1),
       status: inferRiskStatus(passCount, checks.length),
       lastChecked: nowIso,
-      details: 'Ensures manifest requirements use semver ranges in scaffolds.',
+      details: 'Ensures manifest requirements use bounded pre-1.0 semver ranges in scaffolds.',
     });
   }
 

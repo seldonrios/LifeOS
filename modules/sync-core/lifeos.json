@@ -13,7 +13,7 @@
     "cpu": "medium",
     "memory": "medium"
   },
-  "requires": ["@lifeos/life-graph", "@lifeos/event-bus"],
+  "requires": ["@lifeos/life-graph@>=0.3.0 <0.4.0", "@lifeos/event-bus@>=0.3.0 <0.4.0"],
   "category": "system",
   "tags": ["sync", "mesh", "security"]
 }

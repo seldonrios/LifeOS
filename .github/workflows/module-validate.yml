@@ -3,9 +3,11 @@ name: Module Validate
 on:
   pull_request:
     paths:
-      - 'packages/**'
+      - 'modules/**'
       - 'templates/module/**'
       - 'community-modules.json'
+      - 'packages/cli/**'
+      - 'docs/community/works-with-lifeos-checklist.md'
 
 permissions:
   contents: read
@@ -14,12 +16,20 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: '20.19.0'
-      - uses: pnpm/action-setup@v5
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm run typecheck
-      - run: pnpm lifeos module validate --all
-      - run: pnpm lifeos module certify --dry-run
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      # This workflow is a focused contract check; full test execution stays in CI and CLI Smoke.
+      - name: Build first-party module artifacts
+        run: pnpm run build:modules
+      - name: Validate module manifests
+        run: pnpm lifeos module validate --all
+      - name: Dry-run marketplace certification
+        run: pnpm lifeos module certify --dry-run

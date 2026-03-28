@@ -13,7 +13,7 @@
     "cpu": "medium",
     "memory": "medium"
   },
-  "requires": ["@lifeos/voice-core", "@lifeos/event-bus"],
+  "requires": ["@lifeos/voice-core@>=0.3.0 <0.4.0", "@lifeos/event-bus@>=0.3.0 <0.4.0"],
   "category": "assistant",
   "tags": ["voice", "assistant"]
 }

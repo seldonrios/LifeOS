@@ -87,7 +87,7 @@ Resource enforcement requirements:
 
 Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --risks`. Required items:
 
-- [ ] `requires` uses semver ranges in `lifeos.json` (example: `"@lifeos/life-graph@^1.0.0"`)
+- [ ] `requires` uses bounded semver ranges in `lifeos.json` (example: `"@lifeos/life-graph@>=0.3.0 <0.4.0"`)
 - [ ] Includes empty `migrations/` folder (for future schema changes)
 - [ ] Emits `module.{id}.success` / `module.{id}.error` events
 - [ ] Passes `pnpm lifeos module validate`

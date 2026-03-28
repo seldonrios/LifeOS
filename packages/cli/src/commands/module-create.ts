@@ -3,8 +3,7 @@ import { join, resolve } from 'node:path';
 
 const MODULE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
 const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
-const PACKAGE_REQUIREMENT_PATTERN =
-  /^@lifeos\/[a-z0-9-]+(?:@(?:\^|~)?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?)?$/;
+const PACKAGE_REQUIREMENT_PATTERN = /^@lifeos\/[a-z0-9-]+@>=0\.\d+\.\d+ <0\.\d+\.\d+$/;
 const SEMVER_RANGE_PATTERN = /^(?:\^|~)?\d+\.\d+\.\d+(?:-[0-9A-Za-z-.]+)?(?:\+[0-9A-Za-z-.]+)?$/;
 const CATEGORY_PATTERN = /^[a-z0-9][a-z0-9-]{1,40}$/;
 const TAG_PATTERN = /^[a-z0-9][a-z0-9-]{1,30}$/;
@@ -167,7 +166,7 @@ function validateManifest(raw: unknown): string[] {
   for (const requiredPackage of manifest.requires) {
     if (!PACKAGE_REQUIREMENT_PATTERN.test(requiredPackage)) {
       errors.push(
-        `manifest.requires entry "${requiredPackage}" must be "@lifeos/<package>" or "@lifeos/<package>@<semver-range>".`,
+        `manifest.requires entry "${requiredPackage}" must be "@lifeos/<package>@>=0.x.y <0.z.w" while LifeOS is pre-1.0.`,
       );
     }
   }
@@ -251,7 +250,7 @@ export async function createModuleScaffold(
       cpu: 'low',
       memory: 'low',
     },
-    requires: ['@lifeos/voice-core@^1.0.0', '@lifeos/life-graph@^1.0.0'],
+    requires: ['@lifeos/voice-core@>=0.3.0 <0.4.0', '@lifeos/life-graph@>=0.3.0 <0.4.0'],
     category: 'custom',
     tags: ['custom'],
   };
@@ -346,7 +345,7 @@ Generated with LifeOS module scaffold.
 
 ## Modularity Risk Checklist
 
-- [ ] \`requires\` uses semver ranges in \`lifeos.json\`
+- [ ] \`requires\` uses bounded semver ranges in \`lifeos.json\` (example: \`@lifeos/life-graph@>=0.3.0 <0.4.0\`)
 - [ ] Includes empty \`migrations/\` folder
 - [ ] Emits \`module.${normalizedName}.success\` and \`module.${normalizedName}.error\` events
 - [ ] Passes \`pnpm lifeos module validate ${normalizedName}\`

@@ -6,6 +6,7 @@ on:
       - 'v*'
 
 permissions:
+  # Required to create GitHub releases from pushed version tags.
   contents: write
 
 jobs:

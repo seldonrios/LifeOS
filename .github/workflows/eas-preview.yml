@@ -8,6 +8,7 @@ on:
       - apps/mobile/**
 
 permissions:
+  # Required for commit comments that link the preview build back to the pushed SHA.
   contents: write
 
 concurrency:
@@ -18,14 +19,19 @@ jobs:
   eas-preview:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout repository
+        uses: actions/checkout@v6
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
         with:
           node-version: '20.19.0'
           cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - uses: expo/expo-github-action@v8
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Setup Expo
+        uses: expo/expo-github-action@v8
         with:
           expo-version: latest
           token: ${{ secrets.EXPO_TOKEN }}

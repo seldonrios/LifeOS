@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  # Required to publish Scorecard SARIF results to the security tab.
   security-events: write
 
 jobs:

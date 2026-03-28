@@ -18,7 +18,11 @@
     "cpu": "medium",
     "memory": "low"
   },
-  "requires": ["@lifeos/life-graph", "@lifeos/event-bus", "@lifeos/voice-core"],
+  "requires": [
+    "@lifeos/life-graph@>=0.3.0 <0.4.0",
+    "@lifeos/event-bus@>=0.3.0 <0.4.0",
+    "@lifeos/voice-core@>=0.3.0 <0.4.0"
+  ],
   "category": "productivity",
   "tags": ["email", "imap", "summarizer", "inbox"]
 }

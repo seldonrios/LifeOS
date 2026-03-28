@@ -26,8 +26,8 @@ This document defines the minimum test class expected for each change type.
 
 - Full gate: `pnpm run validate`
 - Package-only test: `pnpm --filter @lifeos/<name> run test`
-- Smoke journey: `pnpm lifeos --version`, `pnpm lifeos status --json`, `pnpm lifeos demo --dry-run`
-- CI smoke workflow runs direct commands: `pnpm lifeos --version`, `pnpm lifeos status --json`, `pnpm lifeos demo --dry-run`
+- Smoke journey: `pnpm lifeos --version`, `pnpm lifeos status --json --graph-path ./.tmp/lifeos-smoke/life-graph.json`, `pnpm lifeos demo --dry-run --goal "Smoke test goal" --graph-path ./.tmp/lifeos-smoke/life-graph.json`
+- `CLI Smoke` runs those direct commands on Ubuntu and Windows.
 
 ## Required PR Notes
 

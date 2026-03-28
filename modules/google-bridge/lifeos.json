@@ -49,10 +49,10 @@
     "sheets"
   ],
   "requires": [
-    "@lifeos/event-bus",
-    "@lifeos/life-graph",
-    "@lifeos/module-loader",
-    "@lifeos/voice-core"
+    "@lifeos/event-bus@>=0.3.0 <0.4.0",
+    "@lifeos/life-graph@>=0.3.0 <0.4.0",
+    "@lifeos/module-loader@>=0.3.0 <0.4.0",
+    "@lifeos/voice-core@>=0.3.0 <0.4.0"
   ],
   "category": "bridge",
   "tags": [

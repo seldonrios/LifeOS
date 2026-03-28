@@ -18,7 +18,7 @@
     "cpu": "low",
     "memory": "low"
   },
-  "requires": ["@lifeos/event-bus"],
+  "requires": ["@lifeos/event-bus@>=0.3.0 <0.4.0"],
   "category": "productivity",
   "tags": ["reminder", "tasks"]
 }

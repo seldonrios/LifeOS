@@ -8,6 +8,7 @@ on:
     - cron: '0 3 * * 1'
 
 permissions:
+  # Required so CodeQL can upload SARIF results to the security tab.
   security-events: write
   contents: read
 
@@ -18,5 +19,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: github/codeql-action/init@v4
         with:
+          # Current CodeQL-supported repo surface is TypeScript/JavaScript.
+          # Rust exists in apps/desktop/src-tauri but is not a CodeQL language.
           languages: javascript
       - uses: github/codeql-action/analyze@v4
