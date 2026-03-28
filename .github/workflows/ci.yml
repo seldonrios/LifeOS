@@ -20,14 +20,14 @@ jobs:
         node: ['20.19.0']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: astral-sh/setup-uv@v7
+      - uses: astral-sh/setup-uv@v5
       - run: uv tool install ruff
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node }}
           cache: pnpm
@@ -35,3 +35,21 @@ jobs:
       - run: pnpm run validate
       - name: Hero loop integration test
         run: pnpm --filter @lifeos/cli exec tsx --test src/hero-loop.integration.test.ts
+
+  core-loop-integration:
+    runs-on: ubuntu-latest
+    needs: validate
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.19.0'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test:core-loop
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: core-loop-logs
+          path: logs/

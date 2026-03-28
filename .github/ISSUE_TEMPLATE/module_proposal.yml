@@ -1,0 +1,51 @@
+name: Module proposal
+description: Propose a new LifeOS module with contract, resilience, and versioning details
+labels: ["type:feature", "area:modules"]
+body:
+  - type: input
+    id: module_name
+    attributes:
+      label: Module name
+    validations:
+      required: true
+  - type: textarea
+    id: module_purpose
+    attributes:
+      label: Module purpose
+    validations:
+      required: true
+  - type: dropdown
+    id: loop_stage
+    attributes:
+      label: Loop stage improved
+      options:
+        - capture
+        - inbox
+        - plan
+        - remind
+        - review
+        - cross-cutting
+    validations:
+      required: true
+  - type: textarea
+    id: contract_surface
+    attributes:
+      label: Contract surface (Topics.lifeos.* events, graph entities)
+    validations:
+      required: true
+  - type: textarea
+    id: failure_mode
+    attributes:
+      label: Failure-mode analysis (behaviour if module crashes or times out)
+    validations:
+      required: true
+  - type: input
+    id: version_target
+    attributes:
+      label: LifeOS version target (semver range, e.g. >=0.3.0)
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered

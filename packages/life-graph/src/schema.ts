@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 
+import { CaptureEntrySchema, PlannedActionSchema, ReminderEventSchema } from '@lifeos/contracts';
 import type { GoalPlan, LifeGraphDocument, LifeGraphTask } from './types';
 
 export const LIFE_GRAPH_VERSION = '0.1.0' as const;
@@ -202,6 +203,9 @@ export const LifeGraphDocumentSchema = z
     healthMetricEntries: z.array(HealthMetricEntrySchema).default([]),
     healthDailyStreaks: z.array(HealthDailyStreakSchema).default([]),
     memory: z.array(MemoryEntrySchema).default([]),
+    captureEntries: z.array(CaptureEntrySchema).default([]),
+    plannedActions: z.array(PlannedActionSchema).default([]),
+    reminderEvents: z.array(ReminderEventSchema).default([]),
     system: LifeGraphSystemNodeSchema.default({
       meta: {
         migrationHistory: [],

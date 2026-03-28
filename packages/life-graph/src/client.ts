@@ -2,6 +2,14 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import {
+  CaptureEntrySchema,
+  PlannedActionSchema,
+  ReminderEventSchema,
+  type CaptureEntry,
+  type PlannedAction,
+  type ReminderEvent,
+} from '@lifeos/contracts';
 import { LifeGraphManager, type LifeGraphManagerOptions } from './manager';
 import { cosineSimilarity, createDeterministicEmbedding } from './memory';
 import { resolveLifeGraphPath } from './path';
@@ -764,12 +772,13 @@ function parseInsightsOutput(raw: string): { wins: string[]; nextActions: string
 
 function deriveHeuristicInsights(
   plans: GoalPlan[],
+  plannedActions: PlannedAction[],
   period: LifeGraphReviewPeriod,
-): Pick<LifeGraphReviewInsights, 'wins' | 'nextActions'> {
+): { wins: string[]; nextActions: string[]; history: string[] } {
   const completedTaskTitles = plans.flatMap((plan) =>
     plan.tasks
       .filter((task) => task.status === 'done')
-      .map((task) => `${plan.title}: ${task.title}`),
+      .map((task) => `${plan.title}: ${task.title} (${task.id})`),
   );
   const todoTaskTitles = plans.flatMap((plan) =>
     plan.tasks
@@ -777,17 +786,27 @@ function deriveHeuristicInsights(
       .sort((left, right) => right.priority - left.priority)
       .map((task) => `${plan.title}: ${task.title}`),
   );
+  const completedPlannedActions = plannedActions
+    .filter((action) => action.status === 'done')
+    .map((action) => `Planned action completed: ${action.title} (${action.id})`);
+  const pendingPlannedActions = plannedActions
+    .filter((action) => action.status !== 'done')
+    .map((action) => `Planned action: ${action.title}`);
+
+  const winsCandidates = [...completedPlannedActions, ...completedTaskTitles];
+  const nextActionCandidates = [...pendingPlannedActions, ...todoTaskTitles];
 
   const wins =
-    completedTaskTitles.slice(0, 3).length > 0
-      ? completedTaskTitles.slice(0, 3)
+    winsCandidates.slice(0, 3).length > 0
+      ? winsCandidates.slice(0, 3)
       : [`No completed tasks recorded in the ${period} window yet.`];
   const nextActions =
-    todoTaskTitles.slice(0, 3).length > 0
-      ? todoTaskTitles.slice(0, 3)
+    nextActionCandidates.slice(0, 3).length > 0
+      ? nextActionCandidates.slice(0, 3)
       : ['Capture one next concrete task for your highest-priority goal.'];
+  const history = [...completedPlannedActions, ...completedTaskTitles].slice(0, 10);
 
-  return { wins, nextActions };
+  return { wins, nextActions, history };
 }
 
 function createReviewChatClient(host?: string): ReviewChatClient {
@@ -1587,7 +1606,11 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       const generatedAt = new Date().toISOString();
       const model = options.env?.LIFEOS_GOAL_MODEL?.trim() || 'llama3.1:8b';
       const host = options.env?.OLLAMA_HOST;
-      const heuristic = deriveHeuristicInsights(graph.plans, normalizedPeriod);
+      const heuristic = deriveHeuristicInsights(
+        graph.plans,
+        graph.plannedActions ?? [],
+        normalizedPeriod,
+      );
 
       const reviewPrompt = JSON.stringify(
         {
@@ -1602,6 +1625,12 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
               priority: task.priority,
               dueDate: task.dueDate ?? null,
             })),
+          })),
+          plannedActions: (graph.plannedActions ?? []).map((action) => ({
+            id: action.id,
+            title: action.title,
+            status: action.status,
+            dueDate: action.dueDate ?? null,
           })),
         },
         null,
@@ -1635,6 +1664,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           period: normalizedPeriod,
           wins: parsed.wins,
           nextActions: parsed.nextActions,
+          ...(heuristic.history.length > 0 ? { history: heuristic.history } : {}),
           generatedAt,
           source: 'llm',
         };
@@ -1643,10 +1673,74 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           period: normalizedPeriod,
           wins: heuristic.wins,
           nextActions: heuristic.nextActions,
+          ...(heuristic.history.length > 0 ? { history: heuristic.history } : {}),
           generatedAt,
           source: 'heuristic',
         };
       }
+    },
+
+    async appendCaptureEntry(entry: CaptureEntry): Promise<void> {
+      CaptureEntrySchema.parse(entry);
+      const graph = await manager.load(resolvedGraphPath);
+      const existing = graph.captureEntries ?? [];
+      const updated = existing.filter((e) => e.id !== entry.id);
+      updated.push(entry);
+      await manager.save({ ...graph, captureEntries: updated }, resolvedGraphPath);
+    },
+
+    async updateCaptureEntry(id: string, patch: Partial<CaptureEntry>): Promise<void> {
+      const graph = await manager.load(resolvedGraphPath);
+      const existing = graph.captureEntries ?? [];
+      const index = existing.findIndex((e) => e.id === id);
+      if (index === -1) {
+        throw new Error(`CaptureEntry "${id}" not found.`);
+      }
+      const merged = { ...existing[index], ...patch } as CaptureEntry;
+      CaptureEntrySchema.parse(merged);
+      existing[index] = merged;
+      await manager.save({ ...graph, captureEntries: existing }, resolvedGraphPath);
+    },
+
+    async appendPlannedAction(action: PlannedAction): Promise<void> {
+      PlannedActionSchema.parse(action);
+      const graph = await manager.load(resolvedGraphPath);
+      const existing = graph.plannedActions ?? [];
+      const updated = existing.filter((a) => a.id !== action.id);
+      updated.push(action);
+      await manager.save({ ...graph, plannedActions: updated }, resolvedGraphPath);
+    },
+
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>): Promise<void> {
+      const graph = await manager.load(resolvedGraphPath);
+      const existing = graph.plannedActions ?? [];
+      const index = existing.findIndex((a) => a.id === id);
+      if (index === -1) {
+        throw new Error(`PlannedAction "${id}" not found.`);
+      }
+      const merged = { ...existing[index], ...patch } as PlannedAction;
+      PlannedActionSchema.parse(merged);
+      existing[index] = merged;
+      await manager.save({ ...graph, plannedActions: existing }, resolvedGraphPath);
+    },
+
+    async appendReminderEvent(event: ReminderEvent): Promise<void> {
+      ReminderEventSchema.parse(event);
+      const graph = await manager.load(resolvedGraphPath);
+      const existing = graph.reminderEvents ?? [];
+      const updated = existing.filter((r) => r.id !== event.id);
+      updated.push(event);
+      await manager.save({ ...graph, reminderEvents: updated }, resolvedGraphPath);
+    },
+
+    async getCaptureEntry(id: string): Promise<CaptureEntry | undefined> {
+      const graph = await manager.load(resolvedGraphPath);
+      return (graph.captureEntries ?? []).find((e) => e.id === id);
+    },
+
+    async getPlannedAction(id: string): Promise<PlannedAction | undefined> {
+      const graph = await manager.load(resolvedGraphPath);
+      return (graph.plannedActions ?? []).find((a) => a.id === id);
     },
   };
 }

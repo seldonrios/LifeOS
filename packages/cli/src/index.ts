@@ -34,6 +34,14 @@ import {
   type LifeGraphReviewPeriod,
   type LifeGraphStorageInfo,
 } from '@lifeos/life-graph';
+import {
+  CaptureEntrySchema,
+  PlannedActionSchema,
+  ReminderEventSchema,
+  type CaptureEntry,
+  type PlannedAction,
+  type ReminderEvent,
+} from '@lifeos/contracts';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
   baselineModules,
@@ -93,16 +101,19 @@ import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
 import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
 import type {
+  CaptureCommandOptions,
   DemoCommandOptions,
   EventsListenCommandOptions,
   GraphCommandOptions,
   GoalCommandOptions,
+  InboxCommandOptions,
   InitCommandOptions,
   MarketplaceCommandOptions,
   MemoryCommandOptions,
   MeshCommandOptions,
   ModuleCommandOptions,
   ModulesCommandOptions,
+  RemindCommandOptions,
   ResearchCommandOptions,
   ReviewCommandOptions,
   RunCliDependencies,
@@ -2168,9 +2179,12 @@ export async function runTaskCommand(
       });
       const eventPayload = {
         taskId: completedTask.id,
-        goalId: completedTask.goalId,
         title: completedTask.title,
         status: completedTask.status,
+        completionSource: completedTask.source,
+        ...(completedTask.goalId ? { goalId: completedTask.goalId } : {}),
+        ...(completedTask.goalTitle ? { goalTitle: completedTask.goalTitle } : {}),
+        ...(completedTask.sourceCapture ? { sourceCapture: completedTask.sourceCapture } : {}),
         completedAt: new Date().toISOString(),
       };
       if (dependencies.moduleLoader) {
@@ -4380,6 +4394,133 @@ export async function runModulesCommand(
   }
 }
 
+export async function runCaptureCommand(
+  options: CaptureCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const now = dependencies.now ?? (() => new Date());
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+
+  try {
+    const entry: CaptureEntry = CaptureEntrySchema.parse({
+      id: randomUUID(),
+      content: options.text,
+      type: options.type === 'voice' ? 'voice' : 'text',
+      capturedAt: now().toISOString(),
+      source: 'cli',
+      tags: [],
+      status: 'pending',
+    });
+    await client.appendCaptureEntry(entry);
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(entry, null, 2)}\n`);
+    } else {
+      writeStdout(`${chalk.green('Captured:')} ${entry.content} (id: ${entry.id.slice(0, 8)})\n`);
+    }
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
+export async function runInboxCommand(
+  options: InboxCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const now = dependencies.now ?? (() => new Date());
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+
+  try {
+    if (options.action === 'triage') {
+      if (!options.captureId) {
+        writeStderr(`${chalk.red.bold('Error:')} Capture entry ID is required for triage.\n`);
+        return 1;
+      }
+      const captureEntry = await client.getCaptureEntry(options.captureId);
+      if (!captureEntry) {
+        writeStderr(`ERR_CAPTURE_NOT_FOUND: Capture entry "${options.captureId}" not found.\n`);
+        return 1;
+      }
+      const plannedAction: PlannedAction = PlannedActionSchema.parse({
+        id: randomUUID(),
+        title: captureEntry.content,
+        status: 'todo',
+        sourceCapture: captureEntry.id,
+        ...(options.due ? { dueDate: options.due } : {}),
+      });
+      await client.appendPlannedAction(plannedAction);
+      await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+      const updatedCapture = await client.getCaptureEntry(captureEntry.id);
+      if (options.outputJson) {
+        writeStdout(
+          `${JSON.stringify({ captureEntry: updatedCapture, plannedAction }, null, 2)}\n`,
+        );
+      } else {
+        writeStdout(
+          `${chalk.green('Triaged:')} "${captureEntry.content}" → action ${plannedAction.id.slice(0, 8)}\n`,
+        );
+      }
+      return 0;
+    }
+    writeStderr(`${chalk.red.bold('Error:')} Unknown inbox action "${options.action}".\n`);
+    return 1;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
+export async function runRemindCommand(
+  options: RemindCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+
+  try {
+    const plannedAction = await client.getPlannedAction(options.actionId);
+    if (!plannedAction) {
+      writeStderr(
+        `ERR_PLANNED_ACTION_NOT_FOUND: PlannedAction "${options.actionId}" not found.\n`,
+      );
+      return 1;
+    }
+    const reminderEvent: ReminderEvent = ReminderEventSchema.parse({
+      id: randomUUID(),
+      actionId: plannedAction.id,
+      scheduledFor: options.at,
+      status: 'scheduled',
+    });
+    await client.appendReminderEvent(reminderEvent);
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(reminderEvent, null, 2)}\n`);
+    } else {
+      writeStdout(
+        `${chalk.green('Reminder scheduled:')} action ${plannedAction.id.slice(0, 8)} at ${options.at}\n`,
+      );
+    }
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
 function buildProgram(
   dependencies: RunCliDependencies,
   setExitCode: (exitCode: number) => void,
@@ -4447,6 +4588,88 @@ function buildProgram(
         dependencies,
       );
 
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('capture')
+    .description('Capture an item into the personal inbox')
+    .argument('<text>', 'The capture content')
+    .option('--type <type>', 'Capture type: text or voice', 'text')
+    .option('--json', 'Output captured entry JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .action(async (text: string, commandOptions) => {
+      const commandExitCode = await runCaptureCommand(
+        {
+          text,
+          type: commandOptions.type,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('inbox')
+    .description('Manage inbox items: triage')
+    .argument('[action]', 'triage', 'triage')
+    .argument('[id]', 'Capture entry ID for triage action')
+    .option('--action <action>', 'Triage action: task | note | defer', 'task')
+    .option('--due <date>', 'Due date for triaged task (YYYY-MM-DD)')
+    .option('--json', 'Output result JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .action(async (action: string, id: string | undefined, commandOptions) => {
+      const normalizedAction = action === 'triage' ? 'triage' : null;
+      if (!normalizedAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid inbox action "${action}". Use triage.\n`,
+        );
+        return;
+      }
+      const triageAction = (commandOptions.action as string) === 'note'
+        ? 'note'
+        : (commandOptions.action as string) === 'defer'
+          ? 'defer'
+          : 'task';
+      const commandExitCode = await runInboxCommand(
+        {
+          action: normalizedAction,
+          ...(id !== undefined ? { captureId: id } : {}),
+          triageAction,
+          ...(commandOptions.due ? { due: commandOptions.due as string } : {}),
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath as string,
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('remind')
+    .description('Schedule a reminder for a planned action')
+    .argument('<action-id>', 'The PlannedAction ID')
+    .option('--at <iso-datetime>', 'ISO datetime to schedule the reminder')
+    .option('--json', 'Output reminder event JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .action(async (actionId: string, commandOptions) => {
+      if (!commandOptions.at) {
+        setExitCode(1);
+        writeStderr(`${chalk.red.bold('Error:')} --at <iso-datetime> is required.\n`);
+        return;
+      }
+      const commandExitCode = await runRemindCommand(
+        {
+          actionId,
+          at: commandOptions.at as string,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath as string,
+        },
+        dependencies,
+      );
       setExitCode(commandExitCode);
     });
 

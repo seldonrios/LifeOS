@@ -1,8 +1,6 @@
 import {
   Topics,
   registerModuleSchema,
-  type LifeGraphClient,
-  type LifeGraphHealthDailyStreak,
   type LifeOSModule,
   type ModuleRuntimeContext,
 } from '@lifeos/module-sdk';
@@ -27,6 +25,8 @@ interface QueuedPublish {
   topic: string;
   data: Record<string, unknown>;
 }
+
+type LifeGraphClient = ReturnType<ModuleRuntimeContext['createLifeGraphClient']>;
 
 function createClient(context: ModuleRuntimeContext): LifeGraphClient {
   return context.createLifeGraphClient(
@@ -292,7 +292,7 @@ export function createHabitStreakModule(options: HabitStreakModuleOptions = {}):
               currentStreak: result.streak.currentStreak,
               completedAt: result.entry.completedAt,
             };
-            const healthStreakSnapshot: LifeGraphHealthDailyStreak = {
+            const healthStreakSnapshot = {
               id: `habit-streak-${matchedHabit.id}`,
               metric: matchedHabit.name,
               currentStreak: result.streak.currentStreak,

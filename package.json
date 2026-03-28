@@ -21,7 +21,8 @@
     "scaffold": "tsx scripts/scaffold.ts",
     "changeset": "changeset",
     "release:status": "changeset status --verbose",
-    "release:version": "changeset version"
+    "release:version": "changeset version",
+    "test:core-loop": "tsx scripts/test-core-loop.ts"
   },
   "lint-staged": {
     "packages/**/*.{ts,tsx}": [

@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@inquirer/prompts": "^8.3.2",
+    "@lifeos/contracts": "workspace:*",
     "@lifeos/calendar-module": "workspace:*",
     "@lifeos/core": "workspace:*",
     "@lifeos/email-summarizer-module": "workspace:*",

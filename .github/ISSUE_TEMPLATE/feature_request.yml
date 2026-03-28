@@ -9,6 +9,19 @@ body:
       description: What user problem should this solve?
     validations:
       required: true
+  - type: dropdown
+    id: loop_stage
+    attributes:
+      label: Loop stage
+      options:
+        - Capture
+        - Inbox / Triage
+        - Plan / Schedule
+        - Reminders
+        - Review / History
+        - Cross-cutting / Infrastructure
+    validations:
+      required: true
   - type: textarea
     id: proposal
     attributes:

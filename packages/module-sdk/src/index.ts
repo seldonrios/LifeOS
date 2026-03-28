@@ -1,15 +1,17 @@
 import type { ModuleRuntimeContext } from '@lifeos/module-loader';
-import type { ModuleSchema } from '@lifeos/life-graph';
+
+type RegisterModuleSchemaInput = Parameters<
+  ReturnType<ModuleRuntimeContext['createLifeGraphClient']>['registerModuleSchema']
+>[0];
 
 export type { BaseEvent } from '@lifeos/event-bus';
 export { Topics } from '@lifeos/event-bus';
 
 export type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
-export type { ModuleSchema, LifeGraphClient, LifeGraphHealthDailyStreak } from '@lifeos/life-graph';
 
 export async function registerModuleSchema(
   context: ModuleRuntimeContext,
-  schema: ModuleSchema,
+  schema: RegisterModuleSchemaInput,
 ): Promise<void> {
   const client = context.createLifeGraphClient(
     context.graphPath

@@ -217,18 +217,21 @@ importers:
 
   modules/habit-streak:
     dependencies:
-      '@lifeos/event-bus':
+      '@lifeos/module-sdk':
         specifier: workspace:*
-        version: link:../../packages/event-bus
-      '@lifeos/life-graph':
+        version: link:../../packages/module-sdk
+
+  modules/notification-bridge:
+    dependencies:
+      '@lifeos/module-sdk':
         specifier: workspace:*
-        version: link:../../packages/life-graph
-      '@lifeos/module-loader':
+        version: link:../../packages/module-sdk
+
+  modules/planning-assistant:
+    dependencies:
+      '@lifeos/module-sdk':
         specifier: workspace:*
-        version: link:../../packages/module-loader
-      '@lifeos/voice-core':
-        specifier: workspace:*
-        version: link:../../packages/voice-core
+        version: link:../../packages/module-sdk
 
   packages/agent-mesh:
     dependencies:
@@ -292,6 +295,9 @@ importers:
       '@lifeos/calendar-module':
         specifier: workspace:*
         version: link:../calendar-module
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@lifeos/core':
         specifier: workspace:*
         version: link:../core
@@ -440,6 +446,9 @@ importers:
       '@lancedb/lancedb':
         specifier: ^0.27.1
         version: 0.27.1(apache-arrow@17.0.0)
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       '@xenova/transformers':
         specifier: ^2.17.2
         version: 2.17.2
@@ -476,6 +485,18 @@ importers:
       '@lifeos/policy-engine':
         specifier: workspace:*
         version: link:../policy-engine
+
+  packages/module-sdk:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/module-loader':
+        specifier: workspace:*
+        version: link:../module-loader
 
   packages/news-module:
     dependencies:
@@ -1846,7 +1867,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {node: '>=0.10.0'}
+    engines: {'0': node >=0.10.0}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}
@@ -2227,7 +2248,6 @@ packages:
   '@lancedb/lancedb@0.27.1':
     resolution: {integrity: sha512-LqXw19VYXaG1bV/03wN5JrYOSrRv38RPbKHW0hukbyfsNV4+VuZ3VpObk3gDeJGPkkJ56MS3lbbB2pqqg1DiNQ==}
     engines: {node: '>= 18'}
-    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'

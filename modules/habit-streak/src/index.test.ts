@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Topics, type BaseEvent, type LifeGraphClient, type ModuleRuntimeContext } from '@lifeos/module-sdk';
+import { Topics, type BaseEvent, type ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 import { HABIT_TOPICS } from './events';
 import { createHabitStreakModule } from './index';
@@ -16,6 +16,8 @@ interface CapturedSubscription {
 interface ContextMockOptions {
   queryResponder?: (query: string, params?: Record<string, unknown>) => unknown[];
 }
+
+type LifeGraphClient = ReturnType<ModuleRuntimeContext['createLifeGraphClient']>;
 
 function createClientMock(options: ContextMockOptions = {}): {
   client: LifeGraphClient;

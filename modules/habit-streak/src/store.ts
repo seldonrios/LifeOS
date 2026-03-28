@@ -1,4 +1,6 @@
-import type { LifeGraphClient } from '@lifeos/module-sdk';
+import type { ModuleRuntimeContext } from '@lifeos/module-sdk';
+
+type LifeGraphClient = ReturnType<ModuleRuntimeContext['createLifeGraphClient']>;
 
 const HABIT_MEMORY_KEY_PREFIX = 'habit.habit.';
 const ENTRY_MEMORY_KEY_PREFIX = 'habit.entry.';

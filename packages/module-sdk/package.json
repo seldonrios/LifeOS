@@ -14,7 +14,6 @@
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/contracts": "workspace:*",
-    "@lifeos/life-graph": "workspace:*",
     "@lifeos/module-loader": "workspace:*"
   }
 }

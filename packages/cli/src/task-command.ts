@@ -218,62 +218,105 @@ export async function handleTaskList(
 
 export async function handleTaskComplete(
   taskId: string | undefined,
-  client: Pick<LifeGraphClient, 'loadGraph' | 'saveGraph'>,
+  client: Pick<
+    LifeGraphClient,
+    'loadGraph' | 'saveGraph' | 'getPlannedAction' | 'updatePlannedAction'
+  >,
   options: TaskIoOptions,
 ): Promise<{
   id: string;
   title: string;
-  goalId: string;
-  goalTitle: string;
   status: LifeGraphTask['status'];
+  goalId?: string;
+  goalTitle?: string;
+  source: 'task' | 'planned-action';
+  sourceCapture?: string;
 }> {
   const graph = await client.loadGraph();
-  const match = findTaskMatch(graph, taskId ?? '');
 
-  const updatedTask: LifeGraphTask = {
-    ...match.task,
-    status: 'done',
-  };
+  try {
+    const match = findTaskMatch(graph, taskId ?? '');
 
-  const nextGraph: LifeGraphDocument = {
-    ...graph,
-    updatedAt: new Date().toISOString(),
-    plans: graph.plans.map((plan, planIndex) => {
-      if (planIndex !== match.planIndex) {
-        return plan;
-      }
+    const updatedTask: LifeGraphTask = {
+      ...match.task,
+      status: 'done',
+    };
 
-      return {
-        ...plan,
-        tasks: plan.tasks.map((task, taskIndex) => {
-          if (taskIndex !== match.taskIndex) {
-            return task;
-          }
+    const nextGraph: LifeGraphDocument = {
+      ...graph,
+      updatedAt: new Date().toISOString(),
+      plans: graph.plans.map((plan, planIndex) => {
+        if (planIndex !== match.planIndex) {
+          return plan;
+        }
 
-          return updatedTask;
-        }),
-      };
-    }),
-  };
+        return {
+          ...plan,
+          tasks: plan.tasks.map((task, taskIndex) => {
+            if (taskIndex !== match.taskIndex) {
+              return task;
+            }
 
-  await client.saveGraph(nextGraph);
-  const payload = {
-    id: updatedTask.id,
-    title: updatedTask.title,
-    goalId: match.goalId,
-    goalTitle: match.goalTitle,
-    status: updatedTask.status,
-  };
+            return updatedTask;
+          }),
+        };
+      }),
+    };
 
-  if (options.outputJson) {
-    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
-  } else {
-    options.stdout(
-      chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`),
-    );
+    await client.saveGraph(nextGraph);
+    const payload = {
+      id: updatedTask.id,
+      title: updatedTask.title,
+      goalId: match.goalId,
+      goalTitle: match.goalTitle,
+      status: updatedTask.status,
+      source: 'task' as const,
+    };
+
+    if (options.outputJson) {
+      options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      options.stdout(
+        chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`),
+      );
+    }
+
+    return payload;
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    const normalizedId = taskId?.trim() ?? '';
+    if (!message.includes('not found') || normalizedId.length === 0) {
+      throw error;
+    }
+
+    const plannedAction = await client.getPlannedAction(normalizedId);
+    if (!plannedAction) {
+      throw error;
+    }
+
+    await client.updatePlannedAction(plannedAction.id, { status: 'done' });
+
+    const payload = {
+      id: plannedAction.id,
+      title: plannedAction.title,
+      status: 'done' as const,
+      source: 'planned-action' as const,
+      ...(plannedAction.goalId ? { goalId: plannedAction.goalId } : {}),
+      ...(plannedAction.sourceCapture ? { sourceCapture: plannedAction.sourceCapture } : {}),
+    };
+
+    if (options.outputJson) {
+      options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      options.stdout(
+        chalk.green(
+          `Planned action ${plannedAction.id.slice(0, 8)} completed: ${plannedAction.title}\n`,
+        ),
+      );
+    }
+
+    return payload;
   }
-
-  return payload;
 }
 
 export async function handleNextActions(

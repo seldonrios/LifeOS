@@ -1,3 +1,5 @@
+import type { CaptureEntry, PlannedAction, ReminderEvent } from '@lifeos/contracts';
+
 export interface Person {
   id: string;
   name: string;
@@ -176,6 +178,13 @@ export interface LifeGraphClient {
   getSummary(): Promise<LifeGraphSummary>;
   getStorageInfo(): Promise<LifeGraphStorageInfo>;
   generateReview(period?: LifeGraphReviewPeriod): Promise<LifeGraphReviewInsights>;
+  appendCaptureEntry(entry: CaptureEntry): Promise<void>;
+  updateCaptureEntry(id: string, patch: Partial<CaptureEntry>): Promise<void>;
+  appendPlannedAction(action: PlannedAction): Promise<void>;
+  updatePlannedAction(id: string, patch: Partial<PlannedAction>): Promise<void>;
+  appendReminderEvent(event: ReminderEvent): Promise<void>;
+  getCaptureEntry(id: string): Promise<CaptureEntry | undefined>;
+  getPlannedAction(id: string): Promise<PlannedAction | undefined>;
 }
 
 export interface GoalPlanRecord<TPlan = Record<string, unknown>> {
@@ -371,6 +380,9 @@ export interface LifeGraphDocument {
   healthDailyStreaks?: LifeGraphHealthDailyStreak[];
   memory?: LifeGraphMemoryEntry[];
   system?: LifeGraphSystemNode;
+  captureEntries?: CaptureEntry[];
+  plannedActions?: PlannedAction[];
+  reminderEvents?: ReminderEvent[];
 }
 
 export type LifeGraphRiskStatus = 'green' | 'yellow' | 'red';
@@ -441,6 +453,7 @@ export interface LifeGraphReviewInsights {
   period: LifeGraphReviewPeriod;
   wins: string[];
   nextActions: string[];
+  history?: string[];
   generatedAt: string;
   source: 'llm' | 'heuristic';
 }

@@ -189,6 +189,9 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       healthMetricEntries: [],
       healthDailyStreaks: [],
       memory: [],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
       system: { meta: {} },
     };
   }
@@ -208,6 +211,9 @@ function normalizeDocument(value: unknown, now: Date): LifeGraphDocument {
       healthMetricEntries: [],
       healthDailyStreaks: [],
       memory: [],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
       system: { meta: {} },
     };
   }
@@ -250,6 +256,9 @@ function toSerializableGraph(graph: LifeGraphDocument): LifeGraphDocument {
     healthMetricEntries: graph.healthMetricEntries ?? [],
     healthDailyStreaks: graph.healthDailyStreaks ?? [],
     memory: graph.memory ?? [],
+    captureEntries: graph.captureEntries ?? [],
+    plannedActions: graph.plannedActions ?? [],
+    reminderEvents: graph.reminderEvents ?? [],
     system: graph.system ?? { meta: {} },
   };
 }
@@ -397,6 +406,9 @@ export class LifeGraphManager {
       upsertMeta.run('version', doc.version);
       upsertMeta.run('updatedAt', doc.updatedAt);
       upsertMeta.run('system', JSON.stringify(doc.system ?? { meta: {} }));
+      upsertMeta.run('captureEntries', JSON.stringify(doc.captureEntries ?? []));
+      upsertMeta.run('plannedActions', JSON.stringify(doc.plannedActions ?? []));
+      upsertMeta.run('reminderEvents', JSON.stringify(doc.reminderEvents ?? []));
 
       const insertPlan = db.prepare(
         'INSERT OR REPLACE INTO plans (id, title, description, deadline, createdAt, data) VALUES (?, ?, ?, ?, ?, ?)',
@@ -471,7 +483,9 @@ export class LifeGraphManager {
 
   private readGraphFromDb(db: Database.Database): LifeGraphDocument {
     const metaRows = db
-      .prepare("SELECT key, value FROM meta WHERE key IN ('version', 'updatedAt', 'system')")
+      .prepare(
+        "SELECT key, value FROM meta WHERE key IN ('version', 'updatedAt', 'system', 'captureEntries', 'plannedActions', 'reminderEvents')",
+      )
       .all() as Array<{ key: string; value: string }>;
 
     const meta = new Map(metaRows.map((row) => [row.key, row.value]));
@@ -558,6 +572,9 @@ export class LifeGraphManager {
     ).map((row) => parseJson<Record<string, unknown>>(row.data, {}));
 
     const system = parseJson<Record<string, unknown>>(meta.get('system') ?? null, { meta: {} });
+    const captureEntries = parseJson<Record<string, unknown>[]>(meta.get('captureEntries') ?? null, []);
+    const plannedActions = parseJson<Record<string, unknown>[]>(meta.get('plannedActions') ?? null, []);
+    const reminderEvents = parseJson<Record<string, unknown>[]>(meta.get('reminderEvents') ?? null, []);
 
     const candidate = {
       version: meta.get('version') ?? LIFE_GRAPH_VERSION,
@@ -572,6 +589,9 @@ export class LifeGraphManager {
       healthMetricEntries,
       healthDailyStreaks,
       memory,
+      captureEntries,
+      plannedActions,
+      reminderEvents,
       system,
     };
 

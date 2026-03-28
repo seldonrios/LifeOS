@@ -222,6 +222,26 @@ export interface ResearchCommandOptions {
   verbose: boolean;
 }
 
+export interface CaptureCommandOptions {
+  text: string;
+  type: string;
+  outputJson: boolean;
+  graphPath: string;
+}
+export interface InboxCommandOptions {
+  action: 'triage';
+  captureId?: string;
+  triageAction?: 'task' | 'note' | 'defer';
+  due?: string;
+  outputJson: boolean;
+  graphPath: string;
+}
+export interface RemindCommandOptions {
+  actionId: string;
+  at: string;
+  outputJson: boolean;
+  graphPath: string;
+}
 export interface SpinnerLike {
   start(): SpinnerLike;
   succeed(text?: string): SpinnerLike;

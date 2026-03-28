@@ -4,7 +4,7 @@ import { IsoDateTimeSchema } from './shared';
 
 export const CaptureEntrySchema = z
   .object({
-    id: z.string(),
+    id: z.string().min(1),
     content: z.string().min(1),
     type: z.enum(['text', 'voice']),
     capturedAt: IsoDateTimeSchema,

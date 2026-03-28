@@ -4,8 +4,8 @@ import { IsoDateTimeSchema } from './shared';
 
 export const LoopInboxItemSchema = z
   .object({
-    id: z.string(),
-    captureId: z.string().optional(),
+    id: z.string().min(1),
+    captureId: z.string().min(1).optional(),
     title: z.string().min(1),
     description: z.string().optional(),
     stage: z.literal('inbox'),

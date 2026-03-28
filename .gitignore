@@ -31,3 +31,6 @@ test-output.log
 **/test-results.txt
 **/failures.txt
 **/out.txt
+
+# Core loop integration test logs
+logs/
