@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - apps/mobile/**
+      - .github/workflows/eas-preview.yml
 
 permissions:
   # Required for commit comments that link the preview build back to the pushed SHA.
