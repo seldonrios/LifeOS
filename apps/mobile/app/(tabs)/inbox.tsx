@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { InboxItem } from "@lifeos/contracts";
+import { useRouter } from "expo-router";
 import {
   FlatList,
   Pressable,
@@ -45,15 +46,6 @@ function markReadOptimistically(itemId: string) {
   );
 }
 
-function getRequestId(item: InboxItem): string | null {
-  if (item.type !== "approval") {
-    return null;
-  }
-
-  const requestId = (item.data as { requestId?: unknown }).requestId;
-  return typeof requestId === "string" ? requestId : null;
-}
-
 function ReadIndicator({
   read,
   palette,
@@ -82,6 +74,7 @@ function ReadIndicator({
 export default function InboxScreen() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === "dark" ? darkColors : lightColors;
+  const router = useRouter();
 
   const {
     data,
@@ -97,34 +90,6 @@ export default function InboxScreen() {
 
   const items = useMemo(() => data ?? [], [data]);
 
-  const handleApprove = async (item: InboxItem) => {
-    const requestId = getRequestId(item);
-    if (!requestId) {
-      return;
-    }
-
-    markReadOptimistically(item.id);
-    try {
-      await sdk.inbox.approve(requestId);
-    } catch {
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    }
-  };
-
-  const handleReject = async (item: InboxItem) => {
-    const requestId = getRequestId(item);
-    if (!requestId) {
-      return;
-    }
-
-    markReadOptimistically(item.id);
-    try {
-      await sdk.inbox.reject(requestId);
-    } catch {
-      await queryClient.invalidateQueries({ queryKey: ["inbox"] });
-    }
-  };
-
   const handleNotificationPress = (item: InboxItem) => {
     markReadOptimistically(item.id);
   };
@@ -132,7 +97,7 @@ export default function InboxScreen() {
   const renderItem = ({ item }: { item: InboxItem }) => {
     if (item.type === "approval") {
       return (
-        <View
+        <Pressable
           style={[
             styles.card,
             styles.approvalCard,
@@ -142,6 +107,10 @@ export default function InboxScreen() {
               borderLeftColor: palette.accent.brand,
             },
           ]}
+          onPress={() => {
+            markReadOptimistically(item.id);
+            router.push({ pathname: "/modal/approval-detail", params: { itemId: item.id } });
+          }}
         >
           <View style={styles.headerRow}>
             <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>{item.title}</Text>
@@ -153,32 +122,7 @@ export default function InboxScreen() {
             </Text>
           ) : null}
           <Text style={[styles.metaText, { color: palette.text.muted }]}>{timeAgo(item.createdAt)}</Text>
-          <View style={styles.buttonRow}>
-            <Pressable
-              style={[styles.button, { backgroundColor: palette.accent.brand }]}
-              onPress={() => {
-                void handleApprove(item);
-              }}
-            >
-              <Text style={[styles.buttonText, { color: palette.background.primary }]}>Approve</Text>
-            </Pressable>
-            <Pressable
-              style={[
-                styles.button,
-                styles.outlineButton,
-                {
-                  borderColor: palette.border.default,
-                  backgroundColor: palette.background.primary,
-                },
-              ]}
-              onPress={() => {
-                void handleReject(item);
-              }}
-            >
-              <Text style={[styles.buttonText, { color: palette.text.primary }]}>Reject</Text>
-            </Pressable>
-          </View>
-        </View>
+        </Pressable>
       );
     }
 
@@ -332,23 +276,6 @@ const styles = StyleSheet.create({
   metaText: {
     fontSize: typography.fontSize.xs,
     fontWeight: typography.fontWeight.medium,
-  },
-  buttonRow: {
-    flexDirection: "row",
-    gap: spacing[2],
-    marginTop: spacing[1],
-  },
-  button: {
-    borderRadius: spacing[2],
-    paddingVertical: spacing[2],
-    paddingHorizontal: spacing[3],
-  },
-  outlineButton: {
-    borderWidth: 1,
-  },
-  buttonText: {
-    fontSize: typography.fontSize.sm,
-    fontWeight: typography.fontWeight.semibold,
   },
   readIndicator: {
     flexDirection: "row",

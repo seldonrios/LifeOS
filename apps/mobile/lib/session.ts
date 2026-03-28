@@ -1,4 +1,5 @@
 import * as SecureStore from 'expo-secure-store';
+import * as LocalAuthentication from 'expo-local-authentication';
 import { create } from 'zustand';
 import type { LoginRequest, UserProfile } from '@lifeos/contracts';
 
@@ -12,12 +13,18 @@ type SessionState = {
   status: SessionStatus;
   accessToken: string | null;
   user: UserProfile | null;
+  biometricEnabled: boolean;
+  biometricAvailable: boolean;
   restoreSession: () => Promise<void>;
+  loadBiometricPreference: () => Promise<void>;
+  setBiometricEnabled: (enabled: boolean) => Promise<void>;
+  requireBiometric: () => Promise<void>;
   signIn: (credentials: LoginRequest) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
 const REFRESH_TOKEN_KEY = 'lifeos.refresh_token';
+const BIOMETRIC_ENABLED_KEY = 'lifeos.biometric_enabled';
 
 function userFromAccessToken(accessToken: string): UserProfile {
   return {
@@ -27,10 +34,12 @@ function userFromAccessToken(accessToken: string): UserProfile {
   };
 }
 
-export const useSessionStore = create<SessionState>((set) => ({
+export const useSessionStore = create<SessionState>((set, get) => ({
   status: 'loading',
   accessToken: null,
   user: null,
+  biometricEnabled: false,
+  biometricAvailable: false,
   async restoreSession() {
     let nextStatus: SessionStatus = 'unauthenticated';
     let nextAccessToken: string | null = null;
@@ -58,6 +67,41 @@ export const useSessionStore = create<SessionState>((set) => ({
       // If SecureStore read fails, fall back to unauthenticated state.
     } finally {
       set({ status: nextStatus, accessToken: nextAccessToken, user: nextUser });
+      try {
+        await get().loadBiometricPreference();
+      } catch {
+        set({ biometricAvailable: false, biometricEnabled: false });
+      }
+    }
+  },
+  async loadBiometricPreference() {
+    const [hasHardware, isEnrolled, storedValue] = await Promise.all([
+      LocalAuthentication.hasHardwareAsync(),
+      LocalAuthentication.isEnrolledAsync(),
+      SecureStore.getItemAsync(BIOMETRIC_ENABLED_KEY),
+    ]);
+    const biometricAvailable = hasHardware && isEnrolled;
+
+    set({
+      biometricAvailable,
+      biometricEnabled: storedValue === 'true' && biometricAvailable,
+    });
+  },
+  async setBiometricEnabled(enabled) {
+    await SecureStore.setItemAsync(BIOMETRIC_ENABLED_KEY, String(enabled));
+    set({ biometricEnabled: enabled });
+  },
+  async requireBiometric() {
+    try {
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: 'Unlock LifeOS',
+      });
+
+      if (!result.success) {
+        await get().signOut();
+      }
+    } catch {
+      await get().signOut();
     }
   },
   async signIn(credentials) {

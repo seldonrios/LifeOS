@@ -1,7 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { Ionicons } from "@expo/vector-icons";
 import { useQuery } from "@tanstack/react-query";
-import type { InboxItem } from "@lifeos/contracts";
+import type { GoalSummary, InboxItem } from "@lifeos/contracts";
+import { useRouter } from "expo-router";
 import {
+  Animated,
+  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -60,17 +64,8 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === "dark" ? darkColors : lightColors;
   const displayName = useSessionStore((state) => state.user?.displayName);
-
-  const {
-    data: timeline,
-    isLoading: isTimelineLoading,
-    isError: isTimelineError,
-    error: timelineError,
-    refetch: refetchTimeline,
-  } = useQuery({
-    queryKey: ["timeline"],
-    queryFn: () => sdk.timeline.list(),
-  });
+  const router = useRouter();
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   const {
     data: inbox,
@@ -83,15 +78,16 @@ export default function HomeScreen() {
     queryFn: () => sdk.inbox.list(),
   });
 
-  const activeGoalCount = useMemo(
-    () =>
-      new Set(
-        (timeline ?? [])
-          .filter((entry) => entry.type === "task" && entry.status !== "done" && entry.goalId)
-          .map((entry) => entry.goalId)
-      ).size,
-    [timeline]
-  );
+  const {
+    data: goals,
+    isLoading: isGoalsLoading,
+    isError: isGoalsError,
+    error: goalsError,
+    refetch: refetchGoals,
+  } = useQuery({
+    queryKey: ["goals"],
+    queryFn: () => sdk.timeline.goals(),
+  });
 
   const openTasks = useMemo(
     () =>
@@ -117,9 +113,38 @@ export default function HomeScreen() {
     [inbox]
   );
 
+  useEffect(() => {
+    if (unreadApprovalCount <= 0) {
+      pulseAnim.setValue(1);
+      return;
+    }
+
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 0.3,
+          duration: 450,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 450,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+      pulseAnim.setValue(1);
+    };
+  }, [pulseAnim, unreadApprovalCount]);
+
   const greeting = greetingForHour(new Date().getHours());
 
-  if (isTimelineLoading || isInboxLoading) {
+  if (isInboxLoading || isGoalsLoading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
         <View style={[styles.placeholderCard, { backgroundColor: palette.background.card }]} />
@@ -129,10 +154,10 @@ export default function HomeScreen() {
     );
   }
 
-  if (isTimelineError || isInboxError) {
+  if (isInboxError || isGoalsError) {
     const message =
-      (timelineError instanceof Error && timelineError.message) ||
       (inboxError instanceof Error && inboxError.message) ||
+      (goalsError instanceof Error && goalsError.message) ||
       "Unable to load dashboard";
 
     return (
@@ -140,8 +165,8 @@ export default function HomeScreen() {
         <ErrorBanner
           message={message}
           onRetry={() => {
-            void refetchTimeline();
             void refetchInbox();
+            void refetchGoals();
           }}
         />
       </SafeAreaView>
@@ -153,7 +178,7 @@ export default function HomeScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View>
           <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
-          <Text style={[styles.name, { color: palette.text.primary }]}>{displayName ?? "there"}</Text>
+          <Text style={[styles.name, { color: palette.text.primary }]}>{displayName?.split(" ")[0] ?? "there"}</Text>
         </View>
 
         <View
@@ -166,8 +191,37 @@ export default function HomeScreen() {
           ]}
         >
           <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Active goals</Text>
-          <Text style={[styles.metricValue, { color: palette.text.primary }]}>{activeGoalCount}</Text>
-          <Text style={[styles.cardBody, { color: palette.text.muted }]}>Goals with active tasks</Text>
+          {(goals ?? []).length === 0 ? (
+            <Text style={[styles.cardBody, { color: palette.text.muted }]}>No active goals</Text>
+          ) : (
+            <>
+              {(goals ?? []).slice(0, 3).map((goal: GoalSummary) => {
+                const progress = (goal.completedTasks / Math.max(goal.totalTasks, 1)) * 100;
+
+                return (
+                  <View key={goal.id} style={styles.inlineGoalRow}>
+                    <Text style={[styles.taskTitle, { color: palette.text.primary }]} numberOfLines={1}>
+                      {goal.title}
+                    </Text>
+                    <View style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}>
+                      <View
+                        style={[
+                          styles.progressFill,
+                          {
+                            backgroundColor: palette.accent.brand,
+                            width: `${progress}%`,
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+                );
+              })}
+              {(goals ?? []).length > 3 ? (
+                <Text style={[styles.moreGoals, { color: palette.text.muted }]}>+{(goals ?? []).length - 3} more</Text>
+              ) : null}
+            </>
+          )}
         </View>
 
         <View
@@ -183,8 +237,22 @@ export default function HomeScreen() {
           {openTasks.length === 0 ? (
             <Text style={[styles.cardBody, { color: palette.text.muted }]}>No open tasks right now</Text>
           ) : (
-            openTasks.map((task) => (
-              <View key={task.id} style={styles.taskRow}>
+            openTasks.map((task) => {
+              const isOverdue = task.dueDate && new Date(task.dueDate) < new Date();
+
+              return (
+              <View
+                key={task.id}
+                style={[
+                  styles.taskRow,
+                  isOverdue
+                    ? {
+                        borderLeftWidth: 3,
+                        borderLeftColor: palette.accent.danger,
+                      }
+                    : null,
+                ]}
+              >
                 <Text style={[styles.taskTitle, { color: palette.text.primary }]} numberOfLines={1}>
                   {task.title}
                 </Text>
@@ -200,11 +268,11 @@ export default function HomeScreen() {
                   <Text style={[styles.dueBadgeText, { color: palette.text.secondary }]}>{formatDueDate(task.dueDate)}</Text>
                 </View>
               </View>
-            ))
+            );})
           )}
         </View>
 
-        <View
+        <Pressable onPress={() => router.push("/(tabs)/inbox")}
           style={[
             styles.card,
             {
@@ -213,14 +281,30 @@ export default function HomeScreen() {
             },
           ]}
         >
-          <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Inbox</Text>
-          <Text style={[styles.metricValue, { color: palette.text.primary }]}>{unreadApprovalCount}</Text>
+          <View style={styles.cardTitleRow}>
+            <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Inbox</Text>
+            <Ionicons name="chevron-forward" size={typography.fontSize.base} color={palette.text.muted} style={styles.chevron} />
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: spacing[2] }}>
+            <Text style={[styles.metricValue, { color: palette.text.primary }]}>{unreadApprovalCount}</Text>
+            {unreadApprovalCount > 0 ? (
+              <Animated.View
+                style={[
+                  styles.pulseDot,
+                  {
+                    backgroundColor: palette.accent.danger,
+                    opacity: pulseAnim,
+                  },
+                ]}
+              />
+            ) : null}
+          </View>
           {unreadApprovalCount > 0 ? (
             <Text style={[styles.cardBody, { color: palette.accent.warning }]}>Approvals waiting for your response</Text>
           ) : (
             <Text style={[styles.cardBody, { color: palette.text.muted }]}>No unread approvals</Text>
           )}
-        </View>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   );
@@ -257,6 +341,11 @@ const styles = StyleSheet.create({
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
+  cardTitleRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   metricValue: {
     fontSize: typography.fontSize["2xl"],
     fontWeight: typography.fontWeight.bold,
@@ -265,11 +354,28 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.regular,
   },
+  inlineGoalRow: {
+    gap: spacing[2],
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: 999,
+    overflow: "hidden",
+  },
+  progressFill: {
+    height: "100%",
+    borderRadius: 999,
+  },
+  moreGoals: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+  },
   taskRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     gap: spacing[2],
+    paddingLeft: spacing[2],
   },
   taskTitle: {
     flex: 1,
@@ -290,5 +396,13 @@ const styles = StyleSheet.create({
     height: 80,
     borderRadius: spacing[3],
     marginBottom: spacing[3],
+  },
+  pulseDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  chevron: {
+    marginLeft: spacing[2],
   },
 });

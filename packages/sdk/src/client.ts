@@ -8,6 +8,7 @@ import type {
   CaptureRequest,
   CaptureResult,
   TimelineEntry,
+  GoalSummary,
   PushTokenRegistration,
 } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
@@ -179,6 +180,38 @@ class TimelineNamespace {
         status: 'confirmed',
         start: new Date(now + 48 * 60 * 60 * 1000).toISOString(),
         end: new Date(now + 49 * 60 * 60 * 1000).toISOString(),
+      },
+    ];
+  }
+
+  async goals(): Promise<GoalSummary[]> {
+    void this.config;
+    const now = Date.now();
+
+    return [
+      {
+        id: 'goal_focus',
+        title: 'Ship mobile planning flow',
+        totalTasks: 8,
+        completedTasks: 5,
+        priority: 1,
+        deadline: new Date(now + 5 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'goal_fitness',
+        title: 'Complete March strength block',
+        totalTasks: 6,
+        completedTasks: 2,
+        priority: 2,
+        deadline: new Date(now - 2 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      {
+        id: 'goal_learning',
+        title: 'Deepen systems design practice',
+        totalTasks: 4,
+        completedTasks: 3,
+        priority: 3,
+        deadline: null,
       },
     ];
   }

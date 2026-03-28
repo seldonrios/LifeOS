@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { AppState, ActivityIndicator, StyleSheet, View } from "react-native";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Redirect, Slot, useSegments } from "expo-router";
@@ -20,6 +20,8 @@ export default function RootLayout() {
   const segments = useSegments();
   const inAuthGroup = segments[0] === "(auth)";
   const inTabsGroup = segments[0] === "(tabs)";
+  const inModalGroup = segments[0] === "modal";
+  const lastForegroundAt = useRef<number>(Date.now());
 
   useEffect(() => {
     void useSessionStore.getState().restoreSession();
@@ -27,8 +29,19 @@ export default function RootLayout() {
 
   useEffect(() => {
     const appStateSubscription = AppState.addEventListener("change", (nextAppState) => {
+      if (nextAppState === "background" || nextAppState === "inactive") {
+        lastForegroundAt.current = Date.now();
+      }
+
       if (nextAppState === "active") {
         void useQueueStore.getState().flush();
+
+        if (
+          Date.now() - lastForegroundAt.current > 5 * 60_000 &&
+          useSessionStore.getState().biometricEnabled === true
+        ) {
+          void useSessionStore.getState().requireBiometric();
+        }
       }
     });
 
@@ -55,7 +68,7 @@ export default function RootLayout() {
         </View>
       ) : status === "unauthenticated" ? (
         inAuthGroup ? <Slot /> : <Redirect href="/(auth)/sign-in" />
-      ) : inTabsGroup ? (
+      ) : inTabsGroup || inModalGroup ? (
         <Slot />
       ) : (
         <Redirect href="/(tabs)/home" />

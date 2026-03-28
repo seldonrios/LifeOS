@@ -5,6 +5,7 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   useColorScheme,
   View,
@@ -21,6 +22,9 @@ export default function SettingsScreen() {
 
   const user = useSessionStore((state) => state.user);
   const signOut = useSessionStore((state) => state.signOut);
+  const biometricAvailable = useSessionStore((state) => state.biometricAvailable);
+  const biometricEnabled = useSessionStore((state) => state.biometricEnabled);
+  const setBiometricEnabled = useSessionStore((state) => state.setBiometricEnabled);
 
   const [notifStatus, setNotifStatus] = useState<"granted" | "denied" | "undetermined">("undetermined");
   const [isSigningOut, setIsSigningOut] = useState(false);
@@ -111,6 +115,30 @@ export default function SettingsScreen() {
             </Pressable>
           ) : null}
         </View>
+
+        {biometricAvailable ? (
+          <View
+            style={[
+              styles.card,
+              {
+                backgroundColor: palette.background.card,
+                borderColor: palette.border.default,
+              },
+            ]}
+          >
+            <Text style={[styles.sectionLabel, { color: palette.text.muted }]}>SECURITY</Text>
+            <View style={styles.rowBetween}>
+              <Text style={[styles.labelText, { color: palette.text.secondary }]}>Biometric unlock</Text>
+              <Switch
+                value={biometricEnabled}
+                onValueChange={(value) => {
+                  void setBiometricEnabled(value);
+                }}
+                trackColor={{ true: palette.accent.brand }}
+              />
+            </View>
+          </View>
+        ) : null}
 
         <View
           style={[
