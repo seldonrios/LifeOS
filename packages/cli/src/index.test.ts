@@ -2971,6 +2971,49 @@ test('inbox triage failures include stage, reason, and fix diagnostics', async (
   assert.match(errorOutput, /fix=/);
 });
 
+test('inbox triage task validation failures report task stage and task fix guidance', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', 'capture-1', '--action', 'task', '--due', 'not-a-date'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry() {
+            return {
+              id: 'capture-1',
+              content: 'Pay utilities',
+              type: 'text',
+              capturedAt: '2026-03-29T12:00:00.000Z',
+              source: 'cli',
+              tags: [],
+              status: 'pending',
+            };
+          },
+          async appendPlannedAction() {
+            throw new Error('appendPlannedAction should not be called for invalid due input');
+          },
+          async updateCaptureEntry() {
+            throw new Error('updateCaptureEntry should not be called for invalid due input');
+          },
+        }) as never,
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  const errorOutput = stderr.join('');
+  assert.match(errorOutput, /ERR_INBOX_TRIAGE_FAILED:/);
+  assert.match(errorOutput, /stage=append_planned_action/);
+  assert.ok(!/stage=lookup/.test(errorOutput));
+  assert.match(
+    errorOutput,
+    /fix=Retry with "--action task" and a valid optional "--due YYYY-MM-DD" date, or use "--action note\|defer"\./,
+  );
+});
+
 test('capture command returns ERR_CAPTURE_FAILED on graph append failure', async () => {
   const stderr: string[] = [];
   const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-fail-'));

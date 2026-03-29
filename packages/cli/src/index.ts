@@ -4809,6 +4809,7 @@ export async function runInboxCommand(
         return 0;
       }
 
+      triageStage = 'append_planned_action';
       const plannedAction: PlannedAction = PlannedActionSchema.parse({
         id: randomUUID(),
         title: captureEntry.content,
@@ -4816,7 +4817,6 @@ export async function runInboxCommand(
         sourceCapture: captureEntry.id,
         ...(options.due ? { dueDate: options.due } : {}),
       });
-      triageStage = 'append_planned_action';
       await client.appendPlannedAction(plannedAction);
       triageStage = 'update_capture';
       await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
