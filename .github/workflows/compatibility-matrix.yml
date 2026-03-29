@@ -145,7 +145,20 @@ jobs:
             process.exit(1);
           }
           NODE
-      - uses: actions/upload-artifact@v7
+      - name: Assert reference modules pass compatibility check
+        run: |
+          node <<'NODE'
+          const matrix = JSON.parse(require('fs').readFileSync('compatibility-matrix.json', 'utf8'));
+          const required = ['planning-assistant', 'notification-bridge', 'habit-streak'];
+          for (const name of required) {
+            const row = matrix.modules.find(m => m.module === name);
+            if (!row) { console.error(`Missing: ${name}`); process.exit(1); }
+            if (!row.compatible) { console.error(`Incompatible: ${name}`); process.exit(1); }
+            console.log(`OK: ${name} compatible=${row.compatible}`);
+          }
+          NODE
+      - name: Upload compatibility matrix artifact
+        uses: actions/upload-artifact@v7
         with:
           name: compatibility-matrix
           path: compatibility-matrix.json

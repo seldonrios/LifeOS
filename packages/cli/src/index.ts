@@ -4876,7 +4876,7 @@ export async function runRemindCommand(
     }
 
     const graph = await client.loadGraph();
-    const existingScheduledReminders = graph.reminderEvents.filter(
+    const existingScheduledReminders = (graph.reminderEvents ?? []).filter(
       (event) => event.actionId === options.actionId && event.status === 'scheduled',
     );
     const matchingReminder = existingScheduledReminders.find(

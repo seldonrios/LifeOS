@@ -68,6 +68,24 @@
       "resourceHint": "low"
     },
     {
+      "name": "planning-assistant",
+      "repo": "lifeos-community/planning-assistant",
+      "certified": false,
+      "category": "productivity",
+      "description": "Personal planning assistant with goal decomposition, scheduling, and life-graph writes.",
+      "tags": ["planning", "goals", "scheduling", "tasks"],
+      "resourceHint": "low"
+    },
+    {
+      "name": "notification-bridge",
+      "repo": "lifeos-community/notification-bridge",
+      "certified": false,
+      "category": "integration",
+      "description": "Event-driven webhook bridge for fan-in topic subscriptions and outbound notification delivery.",
+      "tags": ["notifications", "webhooks", "integration", "events"],
+      "resourceHint": "low"
+    },
+    {
       "name": "email-summarizer",
       "repo": "lifeos-community/email-summarizer",
       "certified": false,

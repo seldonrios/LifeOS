@@ -27,6 +27,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # This workflow is a focused contract check; full test execution stays in CI and CLI Smoke.
+      # Reference graduation modules — all three must pass `lifeos module validate` to satisfy
+      # the graduation gate: planning-assistant, notification-bridge, habit-streak.
       - name: Run module contract checks
         run: |
           mkdir -p .artifacts/module-validate
