@@ -294,7 +294,10 @@ export async function handleTaskComplete(
       throw error;
     }
 
-    await client.updatePlannedAction(plannedAction.id, { status: 'done' });
+    await client.updatePlannedAction(plannedAction.id, {
+      status: 'done',
+      completedAt: new Date().toISOString(),
+    });
 
     const payload = {
       id: plannedAction.id,

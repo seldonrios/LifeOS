@@ -11,6 +11,8 @@ import { PlanSchema } from './plan';
 import { ReminderSchema } from './reminder';
 import { ReviewPeriodSchema, ReviewReportSchema } from './review';
 
+const ReviewPayloadSchema = ReviewReportSchema;
+
 export const CaptureCreateRequestSchema = CaptureRequestSchema;
 export const CaptureCreateResponseSchema = CaptureResultSchema;
 export type CaptureCreateRequest = z.infer<typeof CaptureCreateRequestSchema>;
@@ -32,7 +34,7 @@ export type ReminderScheduleResponse = z.infer<typeof ReminderScheduleResponseSc
 export const ReviewGenerateRequestSchema = z.object({
   period: ReviewPeriodSchema,
 });
-export const ReviewGenerateResponseSchema = ReviewReportSchema;
+export const ReviewGenerateResponseSchema = ReviewPayloadSchema;
 export type ReviewGenerateRequest = z.infer<typeof ReviewGenerateRequestSchema>;
 export type ReviewGenerateResponse = z.infer<typeof ReviewGenerateResponseSchema>;
 

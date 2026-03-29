@@ -208,10 +208,37 @@ async function main(): Promise<void> {
           env,
         );
         assert(exitCode === 0, `Expected exit 0, got ${exitCode}. stderr=${stderr}`);
-        const result = JSON.parse(stdout) as { status?: string };
+        const result = JSON.parse(stdout) as { id?: string; status?: string };
         assert(
           result.status === 'scheduled',
           `Expected status "scheduled", got "${result.status}"`,
+        );
+        assert(typeof result.id === 'string' && result.id.length > 0, 'remind id must be present');
+
+        const secondRemind = await collectCli(
+          [
+            'remind',
+            actionId,
+            '--at',
+            '2026-04-04T09:00:00Z',
+            '--json',
+            '--graph-path',
+            graphPath,
+          ],
+          env,
+        );
+        assert(
+          secondRemind.exitCode === 0,
+          `Expected idempotent remind exit 0, got ${secondRemind.exitCode}. stderr=${secondRemind.stderr}`,
+        );
+        const secondResult = JSON.parse(secondRemind.stdout) as { id?: string; status?: string };
+        assert(
+          secondResult.status === 'scheduled',
+          `Expected idempotent remind status "scheduled", got "${secondResult.status}"`,
+        );
+        assert(
+          secondResult.id === result.id,
+          `Expected idempotent remind to return same id "${result.id}", got "${secondResult.id}"`,
         );
       }),
     );
@@ -247,10 +274,33 @@ async function main(): Promise<void> {
           wins?: unknown[];
           nextActions?: unknown[];
           history?: unknown[];
+          loopSummary?: {
+            pendingCaptures?: unknown;
+            actionsDueToday?: unknown;
+            unacknowledgedReminders?: unknown;
+            completedActions?: unknown;
+          };
         };
         assert(result.period === 'daily', `Expected period "daily", got "${result.period}"`);
         assert(Array.isArray(result.wins), 'wins must be an array');
         assert(Array.isArray(result.nextActions), 'nextActions must be an array');
+        assert(typeof result.loopSummary === 'object' && result.loopSummary !== null, 'loopSummary must be present');
+        assert(
+          typeof result.loopSummary?.pendingCaptures === 'number',
+          'loopSummary.pendingCaptures must be a number',
+        );
+        assert(
+          typeof result.loopSummary?.actionsDueToday === 'number',
+          'loopSummary.actionsDueToday must be a number',
+        );
+        assert(
+          typeof result.loopSummary?.unacknowledgedReminders === 'number',
+          'loopSummary.unacknowledgedReminders must be a number',
+        );
+        assert(
+          Array.isArray(result.loopSummary?.completedActions),
+          'loopSummary.completedActions must be an array',
+        );
 
         const nextActions = Array.isArray(result.nextActions)
           ? result.nextActions.filter((item): item is string => typeof item === 'string')

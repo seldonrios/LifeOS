@@ -10,12 +10,14 @@ import { PlanSchema } from './plan';
 import { ReminderSchema } from './reminder';
 import { ReviewReportSchema } from './review';
 
+const ReviewPayloadSchema = ReviewReportSchema;
+
 export const HeroLoopEntitySchemas = {
   capture: CaptureResultSchema,
   inbox: InboxItemSchema,
   plan: PlanSchema,
   reminder: ReminderSchema,
-  review: ReviewReportSchema,
+  review: ReviewPayloadSchema,
 } as const;
 
 export type HeroLoopEntitySchemaMap = typeof HeroLoopEntitySchemas;

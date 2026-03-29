@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { InboxItem } from '@lifeos/contracts';
 import { useRouter } from 'expo-router';
 import {
+  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -19,6 +20,10 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { queryClient } from '../../lib/query-client';
 import { sdk } from '../../lib/sdk';
+
+type ReminderItemData = {
+  actionId?: string;
+};
 
 function timeAgo(createdAt: number): string {
   const now = Date.now();
@@ -46,6 +51,28 @@ function markReadOptimistically(itemId: string) {
   queryClient.setQueryData<InboxItem[]>(['inbox'], (old) =>
     (old ?? []).map((item) => (item.id === itemId ? { ...item, read: true } : item)),
   );
+}
+
+function removeItemOptimistically(itemId: string) {
+  queryClient.setQueryData<InboxItem[]>(['inbox'], (old) =>
+    (old ?? []).filter((item) => item.id !== itemId),
+  );
+}
+
+function restoreItemOptimistically(item: InboxItem) {
+  queryClient.setQueryData<InboxItem[]>(['inbox'], (old) => {
+    const items = old ?? [];
+    return [...items, item];
+  });
+}
+
+function reminderActionId(item: InboxItem): string | null {
+  if (item.type !== 'reminder') {
+    return null;
+  }
+
+  const actionId = (item.data as ReminderItemData).actionId;
+  return typeof actionId === 'string' && actionId.length > 0 ? actionId : null;
 }
 
 function ReadIndicator({
@@ -85,6 +112,8 @@ export default function InboxScreen() {
   const palette = colorScheme === 'dark' ? darkColors : lightColors;
   const router = useRouter();
   const [searchTerm, setSearchTerm] = useState('');
+  const [completingId, setCompletingId] = useState<string | null>(null);
+  const [completeErrors, setCompleteErrors] = useState<Record<string, string>>({});
 
   const { data, isLoading, isError, error, isRefetching, refetch } = useQuery({
     queryKey: ['inbox'],
@@ -105,6 +134,49 @@ export default function InboxScreen() {
       return titleMatch || descriptionMatch || typeMatch;
     });
   }, [items, searchTerm]);
+
+  const handleCompleteReminder = async (item: InboxItem) => {
+    const actionId = reminderActionId(item);
+    if (!actionId) {
+      setCompleteErrors((old) => ({
+        ...old,
+        [item.id]: 'Reminder is missing an action id and cannot be completed.',
+      }));
+      return;
+    }
+
+    setCompleteErrors((old) => {
+      if (!(item.id in old)) {
+        return old;
+      }
+
+      const next = { ...old };
+      delete next[item.id];
+      return next;
+    });
+    setCompletingId(item.id);
+
+    // Optimistic update: remove from list
+    removeItemOptimistically(item.id);
+
+    try {
+      await sdk.inbox.completeAction(actionId);
+      // Sync all surfaces that render loop state.
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['inbox'] }),
+        queryClient.invalidateQueries({ queryKey: ['review', 'daily'] }),
+      ]);
+    } catch (err) {
+      // Rollback optimistic update
+      restoreItemOptimistically(item);
+      setCompleteErrors((old) => ({
+        ...old,
+        [item.id]: err instanceof Error ? err.message : 'Failed to mark done',
+      }));
+    } finally {
+      setCompletingId(null);
+    }
+  };
 
   const handleNotificationPress = (item: InboxItem) => {
     markReadOptimistically(item.id);
@@ -185,7 +257,8 @@ export default function InboxScreen() {
     }
 
     return (
-      <Pressable
+      <View
+        key={item.id}
         style={[
           styles.card,
           styles.reminderCard,
@@ -194,9 +267,6 @@ export default function InboxScreen() {
             borderColor: palette.border.default,
           },
         ]}
-        onPress={() => {
-          // Navigation for reminders is deferred to a later sprint.
-        }}
       >
         <View style={styles.headerRow}>
           <Text style={[styles.itemTitle, { color: palette.text.primary }]} numberOfLines={1}>
@@ -215,7 +285,33 @@ export default function InboxScreen() {
         <Text style={[styles.metaText, { color: palette.text.muted }]}>
           {timeAgo(item.createdAt)}
         </Text>
-      </Pressable>
+        {completeErrors[item.id] ? (
+          <Text style={[styles.errorText, { color: palette.accent.danger }]}>
+            {completeErrors[item.id]}
+          </Text>
+        ) : null}
+        <Pressable
+          onPress={async () => {
+            await handleCompleteReminder(item);
+          }}
+          disabled={completingId === item.id}
+          style={[
+            styles.markDoneButton,
+            {
+              backgroundColor: palette.accent.brand,
+              opacity: completingId === item.id ? 0.6 : 1,
+            },
+          ]}
+        >
+          {completingId === item.id ? (
+            <ActivityIndicator size="small" color={palette.background.card} />
+          ) : (
+            <Text style={[styles.markDoneButtonText, { color: palette.background.card }]}>
+              Mark done
+            </Text>
+          )}
+        </Pressable>
+      </View>
     );
   };
 
@@ -389,6 +485,22 @@ const styles = StyleSheet.create({
   },
   readIndicatorText: {
     fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  errorText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.regular,
+  },
+  markDoneButton: {
+    borderRadius: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 40,
+  },
+  markDoneButtonText: {
+    fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
   },
 });

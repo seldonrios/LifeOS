@@ -81,6 +81,35 @@ export function printReviewInsights(insights: LifeGraphReviewInsights): string {
       lines.push(chalk.yellow(`- ${action}`));
     }
   }
+
+  if (insights.loopSummary) {
+    lines.push('');
+    lines.push(chalk.bold('Loop Summary:'));
+    lines.push(chalk.cyan(`- Pending captures: ${insights.loopSummary.pendingCaptures}`));
+    lines.push(chalk.cyan(`- Actions due today: ${insights.loopSummary.actionsDueToday}`));
+    lines.push(
+      chalk.cyan(`- Unacknowledged reminders: ${insights.loopSummary.unacknowledgedReminders}`),
+    );
+
+    if (insights.loopSummary.completedActions.length > 0) {
+      lines.push(chalk.bold('Completed Actions:'));
+      for (const action of insights.loopSummary.completedActions.slice(0, 5)) {
+        lines.push(chalk.dim(`- ${action}`));
+      }
+    }
+
+    if (
+      insights.period === 'weekly' &&
+      insights.loopSummary.suggestedNextActions &&
+      insights.loopSummary.suggestedNextActions.length > 0
+    ) {
+      lines.push(chalk.bold('Suggested Next Actions:'));
+      for (const action of insights.loopSummary.suggestedNextActions) {
+        lines.push(chalk.yellow(`- ${action}`));
+      }
+    }
+  }
+
   lines.push(chalk.dim(`Generated: ${insights.generatedAt} (${insights.source})`));
   return lines.join('\n');
 }

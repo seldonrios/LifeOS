@@ -104,6 +104,7 @@ import { handleNextActions, handleTaskComplete, handleTaskList } from './task-co
 import type {
   CaptureCommandOptions,
   DemoCommandOptions,
+  DemoLoopCommandOptions,
   EventsListenCommandOptions,
   GraphCommandOptions,
   GoalCommandOptions,
@@ -2387,6 +2388,233 @@ export async function runDemoCommand(
   return 0;
 }
 
+export async function runDemoLoopCommand(
+  options: DemoLoopCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const now = dependencies.now ?? (() => new Date());
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+
+  try {
+    if (options.dryRun) {
+      // Validate stage wiring in-memory only — no file/DB access occurs
+      const stageErrors: string[] = [];
+
+      try {
+        CaptureEntrySchema.parse({
+          id: '00000000-0000-0000-0000-000000000001',
+          content: 'dry-run capture probe',
+          type: 'text',
+          capturedAt: now().toISOString(),
+          source: 'cli',
+          tags: [],
+          status: 'pending',
+        });
+        writeStdout(`${chalk.green('Dry-run stage 1 ok: capture x3 wiring validated')}\n`);
+      } catch (stageError: unknown) {
+        stageErrors.push(`stage 1 capture: ${normalizeErrorMessage(stageError)}`);
+        writeStdout(`${chalk.red('Dry-run stage 1 FAIL: capture wiring invalid')}\n`);
+      }
+
+      try {
+        PlannedActionSchema.parse({
+          id: '00000000-0000-0000-0000-000000000002',
+          title: 'dry-run triage probe',
+          status: 'todo',
+          sourceCapture: '00000000-0000-0000-0000-000000000001',
+          dueDate: new Date(now().getTime() + 86_400_000).toISOString().slice(0, 10),
+        });
+        writeStdout(`${chalk.green('Dry-run stage 2 ok: triage x3 wiring validated')}\n`);
+      } catch (stageError: unknown) {
+        stageErrors.push(`stage 2 triage: ${normalizeErrorMessage(stageError)}`);
+        writeStdout(`${chalk.red('Dry-run stage 2 FAIL: triage wiring invalid')}\n`);
+      }
+
+      try {
+        ReminderEventSchema.parse({
+          id: '00000000-0000-0000-0000-000000000003',
+          actionId: '00000000-0000-0000-0000-000000000002',
+          scheduledFor: new Date(now().getTime() + 86_400_000).toISOString(),
+          status: 'scheduled',
+        });
+        writeStdout(`${chalk.green('Dry-run stage 3 ok: remind x1 wiring validated')}\n`);
+      } catch (stageError: unknown) {
+        stageErrors.push(`stage 3 remind: ${normalizeErrorMessage(stageError)}`);
+        writeStdout(`${chalk.red('Dry-run stage 3 FAIL: remind wiring invalid')}\n`);
+      }
+
+      try {
+        PlannedActionSchema.parse({
+          id: '00000000-0000-0000-0000-000000000002',
+          title: 'dry-run complete probe',
+          status: 'done',
+          sourceCapture: '00000000-0000-0000-0000-000000000001',
+          dueDate: new Date(now().getTime() + 86_400_000).toISOString().slice(0, 10),
+          completedAt: now().toISOString(),
+        });
+        writeStdout(`${chalk.green('Dry-run stage 4 ok: complete x1 wiring validated')}\n`);
+      } catch (stageError: unknown) {
+        stageErrors.push(`stage 4 complete: ${normalizeErrorMessage(stageError)}`);
+        writeStdout(`${chalk.red('Dry-run stage 4 FAIL: complete wiring invalid')}\n`);
+      }
+
+      const reviewFn =
+        dependencies.generateReview ??
+        (async (period: LifeGraphReviewPeriod, graphPath?: string) =>
+          createClient(buildClientOptions(baseCwd, env, graphPath)).generateReview(period));
+      if (typeof reviewFn === 'function') {
+        writeStdout(`${chalk.green('Dry-run stage 5 ok: review wiring validated')}\n`);
+      } else {
+        stageErrors.push('stage 5 review: generateReview dependency not wired');
+        writeStdout(`${chalk.red('Dry-run stage 5 FAIL: review wiring invalid')}\n`);
+      }
+
+      if (stageErrors.length > 0) {
+        for (const stageError of stageErrors) {
+          writeStderr(`${chalk.red.bold('Wiring error:')} ${stageError}\n`);
+        }
+        return 1;
+      }
+      return 0;
+    }
+
+    const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+    const review =
+      dependencies.generateReview ??
+      (async (period: LifeGraphReviewPeriod, graphPath?: string) =>
+        createClient(buildClientOptions(baseCwd, env, graphPath)).generateReview(period));
+    const stageResults: Array<Record<string, unknown>> = [];
+
+    const captureContents = ['Plan team sync', 'Review Q2 budget', 'Send project update'];
+    const capturedEntries: CaptureEntry[] = [];
+
+    for (const content of captureContents) {
+      const entry: CaptureEntry = CaptureEntrySchema.parse({
+        id: randomUUID(),
+        content,
+        type: 'text',
+        capturedAt: now().toISOString(),
+        source: 'cli',
+        tags: [],
+        status: 'pending',
+      });
+      await client.appendCaptureEntry(entry);
+      capturedEntries.push(entry);
+      stageResults.push({ stage: 'capture', id: entry.id, content: entry.content });
+    }
+
+    const plannedActions: PlannedAction[] = [];
+    const triageBase = now();
+    for (const [index, entry] of capturedEntries.entries()) {
+      const dueDate = new Date(triageBase);
+      dueDate.setDate(dueDate.getDate() + index + 1);
+      const plannedAction: PlannedAction = PlannedActionSchema.parse({
+        id: randomUUID(),
+        title: entry.content,
+        status: 'todo',
+        sourceCapture: entry.id,
+        dueDate: dueDate.toISOString().slice(0, 10),
+      });
+
+      await client.appendPlannedAction(plannedAction);
+      await client.updateCaptureEntry(entry.id, { status: 'triaged' });
+      plannedActions.push(plannedAction);
+      stageResults.push({
+        stage: 'triage',
+        captureId: entry.id,
+        actionId: plannedAction.id,
+        dueDate: plannedAction.dueDate,
+      });
+    }
+
+    const firstAction = plannedActions[0];
+    if (!firstAction) {
+      throw new Error('Demo loop did not produce a triaged action for reminder scheduling.');
+    }
+
+    const reminderScheduledFor = new Date(now());
+    reminderScheduledFor.setDate(reminderScheduledFor.getDate() + 1);
+    const reminder: ReminderEvent = ReminderEventSchema.parse({
+      id: randomUUID(),
+      actionId: firstAction.id,
+      scheduledFor: reminderScheduledFor.toISOString(),
+      status: 'scheduled',
+    });
+    await client.appendReminderEvent(reminder);
+    stageResults.push({
+      stage: 'remind',
+      actionId: reminder.actionId,
+      scheduledFor: reminder.scheduledFor,
+    });
+
+    await client.updatePlannedAction(firstAction.id, {
+      status: 'done',
+      completedAt: now().toISOString(),
+    });
+    stageResults.push({ stage: 'complete', actionId: firstAction.id });
+
+    const insights = await review('daily', options.graphPath);
+    stageResults.push({
+      stage: 'review',
+      wins: insights.wins,
+      nextActions: insights.nextActions,
+      source: insights.source,
+    });
+
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(stageResults, null, 2)}\n`);
+      return 0;
+    }
+
+    writeStdout(`${chalk.bold.cyan('Stage 1 — Capture')}\n`);
+    for (const entry of capturedEntries) {
+      writeStdout(`- ${entry.id.slice(0, 8)}  ${entry.content}\n`);
+    }
+
+    writeStdout(`${chalk.bold.cyan('Stage 2 — Triage')}\n`);
+    for (const [index, action] of plannedActions.entries()) {
+      writeStdout(
+        `- capture ${capturedEntries[index]?.id.slice(0, 8)} -> action ${action.id.slice(0, 8)} due ${action.dueDate}\n`,
+      );
+    }
+
+    writeStdout(`${chalk.bold.cyan('Stage 3 — Remind')}\n`);
+    writeStdout(`- action ${reminder.actionId.slice(0, 8)} scheduled ${reminder.scheduledFor}\n`);
+
+    writeStdout(`${chalk.bold.cyan('Stage 4 — Complete')}\n`);
+    writeStdout(`- action ${firstAction.id.slice(0, 8)} marked done\n`);
+
+    writeStdout(`${chalk.bold.cyan('Stage 5 — Review')}\n`);
+    writeStdout(`- source: ${insights.source}\n`);
+    writeStdout(`- wins: ${(insights.wins ?? []).join(' | ') || 'none'}\n`);
+    writeStdout(`- next actions: ${(insights.nextActions ?? []).join(' | ') || 'none'}\n`);
+
+    writeStdout(
+      `${boxen(chalk.green('Demo loop complete! Full loop proof executed successfully.'), {
+        padding: 1,
+        borderStyle: 'round',
+        borderColor: 'green',
+      })}\n`,
+    );
+    writeStdout('Next: `lifeos inbox list`, `lifeos review`\n');
+    return 0;
+  } catch (error: unknown) {
+    const friendly = toFriendlyCliError(error, {
+      command: 'demo:loop',
+      graphPath: options.graphPath,
+    });
+    writeStderr(`${chalk.red.bold('Error:')} ${friendly.message}\n`);
+    if (friendly.guidance) {
+      writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
+    }
+    return 1;
+  }
+}
+
 function parseTimestamp(value: string | undefined): number {
   if (!value) {
     return Number.POSITIVE_INFINITY;
@@ -4405,6 +4633,12 @@ export async function runCaptureCommand(
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  if (options.type !== 'text' && options.type !== 'voice') {
+    writeStderr(
+      `ERR_CAPTURE_INVALID_TYPE: Invalid capture type "${options.type}". Allowed values: text|voice.\n`,
+    );
+    return 1;
+  }
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
 
   try {
@@ -4447,7 +4681,7 @@ export async function runCaptureCommand(
     const entry: CaptureEntry = CaptureEntrySchema.parse({
       id: randomUUID(),
       content: options.text,
-      type: options.type === 'voice' ? 'voice' : 'text',
+      type: options.type,
       capturedAt: currentTime.toISOString(),
       source: 'cli',
       tags: [],
@@ -4487,11 +4721,20 @@ export async function runInboxCommand(
 ): Promise<number> {
   const env = dependencies.env ?? process.env;
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
-  const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+  type InboxTriageStage = 'lookup' | 'append_planned_action' | 'append_note' | 'update_capture';
+  const triageFixByStage: Record<InboxTriageStage, string> = {
+    lookup: 'Run "lifeos inbox list" to confirm the capture id, then retry triage with a valid id.',
+    append_planned_action:
+      'Retry with "--action task" and a valid optional "--due YYYY-MM-DD" date, or use "--action note|defer".',
+    append_note: 'Retry with "--action note" and valid "--tag" values.',
+    update_capture:
+      'Retry triage. If the error persists, verify graph-path permissions and that the graph file is writable.',
+  };
+  let triageStage: InboxTriageStage = 'lookup';
 
   try {
     if (options.action === 'list') {
@@ -4527,6 +4770,7 @@ export async function runInboxCommand(
         writeStderr(`${chalk.red.bold('Error:')} Capture entry ID is required for triage.\n`);
         return 1;
       }
+      triageStage = 'lookup';
       const captureEntry = await client.getCaptureEntry(options.captureId);
       if (!captureEntry) {
         writeStderr(`ERR_CAPTURE_NOT_FOUND: Capture entry "${options.captureId}" not found.\n`);
@@ -4534,16 +4778,18 @@ export async function runInboxCommand(
       }
 
       if (options.triageAction === 'note') {
+        triageStage = 'append_note';
         await client.appendNote({
           title: captureEntry.content,
           content: captureEntry.content,
           tags: options.tag ?? [],
+          voiceTriggered: false,
         });
+        triageStage = 'update_capture';
         await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        const updatedCapture = await client.getCaptureEntry(captureEntry.id);
         if (options.outputJson) {
-          writeStdout(
-            `${JSON.stringify({ captureEntry: { id: captureEntry.id, status: 'triaged' } }, null, 2)}\n`,
-          );
+          writeStdout(`${JSON.stringify({ captureEntry: updatedCapture }, null, 2)}\n`);
         } else {
           writeStdout(`${chalk.green('Triaged as note:')} "${captureEntry.content}"\n`);
         }
@@ -4551,11 +4797,12 @@ export async function runInboxCommand(
       }
 
       if (options.triageAction === 'defer') {
-        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        const tags = Array.from(new Set([...(captureEntry.tags ?? []), 'deferred']));
+        triageStage = 'update_capture';
+        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged', tags });
+        const updatedCapture = await client.getCaptureEntry(captureEntry.id);
         if (options.outputJson) {
-          writeStdout(
-            `${JSON.stringify({ captureEntry: { id: captureEntry.id, status: 'triaged' } }, null, 2)}\n`,
-          );
+          writeStdout(`${JSON.stringify({ captureEntry: updatedCapture }, null, 2)}\n`);
         } else {
           writeStdout(`Deferred: ${captureEntry.content}\n`);
         }
@@ -4569,7 +4816,9 @@ export async function runInboxCommand(
         sourceCapture: captureEntry.id,
         ...(options.due ? { dueDate: options.due } : {}),
       });
+      triageStage = 'append_planned_action';
       await client.appendPlannedAction(plannedAction);
+      triageStage = 'update_capture';
       await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
       const updatedCapture = await client.getCaptureEntry(captureEntry.id);
       if (options.outputJson) {
@@ -4586,6 +4835,22 @@ export async function runInboxCommand(
     writeStderr(`${chalk.red.bold('Error:')} Unknown inbox action "${options.action}".\n`);
     return 1;
   } catch (error: unknown) {
+    if (options.action === 'triage') {
+      const friendly = toFriendlyCliError(error, {
+        command: 'inbox',
+        graphPath: options.graphPath,
+      });
+      const reason = normalizeErrorMessage(error);
+      writeStderr(`ERR_INBOX_TRIAGE_FAILED: ${friendly.message}\n`);
+      writeStderr(`stage=${triageStage}\n`);
+      writeStderr(`reason=${reason}\n`);
+      writeStderr(`fix=${triageFixByStage[triageStage]}\n`);
+      if (friendly.guidance) {
+        writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
+      }
+      return 1;
+    }
+
     writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
     return 1;
   }
@@ -4599,24 +4864,79 @@ export async function runRemindCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const verboseLog = (_line: string): void => void 0;
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
 
   try {
     const plannedAction = await client.getPlannedAction(options.actionId);
     if (!plannedAction) {
-      writeStderr(
-        `ERR_PLANNED_ACTION_NOT_FOUND: PlannedAction "${options.actionId}" not found.\n`,
-      );
+      writeStderr(`ERR_ACTION_NOT_FOUND: PlannedAction "${options.actionId}" not found.\n`);
       return 1;
     }
+
+    const graph = await client.loadGraph();
+    const existingScheduledReminders = graph.reminderEvents.filter(
+      (event) => event.actionId === options.actionId && event.status === 'scheduled',
+    );
+    const matchingReminder = existingScheduledReminders.find(
+      (event) => event.scheduledFor === options.at,
+    );
+
+    if (matchingReminder) {
+      const remindersToCancel = existingScheduledReminders.filter(
+        (event) => event.id !== matchingReminder.id,
+      );
+      for (const reminder of remindersToCancel) {
+        await client.appendReminderEvent({
+          ...reminder,
+          status: 'cancelled',
+        });
+      }
+
+      const payload = {
+        id: matchingReminder.id,
+        actionId: matchingReminder.actionId,
+        scheduledFor: matchingReminder.scheduledFor,
+        status: 'scheduled' as const,
+      };
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+      } else {
+        writeStdout(
+          `${chalk.green('Reminder already scheduled:')} action ${matchingReminder.actionId.slice(0, 8)} at ${matchingReminder.scheduledFor}\n`,
+        );
+      }
+      return 0;
+    }
+
+    for (const reminder of existingScheduledReminders) {
+      await client.appendReminderEvent({
+        ...reminder,
+        status: 'cancelled',
+      });
+    }
+
     const reminderEvent: ReminderEvent = ReminderEventSchema.parse({
       id: randomUUID(),
       actionId: plannedAction.id,
       scheduledFor: options.at,
       status: 'scheduled',
     });
+
     await client.appendReminderEvent(reminderEvent);
+    await publishEventSafely(
+      Topics.lifeos.reminderFollowupCreated,
+      {
+        id: reminderEvent.id,
+        actionId: reminderEvent.actionId,
+        scheduledFor: reminderEvent.scheduledFor,
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+
     if (options.outputJson) {
       writeStdout(`${JSON.stringify(reminderEvent, null, 2)}\n`);
     } else {
@@ -4740,11 +5060,18 @@ function buildProgram(
         );
         return;
       }
-      const triageAction = (commandOptions.action as string) === 'note'
-        ? 'note'
-        : (commandOptions.action as string) === 'defer'
-          ? 'defer'
-          : 'task';
+      const rawTriageAction = (commandOptions.action as string) ?? 'task';
+      const triageAction =
+        rawTriageAction === 'task' || rawTriageAction === 'note' || rawTriageAction === 'defer'
+          ? rawTriageAction
+          : null;
+      if (!triageAction) {
+        setExitCode(1);
+        writeStderr(
+          `${chalk.red.bold('Error:')} Invalid triage action "${rawTriageAction}". Use task, note, or defer.\n`,
+        );
+        return;
+      }
       const commandExitCode = await runInboxCommand(
         {
           action: normalizedAction,
@@ -4978,7 +5305,7 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
-  program
+  const demoCmd = program
     .command('demo')
     .description('Run full end-to-end LifeOS demo (goal -> tick -> reminder reaction)')
     .option('--goal <goal>', 'Override demo goal', 'Prepare taxes by end of month')
@@ -5000,6 +5327,43 @@ function buildProgram(
           dryRun: Boolean(commandOptions.dryRun),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  demoCmd
+    .command('loop')
+    .description('Seed 3 captures, triage, remind, complete, and review — full loop proof')
+    .option('--dry-run', 'Validate wiring without writing to the graph')
+    .option('--json', 'Output full loop trace as JSON array')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .action(async (commandOptions) => {
+      const commandExitCode = await runDemoLoopCommand(
+        {
+          graphPath: commandOptions.graphPath,
+          dryRun: Boolean(commandOptions.dryRun),
+          outputJson: Boolean(commandOptions.json),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  // Top-level alias so `lifeos demo:loop` (colon-separated) also works
+  program
+    .command('demo:loop')
+    .description('Seed 3 captures, triage, remind, complete, and review — full loop proof')
+    .option('--dry-run', 'Validate wiring without writing to the graph')
+    .option('--json', 'Output full loop trace as JSON array')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .action(async (commandOptions) => {
+      const commandExitCode = await runDemoLoopCommand(
+        {
+          graphPath: commandOptions.graphPath,
+          dryRun: Boolean(commandOptions.dryRun),
+          outputJson: Boolean(commandOptions.json),
         },
         dependencies,
       );

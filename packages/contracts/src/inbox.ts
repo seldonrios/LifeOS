@@ -23,10 +23,12 @@ export type ApprovalResult = z.infer<typeof ApprovalResultSchema>;
 export const InboxItemTypeSchema = z.enum(['approval', 'notification', 'reminder']);
 export type InboxItemType = z.infer<typeof InboxItemTypeSchema>;
 
-const ReminderInboxPayloadSchema = z.object({
+export const ReminderInboxPayloadSchema = z.object({
   dueDate: z.string().min(1),
+  actionId: z.string().min(1),
   reminderId: z.string().min(1).optional(),
 });
+export type ReminderInboxPayload = z.infer<typeof ReminderInboxPayloadSchema>;
 
 const NotificationInboxPayloadSchema = z.object({
   module: z.string().min(1).optional(),

@@ -17,6 +17,8 @@ import { parseGoalPlan } from './schema';
 import { getGraphStorageInfo, getGraphSummary } from './store';
 import type {
   GoalPlan,
+  LifeGraphDocument,
+  LifeGraphLoopSummary,
   LifeGraphMergeConflict,
   LifeGraphMergeDeltaResult,
   LifeGraphMemoryEntry,
@@ -807,6 +809,73 @@ function deriveHeuristicInsights(
   const history = [...completedPlannedActions, ...completedTaskTitles].slice(0, 10);
 
   return { wins, nextActions, history };
+}
+
+function deriveLoopSummary(
+  graph: LifeGraphDocument,
+  period: LifeGraphReviewPeriod,
+  now: Date,
+): LifeGraphLoopSummary {
+  const toDateOnly = (value: Date): string => value.toISOString().slice(0, 10);
+  const buildWindow = (currentPeriod: LifeGraphReviewPeriod): { start: string; end: string } => {
+    const end = toDateOnly(now);
+    const startDate = new Date(now);
+    startDate.setUTCDate(startDate.getUTCDate() - (currentPeriod === 'weekly' ? 6 : 0));
+    const start = toDateOnly(startDate);
+    return { start, end };
+  };
+  const isInWindow = (dateOnly: string | undefined, window: { start: string; end: string }): boolean => {
+    if (!dateOnly) {
+      return false;
+    }
+    return dateOnly >= window.start && dateOnly <= window.end;
+  };
+
+  const today = now.toISOString().slice(0, 10);
+  const window = buildWindow(period);
+  const captureEntries = graph.captureEntries ?? [];
+  const plannedActions = graph.plannedActions ?? [];
+  const reminderEvents = graph.reminderEvents ?? [];
+
+  const pendingCaptures = captureEntries.filter(
+    (entry) => entry.status === 'pending' && isInWindow(entry.capturedAt.slice(0, 10), window),
+  ).length;
+  const actionsDueToday = plannedActions.filter(
+    (action) => action.status !== 'done' && isInWindow(action.dueDate, window),
+  ).length;
+  const unacknowledgedReminders = reminderEvents.filter(
+    (event) => event.status === 'fired' && isInWindow(event.scheduledFor.slice(0, 10), window),
+  ).length;
+  const completedActions = plannedActions
+    .filter(
+      (action) =>
+        action.status === 'done' && isInWindow(action.completedAt?.slice(0, 10), window),
+    )
+    .map((action) => `${action.title} (${action.id})`);
+
+  if (period === 'weekly') {
+    const suggestedNextActions = plannedActions
+      .filter(
+        (action) => action.status !== 'done' && Boolean(action.dueDate) && action.dueDate < today,
+      )
+      .map((action) => action.title)
+      .slice(0, 5);
+
+    return {
+      pendingCaptures,
+      actionsDueToday,
+      unacknowledgedReminders,
+      completedActions,
+      ...(suggestedNextActions.length > 0 ? { suggestedNextActions } : {}),
+    };
+  }
+
+  return {
+    pendingCaptures,
+    actionsDueToday,
+    unacknowledgedReminders,
+    completedActions,
+  };
 }
 
 function createReviewChatClient(host?: string): ReviewChatClient {
@@ -1603,6 +1672,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
     ): Promise<LifeGraphReviewInsights> {
       const normalizedPeriod = normalizeReviewPeriod(period);
       const graph = await manager.load(resolvedGraphPath);
+      const loopSummary = deriveLoopSummary(graph, normalizedPeriod, new Date());
       const generatedAt = new Date().toISOString();
       const model = options.env?.LIFEOS_GOAL_MODEL?.trim() || 'llama3.1:8b';
       const host = options.env?.OLLAMA_HOST;
@@ -1665,6 +1735,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           wins: parsed.wins,
           nextActions: parsed.nextActions,
           ...(heuristic.history.length > 0 ? { history: heuristic.history } : {}),
+          loopSummary,
           generatedAt,
           source: 'llm',
         };
@@ -1674,6 +1745,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           wins: heuristic.wins,
           nextActions: heuristic.nextActions,
           ...(heuristic.history.length > 0 ? { history: heuristic.history } : {}),
+          loopSummary,
           generatedAt,
           source: 'heuristic',
         };

@@ -16,6 +16,7 @@ import type {
 import { MissingMicrophoneConsentError } from '@lifeos/voice-core';
 
 import { runCli } from './index';
+import { printReviewInsights } from './printer';
 
 function samplePlan(): GoalPlan {
   return {
@@ -64,6 +65,13 @@ function sampleReviewInsights(): LifeGraphReviewInsights {
     period: 'weekly',
     wins: ['Finished board deck draft'],
     nextActions: ['Schedule rehearsal with leadership'],
+    loopSummary: {
+      pendingCaptures: 1,
+      actionsDueToday: 2,
+      unacknowledgedReminders: 0,
+      completedActions: ['Finished board deck draft (action_1)'],
+      suggestedNextActions: ['Finalize board rehearsal agenda'],
+    },
     generatedAt: '2026-03-21T14:00:00.000Z',
     source: 'heuristic',
   };
@@ -804,6 +812,93 @@ test('review --json emits review insight JSON', async () => {
   const parsed = JSON.parse(stdout.join('')) as LifeGraphReviewInsights;
   assert.equal(parsed.period, 'daily');
   assert.equal(parsed.wins[0], 'Finished board deck draft');
+});
+
+test('review --json --period daily includes loopSummary counters', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['review', '--json', '--period', 'daily'], {
+    generateReview: async (period) => ({
+      ...sampleReviewInsights(),
+      period,
+      loopSummary: {
+        pendingCaptures: 3,
+        actionsDueToday: 1,
+        unacknowledgedReminders: 2,
+        completedActions: ['Send update (action_daily_1)'],
+      },
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphReviewInsights;
+  assert.equal(parsed.period, 'daily');
+  assert.ok(parsed.loopSummary, 'Expected loopSummary on daily review payload');
+  assert.equal(parsed.loopSummary?.pendingCaptures, 3);
+  assert.equal(parsed.loopSummary?.actionsDueToday, 1);
+  assert.equal(parsed.loopSummary?.unacknowledgedReminders, 2);
+  assert.deepEqual(parsed.loopSummary?.completedActions, ['Send update (action_daily_1)']);
+});
+
+test('review --json --period weekly includes loopSummary and suggestedNextActions', async () => {
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['review', '--json', '--period', 'weekly'], {
+    generateReview: async (period) => ({
+      ...sampleReviewInsights(),
+      period,
+      loopSummary: {
+        pendingCaptures: 4,
+        actionsDueToday: 5,
+        unacknowledgedReminders: 1,
+        completedActions: ['Plan retrospective (action_weekly_1)'],
+        suggestedNextActions: ['Follow up on overdue budget review'],
+      },
+    }),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphReviewInsights;
+  assert.equal(parsed.period, 'weekly');
+  assert.ok(parsed.loopSummary, 'Expected loopSummary on weekly review payload');
+  assert.equal(parsed.loopSummary?.pendingCaptures, 4);
+  assert.equal(parsed.loopSummary?.actionsDueToday, 5);
+  assert.equal(parsed.loopSummary?.unacknowledgedReminders, 1);
+  assert.deepEqual(parsed.loopSummary?.completedActions, ['Plan retrospective (action_weekly_1)']);
+  assert.deepEqual(parsed.loopSummary?.suggestedNextActions, [
+    'Follow up on overdue budget review',
+  ]);
+});
+
+test('printReviewInsights renders loop summary after wins and next actions', () => {
+  const output = printReviewInsights({
+    ...sampleReviewInsights(),
+    period: 'weekly',
+    loopSummary: {
+      pendingCaptures: 2,
+      actionsDueToday: 3,
+      unacknowledgedReminders: 1,
+      completedActions: ['Close sprint retro (action_9)'],
+      suggestedNextActions: ['Triage overdue backlog'],
+    },
+  });
+
+  const winsIndex = output.indexOf('Key Wins:');
+  const nextActionsIndex = output.indexOf('Next Actions:');
+  const loopSummaryIndex = output.indexOf('Loop Summary:');
+
+  assert.ok(winsIndex >= 0, 'Expected Key Wins section in review output');
+  assert.ok(nextActionsIndex > winsIndex, 'Expected Next Actions section after Key Wins');
+  assert.ok(
+    loopSummaryIndex > nextActionsIndex,
+    'Expected Loop Summary section after Next Actions',
+  );
 });
 
 test('task list --json emits flattened task rows', async () => {
@@ -2600,6 +2695,282 @@ test('init --verbose emits [verbose] diagnostics to stderr', async () => {
   assert.match(output, /\[verbose\] platform=/);
 });
 
+test('inbox defaults to list and validates invalid action messaging', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-inbox-parser-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const defaultExitCode = await runCli(['inbox', '--graph-path', graphPath], {
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(defaultExitCode, 0);
+  assert.match(stdout.join(''), /Inbox is clear/);
+
+  const invalidActionExitCode = await runCli(['inbox', 'invalid-action', '--graph-path', graphPath], {
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+  assert.equal(invalidActionExitCode, 1);
+  assert.match(stderr.join(''), /Invalid inbox action "invalid-action"\. Use list or triage\./);
+
+  const invalidTriageActionExitCode = await runCli(
+    ['inbox', 'triage', 'capture_123', '--action', 'invalid', '--graph-path', graphPath],
+    {
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+  assert.equal(invalidTriageActionExitCode, 1);
+  assert.match(stderr.join(''), /Invalid triage action "invalid"\. Use task, note, or defer\./);
+});
+
+test('inbox list supports empty and non-empty human/json outputs', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-inbox-list-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const humanStdout: string[] = [];
+  const jsonStdout: string[] = [];
+
+  const emptyHumanExitCode = await runCli(['inbox', 'list', '--graph-path', graphPath], {
+    stdout: (message) => {
+      humanStdout.push(message);
+    },
+  });
+  assert.equal(emptyHumanExitCode, 0);
+  assert.match(humanStdout.join(''), /Inbox is clear/);
+
+  const emptyJsonExitCode = await runCli(['inbox', 'list', '--json', '--graph-path', graphPath], {
+    stdout: (message) => {
+      jsonStdout.push(message);
+    },
+  });
+  assert.equal(emptyJsonExitCode, 0);
+  assert.deepEqual(JSON.parse(jsonStdout.join('')), []);
+
+  const captureA: string[] = [];
+  const captureB: string[] = [];
+  await runCli(['capture', 'Draft project brief', '--json', '--graph-path', graphPath], {
+    stdout: (message) => {
+      captureA.push(message);
+    },
+  });
+  await runCli(['capture', 'Book dentist appointment', '--json', '--graph-path', graphPath], {
+    stdout: (message) => {
+      captureB.push(message);
+    },
+  });
+
+  humanStdout.length = 0;
+  jsonStdout.length = 0;
+
+  const nonEmptyHumanExitCode = await runCli(['inbox', 'list', '--graph-path', graphPath], {
+    stdout: (message) => {
+      humanStdout.push(message);
+    },
+  });
+  assert.equal(nonEmptyHumanExitCode, 0);
+  const humanOutput = humanStdout.join('');
+  assert.match(humanOutput, /ID/);
+  assert.match(humanOutput, /Content/);
+  assert.match(humanOutput, /Draft project brief/);
+  assert.match(humanOutput, /Book dentist appointment/);
+
+  const nonEmptyJsonExitCode = await runCli(['inbox', 'list', '--json', '--graph-path', graphPath], {
+    stdout: (message) => {
+      jsonStdout.push(message);
+    },
+  });
+  assert.equal(nonEmptyJsonExitCode, 0);
+  const pending = JSON.parse(jsonStdout.join('')) as Array<{ status: string; content: string }>;
+  assert.equal(pending.length, 2);
+  assert.ok(pending.every((entry) => entry.status === 'pending'));
+});
+
+test('inbox triage note supports --tag and updates capture state', async () => {
+  const captureId = 'capture-note-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Idea: automate weekly report',
+        type: 'text' as const,
+        capturedAt: '2026-03-29T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'pending' as const,
+      },
+    ],
+    notes: [] as Array<{ title: string; content: string; tags: string[] }>,
+    plannedActions: [] as unknown[],
+  };
+  const client = {
+    async getCaptureEntry(id: string) {
+      return graph.captureEntries.find((entry) => entry.id === id);
+    },
+    async appendNote(note: { title: string; content: string; tags: string[] }) {
+      graph.notes.push(note);
+    },
+    async updateCaptureEntry(
+      id: string,
+      patch: Partial<{ status: 'pending' | 'triaged'; tags: string[] }>,
+    ) {
+      const entry = graph.captureEntries.find((item) => item.id === id);
+      if (!entry) {
+        throw new Error(`CaptureEntry "${id}" not found.`);
+      }
+      Object.assign(entry, patch);
+    },
+  };
+  const triageStdout: string[] = [];
+
+  const triageExitCode = await runCli(
+    [
+      'inbox',
+      'triage',
+      captureId,
+      '--action',
+      'note',
+      '--tag',
+      'idea',
+      '--tag',
+      'weekly',
+      '--json',
+    ],
+    {
+      createLifeGraphClient: () => client as never,
+      stdout: (message) => {
+        triageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(triageExitCode, 0);
+  const triagePayload = JSON.parse(triageStdout.join('')) as {
+    captureEntry?: { status?: string; id?: string };
+  };
+  assert.equal(triagePayload.captureEntry?.status, 'triaged');
+  assert.equal(triagePayload.captureEntry?.id, captureId);
+
+  const triagedCapture = graph.captureEntries.find((entry) => entry.id === captureId);
+  assert.equal(triagedCapture?.status, 'triaged');
+  assert.equal(graph.plannedActions.length, 0);
+  const note = graph.notes[0];
+  assert.ok(note, 'Expected one note to be created');
+  assert.deepEqual(note.tags, ['idea', 'weekly']);
+});
+
+test('inbox triage defer persists deferred marker idempotently without creating planned action', async () => {
+  const captureId = 'capture-defer-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Revisit tax strategy',
+        type: 'text' as const,
+        capturedAt: '2026-03-29T12:00:00.000Z',
+        source: 'cli',
+        tags: ['finance'],
+        status: 'pending' as const,
+      },
+    ],
+    plannedActions: [] as unknown[],
+  };
+  const client = {
+    async getCaptureEntry(id: string) {
+      return graph.captureEntries.find((entry) => entry.id === id);
+    },
+    async updateCaptureEntry(
+      id: string,
+      patch: Partial<{ status: 'pending' | 'triaged'; tags: string[] }>,
+    ) {
+      const entry = graph.captureEntries.find((item) => item.id === id);
+      if (!entry) {
+        throw new Error(`CaptureEntry "${id}" not found.`);
+      }
+      Object.assign(entry, patch);
+    },
+  };
+  const triageStdout: string[] = [];
+
+  const firstDeferExitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'defer', '--json'],
+    {
+      createLifeGraphClient: () => client as never,
+      stdout: (message) => {
+        triageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(firstDeferExitCode, 0);
+  const firstPayload = JSON.parse(triageStdout.join('')) as {
+    captureEntry?: { status?: string; tags?: string[] };
+  };
+  assert.equal(firstPayload.captureEntry?.status, 'triaged');
+  assert.deepEqual(firstPayload.captureEntry?.tags, ['finance', 'deferred']);
+
+  triageStdout.length = 0;
+  const secondDeferExitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'defer', '--json'],
+    {
+      createLifeGraphClient: () => client as never,
+      stdout: (message) => {
+        triageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondDeferExitCode, 0);
+  const secondPayload = JSON.parse(triageStdout.join('')) as {
+    captureEntry?: { tags?: string[] };
+  };
+  assert.deepEqual(secondPayload.captureEntry?.tags, ['finance', 'deferred']);
+
+  const updatedCapture = graph.captureEntries.find((entry) => entry.id === captureId);
+  assert.equal(updatedCapture?.status, 'triaged');
+  assert.deepEqual(updatedCapture?.tags, ['finance', 'deferred']);
+  assert.equal(graph.plannedActions.length, 0);
+});
+
+test('inbox triage failures include stage, reason, and fix diagnostics', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['inbox', 'triage', 'capture-1', '--action', 'defer'], {
+    createLifeGraphClient: () =>
+      ({
+        async getCaptureEntry() {
+          return {
+            id: 'capture-1',
+            content: 'Pay utilities',
+            type: 'text',
+            capturedAt: '2026-03-29T12:00:00.000Z',
+            source: 'cli',
+            tags: [],
+            status: 'pending',
+          };
+        },
+        async updateCaptureEntry() {
+          throw new Error('Disk full while updating capture');
+        },
+      }) as never,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  const errorOutput = stderr.join('');
+  assert.match(errorOutput, /ERR_INBOX_TRIAGE_FAILED:/);
+  assert.match(errorOutput, /stage=update_capture/);
+  assert.match(errorOutput, /reason=Disk full while updating capture/);
+  assert.match(errorOutput, /fix=/);
+});
+
 test('capture command returns ERR_CAPTURE_FAILED on graph append failure', async () => {
   const stderr: string[] = [];
   const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-fail-'));
@@ -2629,4 +3000,676 @@ test('capture command returns ERR_CAPTURE_FAILED on graph append failure', async
 
   assert.equal(exitCode, 1);
   assert.match(stderr.join(''), /ERR_CAPTURE_FAILED:/);
+});
+
+test('remind returns ERR_ACTION_NOT_FOUND when planned action does not exist', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['remind', 'missing-action', '--at', '2026-04-04T09:00:00Z'], {
+    createLifeGraphClient: () =>
+      ({
+        async getPlannedAction() {
+          return undefined;
+        },
+      }) as never,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_ACTION_NOT_FOUND:/);
+});
+
+test('remind with same --at returns existing reminder id and keeps a single scheduled reminder', async () => {
+  const stdout: string[] = [];
+  const actionId = 'action_1';
+  const scheduledAt = '2026-04-04T09:00:00Z';
+  const graph = {
+    reminderEvents: [
+      {
+        id: 'reminder_old',
+        actionId,
+        scheduledFor: '2026-04-03T09:00:00Z',
+        status: 'scheduled' as const,
+      },
+      {
+        id: 'reminder_keep',
+        actionId,
+        scheduledFor: scheduledAt,
+        status: 'scheduled' as const,
+      },
+    ],
+  };
+
+  const exitCode = await runCli(['remind', actionId, '--at', scheduledAt, '--json'], {
+    createLifeGraphClient: () =>
+      ({
+        async getPlannedAction(id: string) {
+          if (id !== actionId) {
+            return undefined;
+          }
+          return {
+            id: actionId,
+            title: 'Schedule team sync',
+            status: 'todo',
+          };
+        },
+        async loadGraph() {
+          return graph;
+        },
+        async appendReminderEvent(event: {
+          id: string;
+          actionId: string;
+          scheduledFor: string;
+          status: 'scheduled' | 'cancelled';
+        }) {
+          const index = graph.reminderEvents.findIndex((existing) => existing.id === event.id);
+          if (index >= 0) {
+            graph.reminderEvents[index] = event;
+            return;
+          }
+          graph.reminderEvents.push(event);
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    id?: string;
+    actionId?: string;
+    scheduledFor?: string;
+    status?: string;
+  };
+  assert.equal(payload.id, 'reminder_keep');
+  assert.equal(payload.actionId, actionId);
+  assert.equal(payload.scheduledFor, scheduledAt);
+  assert.equal(payload.status, 'scheduled');
+
+  const scheduled = graph.reminderEvents.filter(
+    (event) => event.actionId === actionId && event.status === 'scheduled',
+  );
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0]?.id, 'reminder_keep');
+});
+
+test('remind with different --at cancels prior scheduled reminders and creates a new id', async () => {
+  const stdout: string[] = [];
+  const actionId = 'action_2';
+  const nextScheduledAt = '2026-04-06T09:00:00Z';
+  const graph = {
+    reminderEvents: [
+      {
+        id: 'reminder_old_1',
+        actionId,
+        scheduledFor: '2026-04-04T09:00:00Z',
+        status: 'scheduled' as const,
+      },
+      {
+        id: 'reminder_old_2',
+        actionId,
+        scheduledFor: '2026-04-05T09:00:00Z',
+        status: 'scheduled' as const,
+      },
+    ],
+  };
+
+  const exitCode = await runCli(['remind', actionId, '--at', nextScheduledAt, '--json'], {
+    createLifeGraphClient: () =>
+      ({
+        async getPlannedAction(id: string) {
+          if (id !== actionId) {
+            return undefined;
+          }
+          return {
+            id: actionId,
+            title: 'Finalize monthly report',
+            status: 'todo',
+          };
+        },
+        async loadGraph() {
+          return graph;
+        },
+        async appendReminderEvent(event: {
+          id: string;
+          actionId: string;
+          scheduledFor: string;
+          status: 'scheduled' | 'cancelled';
+        }) {
+          const index = graph.reminderEvents.findIndex((existing) => existing.id === event.id);
+          if (index >= 0) {
+            graph.reminderEvents[index] = event;
+            return;
+          }
+          graph.reminderEvents.push(event);
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    id?: string;
+    actionId?: string;
+    scheduledFor?: string;
+    status?: string;
+  };
+  assert.equal(payload.actionId, actionId);
+  assert.equal(payload.scheduledFor, nextScheduledAt);
+  assert.equal(payload.status, 'scheduled');
+  assert.ok(payload.id, 'Expected a reminder id in remind response');
+  assert.notEqual(payload.id, 'reminder_old_1');
+  assert.notEqual(payload.id, 'reminder_old_2');
+
+  const scheduled = graph.reminderEvents.filter(
+    (event) => event.actionId === actionId && event.status === 'scheduled',
+  );
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0]?.id, payload.id);
+  assert.equal(scheduled[0]?.scheduledFor, nextScheduledAt);
+
+  const reminderOld1 = graph.reminderEvents.find((event) => event.id === 'reminder_old_1');
+  const reminderOld2 = graph.reminderEvents.find((event) => event.id === 'reminder_old_2');
+  assert.equal(reminderOld1?.status, 'cancelled');
+  assert.equal(reminderOld2?.status, 'cancelled');
+});
+
+// ─── demo:loop command tests ───────────────────────────────────────────────
+
+function createLoopMockClient() {
+  const captureEntries: Array<{
+    id: string;
+    content: string;
+    type: string;
+    capturedAt: string;
+    source: string;
+    tags: string[];
+    status: string;
+  }> = [];
+  const plannedActions: Array<{
+    id: string;
+    title: string;
+    status: string;
+    sourceCapture?: string;
+    dueDate?: string;
+    completedAt?: string;
+  }> = [];
+  const reminderEvents: Array<{
+    id: string;
+    actionId: string;
+    scheduledFor: string;
+    status: string;
+  }> = [];
+  const calls: string[] = [];
+
+  const client = {
+    async appendCaptureEntry(entry: { id: string; content: string; [key: string]: unknown }) {
+      calls.push('appendCaptureEntry');
+      captureEntries.push(entry as (typeof captureEntries)[number]);
+    },
+    async updateCaptureEntry(id: string, patch: Record<string, unknown>) {
+      calls.push('updateCaptureEntry');
+      const entry = captureEntries.find((e) => e.id === id);
+      if (entry) Object.assign(entry, patch);
+    },
+    async appendPlannedAction(action: { id: string; title: string; [key: string]: unknown }) {
+      calls.push('appendPlannedAction');
+      plannedActions.push(action as (typeof plannedActions)[number]);
+    },
+    async updatePlannedAction(id: string, patch: Record<string, unknown>) {
+      calls.push('updatePlannedAction');
+      const action = plannedActions.find((a) => a.id === id);
+      if (action) Object.assign(action, patch);
+    },
+    async appendReminderEvent(event: { id: string; actionId: string; [key: string]: unknown }) {
+      calls.push('appendReminderEvent');
+      reminderEvents.push(event as (typeof reminderEvents)[number]);
+    },
+  };
+
+  return { client, captureEntries, plannedActions, reminderEvents, calls };
+}
+
+test('demo:loop executes all five stages and reports completion', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const { client, captureEntries, plannedActions, reminderEvents } = createLoopMockClient();
+
+  const exitCode = await runCli(['demo:loop', '--graph-path', '/tmp/test-graph.json'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-29T12:00:00.000Z'),
+    createLifeGraphClient: () => client as never,
+    generateReview: async () => sampleReviewInsights(),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.length, 0);
+
+  const output = stdout.join('');
+  assert.match(output, /Stage 1 — Capture/);
+  assert.match(output, /Stage 2 — Triage/);
+  assert.match(output, /Stage 3 — Remind/);
+  assert.match(output, /Stage 4 — Complete/);
+  assert.match(output, /Stage 5 — Review/);
+  assert.match(output, /Demo loop complete/);
+
+  assert.equal(captureEntries.length, 3);
+  assert.equal(plannedActions.length, 3);
+  assert.equal(reminderEvents.length, 1);
+  // First action should be marked done
+  assert.equal(plannedActions[0]?.status, 'done');
+});
+
+test('demo loop (space-separated) also routes to runDemoLoopCommand', async () => {
+  const stdout: string[] = [];
+  const { client } = createLoopMockClient();
+
+  const exitCode = await runCli(['demo', 'loop', '--graph-path', '/tmp/test-graph.json'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-29T12:00:00.000Z'),
+    createLifeGraphClient: () => client as never,
+    generateReview: async () => sampleReviewInsights(),
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Stage 1 — Capture/);
+});
+
+test('demo:loop --dry-run does not call any storage methods', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const { calls } = createLoopMockClient();
+
+  // Client is provided but should never be called in dry-run mode
+  const exitCode = await runCli(['demo:loop', '--dry-run', '--graph-path', '/tmp/test-graph.json'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-29T12:00:00.000Z'),
+    createLifeGraphClient: () => {
+      calls.push('createLifeGraphClient');
+      return {
+        async loadGraph() {
+          calls.push('loadGraph');
+          throw new Error('loadGraph must not be called in dry-run');
+        },
+        async appendCaptureEntry() {
+          calls.push('appendCaptureEntry');
+          throw new Error('appendCaptureEntry must not be called in dry-run');
+        },
+      } as never;
+    },
+    generateReview: async () => {
+      calls.push('generateReview');
+      throw new Error('generateReview must not be called in dry-run');
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(stderr.length, 0);
+
+  const output = stdout.join('');
+  assert.match(output, /Dry-run stage 1 ok/);
+  assert.match(output, /Dry-run stage 2 ok/);
+  assert.match(output, /Dry-run stage 3 ok/);
+  assert.match(output, /Dry-run stage 4 ok/);
+  assert.match(output, /Dry-run stage 5 ok/);
+
+  // No storage or review methods should have been called
+  assert.ok(
+    !calls.includes('loadGraph'),
+    `loadGraph was called but must not be in dry-run (calls: ${calls.join(', ')})`,
+  );
+  assert.ok(
+    !calls.includes('appendCaptureEntry'),
+    `appendCaptureEntry was called but must not be in dry-run`,
+  );
+  assert.ok(
+    !calls.includes('generateReview'),
+    `generateReview was called but must not be in dry-run`,
+  );
+});
+
+test('demo:loop --json outputs structured trace with entries for all five stages', async () => {
+  const stdout: string[] = [];
+  const { client } = createLoopMockClient();
+
+  const exitCode = await runCli(
+    ['demo:loop', '--json', '--graph-path', '/tmp/test-graph.json'],
+    {
+      env: {},
+      cwd: () => '/repo',
+      now: () => new Date('2026-03-29T12:00:00.000Z'),
+      createLifeGraphClient: () => client as never,
+      generateReview: async () => sampleReviewInsights(),
+      stdout: (message) => {
+        stdout.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  const trace = JSON.parse(stdout.join('')) as Array<{ stage: string }>;
+  assert.ok(Array.isArray(trace), 'Output should be a JSON array');
+
+  const stages = trace.map((entry) => entry.stage);
+  assert.ok(stages.includes('capture'), 'trace should include capture stage entries');
+  assert.ok(stages.includes('triage'), 'trace should include triage stage entries');
+  assert.ok(stages.includes('remind'), 'trace should include remind stage entry');
+  assert.ok(stages.includes('complete'), 'trace should include complete stage entry');
+  assert.ok(stages.includes('review'), 'trace should include review stage entry');
+
+  const captureEntries = trace.filter((e) => e.stage === 'capture');
+  assert.equal(captureEntries.length, 3, 'Expected 3 capture entries in trace');
+  const triageEntries = trace.filter((e) => e.stage === 'triage');
+  assert.equal(triageEntries.length, 3, 'Expected 3 triage entries in trace');
+});
+
+test('capture happy path returns JSON with id, status, content, and capturedAt', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-happy-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const stdout: string[] = [];
+  const fixedNow = new Date('2026-03-29T12:00:00.000Z');
+
+  const exitCode = await runCli(
+    ['capture', 'Plan team sync for Friday', '--json', '--graph-path', graphPath],
+    {
+      now: () => fixedNow,
+      createLifeGraphClient: () =>
+        ({
+          async loadGraph() {
+            return { version: '0.1.0', updatedAt: fixedNow.toISOString(), captureEntries: [] };
+          },
+          async appendCaptureEntry(entry: {
+            id: string;
+            content: string;
+            capturedAt: string;
+            type: string;
+            source: string;
+            status: string;
+            tags: string[];
+          }) {
+            return;
+          },
+          async saveGraph() {
+            return;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  const payload = JSON.parse(output) as {
+    id: string;
+    status: string;
+    content: string;
+    capturedAt: string;
+  };
+  assert.ok(payload.id, 'Expected capture entry to have an id');
+  assert.equal(payload.status, 'pending');
+  assert.equal(payload.content, 'Plan team sync for Friday');
+  assert.equal(payload.capturedAt, fixedNow.toISOString());
+});
+
+test('capture rejects invalid --type values with exit code 1', async () => {
+  const stderr: string[] = [];
+  let appendCalls = 0;
+
+  const exitCode = await runCli(['capture', 'Plan team sync for Friday', '--type', 'voic'], {
+    now: () => new Date('2026-03-29T12:00:00.000Z'),
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return { version: '0.1.0', updatedAt: '2026-03-29T12:00:00.000Z', captureEntries: [] };
+        },
+        async appendCaptureEntry() {
+          appendCalls += 1;
+          return;
+        },
+      }) as never,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(appendCalls, 0);
+  assert.match(
+    stderr.join(''),
+    /ERR_CAPTURE_INVALID_TYPE: Invalid capture type "voic"\. Allowed values: text\|voice\./,
+  );
+});
+
+test('capture persists voice type when --type voice is provided', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-voice-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const fixedNow = new Date('2026-03-29T12:00:00.000Z');
+  let capturedType: string | undefined;
+
+  const exitCode = await runCli(
+    ['capture', 'Voice memo from standup', '--type', 'voice', '--graph-path', graphPath],
+    {
+      now: () => fixedNow,
+      createLifeGraphClient: () =>
+        ({
+          async loadGraph() {
+            return {
+              version: '0.1.0',
+              updatedAt: fixedNow.toISOString(),
+              captureEntries: [],
+            };
+          },
+          async appendCaptureEntry(entry: {
+            id: string;
+            content: string;
+            capturedAt: string;
+            type: string;
+            source: string;
+            status: string;
+            tags: string[];
+          }) {
+            capturedType = entry.type;
+            return;
+          },
+        }) as never,
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.equal(capturedType, 'voice');
+});
+
+test('capture idempotency returns same id when called twice within 60 seconds', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-idempotency-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const fixedNow = new Date('2026-03-29T12:00:00.000Z');
+  let capturedEntryId = '';
+
+  const client = {
+    async loadGraph() {
+      // First call returns empty, subsequent calls return the entry that was appended
+      if (capturedEntryId.length === 0) {
+        return {
+          version: '0.1.0',
+          updatedAt: fixedNow.toISOString(),
+          captureEntries: [],
+        };
+      }
+      return {
+        version: '0.1.0',
+        updatedAt: fixedNow.toISOString(),
+        captureEntries: [
+          {
+            id: capturedEntryId,
+            content: 'Plan team sync for Friday',
+            type: 'text' as const,
+            source: 'cli' as const,
+            status: 'pending' as const,
+            tags: [] as string[],
+            capturedAt: fixedNow.toISOString(),
+          },
+        ],
+      };
+    },
+    async appendCaptureEntry(entry: {
+      id: string;
+      content: string;
+      capturedAt: string;
+      type: string;
+      source: string;
+      status: string;
+      tags: string[];
+    }) {
+      capturedEntryId = entry.id;
+      return;
+    },
+    async saveGraph() {
+      return;
+    },
+  };
+
+  const firstStdout: string[] = [];
+  const firstExitCode = await runCli(
+    ['capture', 'Plan team sync for Friday', '--json', '--graph-path', graphPath],
+    {
+      now: () => fixedNow,
+      createLifeGraphClient: () => client as never,
+      stdout: (message) => {
+        firstStdout.push(message);
+      },
+    },
+  );
+  assert.equal(firstExitCode, 0);
+  const firstPayload = JSON.parse(firstStdout.join('')) as { id: string };
+  const firstId = firstPayload.id;
+
+  const secondStdout: string[] = [];
+  const secondExitCode = await runCli(
+    ['capture', 'Plan team sync for Friday', '--json', '--graph-path', graphPath],
+    {
+      now: () => new Date(fixedNow.getTime() + 30000), // 30 seconds later
+      createLifeGraphClient: () => client as never,
+      stdout: (message) => {
+        secondStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondExitCode, 0);
+  const secondPayload = JSON.parse(secondStdout.join('')) as { id: string };
+  const secondId = secondPayload.id;
+
+  assert.equal(secondId, firstId, 'Expected same id for idempotent capture within 60 seconds');
+});
+
+test('capture failure when appendCaptureEntry throws returns exit code 1 with ERR_CAPTURE_FAILED', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  const fixedNow = new Date('2026-03-29T12:00:00.000Z');
+
+  const exitCode = await runCli(
+    ['capture', 'fail me', '--json', '--graph-path', '/tmp/test-graph.json'],
+    {
+      now: () => fixedNow,
+      createLifeGraphClient: () =>
+        ({
+          async loadGraph() {
+            return {
+              version: '0.1.0',
+              updatedAt: fixedNow.toISOString(),
+              captureEntries: [],
+            };
+          },
+          async appendCaptureEntry() {
+            throw new Error('disk full');
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_CAPTURE_FAILED/);
+});
+
+test('capture human-mode output prints Captured message with content', async () => {
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-human-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+  const stdout: string[] = [];
+  const fixedNow = new Date('2026-03-29T12:00:00.000Z');
+
+  const exitCode = await runCli(
+    ['capture', 'Buy groceries', '--graph-path', graphPath],
+    {
+      now: () => fixedNow,
+      createLifeGraphClient: () =>
+        ({
+          async loadGraph() {
+            return {
+              version: '0.1.0',
+              updatedAt: fixedNow.toISOString(),
+              captureEntries: [],
+            };
+          },
+          async appendCaptureEntry() {
+            return;
+          },
+          async saveGraph() {
+            return;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /Captured:/i);
+  assert.match(output, /Buy groceries/);
+  // Verify it's human-mode, not JSON
+  assert.doesNotThrow(() => {
+    // If it were JSON, this would be valid JSON. We check that it's NOT
+    try {
+      JSON.parse(output);
+      // If we get here, it's JSON which is wrong
+      throw new Error('Output should not be valid JSON in human mode');
+    } catch (e: unknown) {
+      if ((e as Error).message === 'Output should not be valid JSON in human mode') {
+        throw e;
+      }
+      // Expected: parse error means it's human-mode
+      return;
+    }
+  });
 });

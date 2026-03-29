@@ -132,6 +132,12 @@ export interface DemoCommandOptions {
   modules?: string;
 }
 
+export interface DemoLoopCommandOptions {
+  graphPath: string;
+  dryRun: boolean;
+  outputJson: boolean;
+}
+
 export interface EventsListenCommandOptions {
   topic: string;
   outputJson: boolean;

@@ -449,11 +449,20 @@ export interface LifeGraphActiveGoalSummary {
 
 export type LifeGraphReviewPeriod = 'daily' | 'weekly';
 
+export interface LifeGraphLoopSummary {
+  pendingCaptures: number;
+  actionsDueToday: number;
+  unacknowledgedReminders: number;
+  completedActions: string[];
+  suggestedNextActions?: string[];
+}
+
 export interface LifeGraphReviewInsights {
   period: LifeGraphReviewPeriod;
   wins: string[];
   nextActions: string[];
   history?: string[];
+  loopSummary?: LifeGraphLoopSummary;
   generatedAt: string;
   source: 'llm' | 'heuristic';
 }

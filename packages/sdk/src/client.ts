@@ -5,88 +5,36 @@
 import type {
   SDKConfig,
   InboxItem,
+  InboxListResponse,
   DeviceInfo,
   CaptureRequest,
   CaptureResult,
   TimelineEntry,
   GoalSummary,
   PushTokenRegistration,
+  ReviewLoopSummary,
 } from '@lifeos/contracts';
+import { InboxListResponseSchema, ReviewLoopSummarySchema } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
 import { sendHttpRequest } from './http';
 
 /**
- * Inbox namespace — stub implementations.
+ * Inbox namespace.
  */
 class InboxNamespace {
   constructor(private config: SDKConfig) {}
 
   async list(): Promise<InboxItem[]> {
-    void this.config;
-    const now = Date.now();
+    const response = await sendHttpRequest<InboxListResponse>(
+      {
+        url: `${this.config.baseUrl}/api/inbox`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
 
-    return [
-      {
-        id: 'inbox_approval_1',
-        type: 'approval',
-        title: 'Approve updated weekly plan',
-        description: 'Scheduler suggests moving deep work blocks to Tuesday and Thursday.',
-        createdAt: now - 45 * 60 * 1000,
-        read: false,
-        data: {
-          requestId: 'approval_req_1',
-          action: 'schedule.update',
-          context: {
-            source: 'scheduler',
-          },
-          deadline: now + 6 * 60 * 60 * 1000,
-        },
-      },
-      {
-        id: 'inbox_reminder_1',
-        type: 'reminder',
-        title: 'Review project milestone notes',
-        description: 'Prepare notes before the sync with your accountability group.',
-        createdAt: now - 2 * 60 * 60 * 1000,
-        read: false,
-        data: {
-          dueDate: new Date(now + 2 * 60 * 60 * 1000).toISOString(),
-        },
-      },
-      {
-        id: 'inbox_notification_1',
-        type: 'notification',
-        title: 'Weather module synced',
-        description: 'Forecast context has been added to tomorrow morning planning.',
-        createdAt: now - 5 * 60 * 60 * 1000,
-        read: true,
-        data: {
-          module: 'weather',
-        },
-      },
-      {
-        id: 'inbox_reminder_2',
-        type: 'reminder',
-        title: '30 minute cardio session',
-        description: 'Target heart rate zone 2 for consistency.',
-        createdAt: now - 8 * 60 * 60 * 1000,
-        read: false,
-        data: {
-          dueDate: new Date(now + 26 * 60 * 60 * 1000).toISOString(),
-        },
-      },
-      {
-        id: 'inbox_reminder_3',
-        type: 'reminder',
-        title: 'Process inbox zero block',
-        description: 'Triage captured ideas and convert the top 3 into tasks.',
-        createdAt: now - 24 * 60 * 60 * 1000,
-        read: true,
-        data: {
-          dueDate: new Date(now + 3 * 24 * 60 * 60 * 1000).toISOString(),
-        },
-      },
-    ];
+    return InboxListResponseSchema.parse(response.data);
   }
 
   async approve(requestId: string): Promise<void> {
@@ -107,6 +55,18 @@ class InboxNamespace {
         url: `${this.config.baseUrl}/api/inbox/reject`,
         method: 'POST',
         body: { requestId, reason },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+  }
+
+  async completeAction(actionId: string): Promise<void> {
+    await sendHttpRequest(
+      {
+        url: `${this.config.baseUrl}/api/inbox/complete`,
+        method: 'POST',
+        body: { actionId },
       },
       this.config.getAccessToken,
       this.config,
@@ -244,6 +204,26 @@ class NotificationsNamespace {
 }
 
 /**
+ * Review namespace.
+ */
+class ReviewNamespace {
+  constructor(private config: SDKConfig) {}
+
+  async getDailyReview(): Promise<ReviewLoopSummary> {
+    const response = await sendHttpRequest<ReviewLoopSummary>(
+      {
+        url: `${this.config.baseUrl}/api/review/daily`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return ReviewLoopSummarySchema.parse(response.data);
+  }
+}
+
+/**
  * Devices namespace.
  */
 class DevicesNamespace {
@@ -300,6 +280,7 @@ export class LifeOSClient {
   readonly timeline: TimelineNamespace;
   readonly notifications: NotificationsNamespace;
   readonly devices: DevicesNamespace;
+  readonly review: ReviewNamespace;
 
   constructor(config: SDKConfig) {
     // Apply default timeout if not specified
@@ -314,5 +295,6 @@ export class LifeOSClient {
     this.timeline = new TimelineNamespace(effectiveConfig);
     this.notifications = new NotificationsNamespace(effectiveConfig);
     this.devices = new DevicesNamespace(effectiveConfig);
+    this.review = new ReviewNamespace(effectiveConfig);
   }
 }

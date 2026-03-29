@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import type { GoalSummary, InboxItem } from '@lifeos/contracts';
+import type { GoalSummary, InboxItem, ReviewLoopSummary } from '@lifeos/contracts';
 import { useRouter } from 'expo-router';
 import {
   Animated,
@@ -18,6 +18,11 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { sdk } from '../../lib/sdk';
 import { useSessionStore } from '../../lib/session';
+
+type ReminderItemData = {
+  actionId?: string;
+  dueDate?: string;
+};
 
 function greetingForHour(hour: number): string {
   if (hour < 12) {
@@ -50,14 +55,20 @@ function reminderDueDate(item: InboxItem): string | undefined {
     return undefined;
   }
 
-  const value = (item.data as { dueDate?: unknown }).dueDate;
+  const value = (item.data as ReminderItemData).dueDate;
   if (typeof value === 'string') {
     return value;
   }
-  if (typeof value === 'number') {
-    return new Date(value).toISOString();
-  }
   return undefined;
+}
+
+function reminderActionId(item: InboxItem): string | undefined {
+  if (item.type !== 'reminder') {
+    return undefined;
+  }
+
+  const actionId = (item.data as ReminderItemData).actionId;
+  return typeof actionId === 'string' && actionId.length > 0 ? actionId : undefined;
 }
 
 export default function HomeScreen() {
@@ -89,12 +100,23 @@ export default function HomeScreen() {
     queryFn: () => sdk.timeline.goals(),
   });
 
+  const {
+    data: review,
+    isLoading: isReviewLoading,
+    isError: isReviewError,
+    error: reviewError,
+    refetch: refetchReview,
+  } = useQuery({
+    queryKey: ['review', 'daily'],
+    queryFn: () => sdk.review.getDailyReview(),
+  });
+
   const openTasks = useMemo(
     () =>
       (inbox ?? [])
         .filter((item) => item.type === 'reminder')
         .map((item) => ({
-          id: item.id,
+          id: reminderActionId(item) ?? item.id,
           title: item.title,
           dueDate: reminderDueDate(item),
         }))
@@ -143,7 +165,7 @@ export default function HomeScreen() {
 
   const greeting = greetingForHour(new Date().getHours());
 
-  if (isInboxLoading || isGoalsLoading) {
+  if (isInboxLoading || isGoalsLoading || isReviewLoading) {
     return (
       <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
         <View style={[styles.placeholderCard, { backgroundColor: palette.background.card }]} />
@@ -153,10 +175,11 @@ export default function HomeScreen() {
     );
   }
 
-  if (isInboxError || isGoalsError) {
+  if (isInboxError || isGoalsError || isReviewError) {
     const message =
       (inboxError instanceof Error && inboxError.message) ||
       (goalsError instanceof Error && goalsError.message) ||
+      (reviewError instanceof Error && reviewError.message) ||
       'Unable to load dashboard';
 
     return (
@@ -166,6 +189,7 @@ export default function HomeScreen() {
           onRetry={() => {
             void refetchInbox();
             void refetchGoals();
+            void refetchReview();
           }}
         />
       </SafeAreaView>
@@ -285,6 +309,61 @@ export default function HomeScreen() {
                 </View>
               );
             })
+          )}
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: palette.background.card,
+              borderColor: palette.border.default,
+            },
+          ]}
+        >
+          <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Daily review</Text>
+          {!review || (review.pendingCaptures === 0 &&
+            review.actionsDueToday === 0 &&
+            review.unacknowledgedReminders === 0 &&
+            review.completedActions.length === 0) ? (
+            <Text style={[styles.cardBody, { color: palette.text.muted }]}>
+              Loop is clear — nothing to review
+            </Text>
+          ) : (
+            <View style={styles.reviewMetricsGrid}>
+              <View style={styles.reviewMetric}>
+                <Text style={[styles.reviewValue, { color: palette.text.primary }]}>
+                  {review?.pendingCaptures ?? 0}
+                </Text>
+                <Text style={[styles.reviewLabel, { color: palette.text.secondary }]}>
+                  Pending
+                </Text>
+              </View>
+              <View style={styles.reviewMetric}>
+                <Text style={[styles.reviewValue, { color: palette.text.primary }]}>
+                  {review?.actionsDueToday ?? 0}
+                </Text>
+                <Text style={[styles.reviewLabel, { color: palette.text.secondary }]}>
+                  Due today
+                </Text>
+              </View>
+              <View style={styles.reviewMetric}>
+                <Text style={[styles.reviewValue, { color: palette.text.primary }]}>
+                  {review?.unacknowledgedReminders ?? 0}
+                </Text>
+                <Text style={[styles.reviewLabel, { color: palette.text.secondary }]}>
+                  Awaiting ack
+                </Text>
+              </View>
+              <View style={styles.reviewMetric}>
+                <Text style={[styles.reviewValue, { color: palette.text.primary }]}>
+                  {review?.completedActions.length ?? 0}
+                </Text>
+                <Text style={[styles.reviewLabel, { color: palette.text.secondary }]}>
+                  Completed
+                </Text>
+              </View>
+            </View>
           )}
         </View>
 
@@ -432,5 +511,26 @@ const styles = StyleSheet.create({
   },
   chevron: {
     marginLeft: spacing[2],
+  },
+  reviewMetricsGrid: {
+    display: 'flex',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing[3],
+  },
+  reviewMetric: {
+    flex: 1,
+    minWidth: '45%',
+    alignItems: 'center',
+  },
+  reviewValue: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+  },
+  reviewLabel: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.medium,
+    marginTop: spacing[1],
+    textAlign: 'center',
   },
 });

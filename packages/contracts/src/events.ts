@@ -10,6 +10,8 @@ import { PlanSchema } from './plan';
 import { ReminderSchema } from './reminder';
 import { ReviewReportSchema } from './review';
 
+const ReviewPayloadSchema = ReviewReportSchema;
+
 export const HeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('lifeos.capture.recorded'),
@@ -34,7 +36,7 @@ export const HeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('lifeos.review.generated'),
     timestamp: z.string().min(1),
-    payload: ReviewReportSchema,
+    payload: ReviewPayloadSchema,
   }),
 ]);
 
