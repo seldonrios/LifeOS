@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 
 import boxen from 'boxen';
 import chalk from 'chalk';
+import Table from 'cli-table3';
 import { Command, CommanderError } from 'commander';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
@@ -4407,24 +4408,75 @@ export async function runCaptureCommand(
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
 
   try {
+    const currentTime = now();
+    const graph = await client.loadGraph();
+    const duplicate = (graph.captureEntries ?? []).find((captureEntry) => {
+      if (captureEntry.content !== options.text || captureEntry.source !== 'cli') {
+        return false;
+      }
+      const capturedAtMs = new Date(captureEntry.capturedAt).getTime();
+      if (!Number.isFinite(capturedAtMs)) {
+        return false;
+      }
+      const ageMs = currentTime.getTime() - capturedAtMs;
+      return ageMs >= 0 && ageMs <= 60_000;
+    });
+
+    if (duplicate) {
+      if (options.outputJson) {
+        writeStdout(
+          `${JSON.stringify(
+            {
+              id: duplicate.id,
+              status: duplicate.status,
+              content: duplicate.content,
+              capturedAt: duplicate.capturedAt,
+            },
+            null,
+            2,
+          )}\n`,
+        );
+      } else {
+        writeStdout(
+          `${chalk.green('Captured:')} ${duplicate.content} (id: ${duplicate.id.slice(0, 8)})\n`,
+        );
+      }
+      return 0;
+    }
+
     const entry: CaptureEntry = CaptureEntrySchema.parse({
       id: randomUUID(),
       content: options.text,
       type: options.type === 'voice' ? 'voice' : 'text',
-      capturedAt: now().toISOString(),
+      capturedAt: currentTime.toISOString(),
       source: 'cli',
       tags: [],
       status: 'pending',
     });
     await client.appendCaptureEntry(entry);
     if (options.outputJson) {
-      writeStdout(`${JSON.stringify(entry, null, 2)}\n`);
+      writeStdout(
+        `${JSON.stringify(
+          {
+            id: entry.id,
+            status: entry.status,
+            content: entry.content,
+            capturedAt: entry.capturedAt,
+          },
+          null,
+          2,
+        )}\n`,
+      );
     } else {
       writeStdout(`${chalk.green('Captured:')} ${entry.content} (id: ${entry.id.slice(0, 8)})\n`);
     }
     return 0;
   } catch (error: unknown) {
-    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    const friendly = toFriendlyCliError(error, {
+      command: 'capture',
+      graphPath: options.graphPath,
+    });
+    writeStderr(`ERR_CAPTURE_FAILED: ${friendly.message}\n`);
     return 1;
   }
 }
@@ -4442,6 +4494,34 @@ export async function runInboxCommand(
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
 
   try {
+    if (options.action === 'list') {
+      const graph = await client.loadGraph();
+      const pendingCaptures = (graph.captureEntries ?? []).filter((entry) => entry.status === 'pending');
+
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(pendingCaptures, null, 2)}\n`);
+      } else if (pendingCaptures.length === 0) {
+        writeStdout(`${chalk.green('✓ Inbox is clear')}\n`);
+      } else {
+        const table = new Table({
+          head: [chalk.cyan('ID'), chalk.cyan('Content'), chalk.cyan('Captured At')],
+          colWidths: [10, 54, 26],
+          wordWrap: true,
+        });
+
+        const truncateContent = (content: string): string =>
+          content.length > 50 ? `${content.slice(0, 47)}...` : content;
+
+        for (const entry of pendingCaptures) {
+          table.push([entry.id.slice(0, 8), truncateContent(entry.content), entry.capturedAt]);
+        }
+
+        writeStdout(`${table.toString()}\n`);
+      }
+
+      return 0;
+    }
+
     if (options.action === 'triage') {
       if (!options.captureId) {
         writeStderr(`${chalk.red.bold('Error:')} Capture entry ID is required for triage.\n`);
@@ -4452,6 +4532,36 @@ export async function runInboxCommand(
         writeStderr(`ERR_CAPTURE_NOT_FOUND: Capture entry "${options.captureId}" not found.\n`);
         return 1;
       }
+
+      if (options.triageAction === 'note') {
+        await client.appendNote({
+          title: captureEntry.content,
+          content: captureEntry.content,
+          tags: options.tag ?? [],
+        });
+        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        if (options.outputJson) {
+          writeStdout(
+            `${JSON.stringify({ captureEntry: { id: captureEntry.id, status: 'triaged' } }, null, 2)}\n`,
+          );
+        } else {
+          writeStdout(`${chalk.green('Triaged as note:')} "${captureEntry.content}"\n`);
+        }
+        return 0;
+      }
+
+      if (options.triageAction === 'defer') {
+        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        if (options.outputJson) {
+          writeStdout(
+            `${JSON.stringify({ captureEntry: { id: captureEntry.id, status: 'triaged' } }, null, 2)}\n`,
+          );
+        } else {
+          writeStdout(`Deferred: ${captureEntry.content}\n`);
+        }
+        return 0;
+      }
+
       const plannedAction: PlannedAction = PlannedActionSchema.parse({
         id: randomUUID(),
         title: captureEntry.content,
@@ -4613,19 +4723,20 @@ function buildProgram(
 
   program
     .command('inbox')
-    .description('Manage inbox items: triage')
-    .argument('[action]', 'triage', 'triage')
+    .description('Manage inbox items: list | triage')
+    .argument('[action]', 'list | triage', 'list')
     .argument('[id]', 'Capture entry ID for triage action')
     .option('--action <action>', 'Triage action: task | note | defer', 'task')
+    .option('--tag <tag...>', 'Tags for note action')
     .option('--due <date>', 'Due date for triaged task (YYYY-MM-DD)')
     .option('--json', 'Output result JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .action(async (action: string, id: string | undefined, commandOptions) => {
-      const normalizedAction = action === 'triage' ? 'triage' : null;
+      const normalizedAction = action === 'list' ? 'list' : action === 'triage' ? 'triage' : null;
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid inbox action "${action}". Use triage.\n`,
+          `${chalk.red.bold('Error:')} Invalid inbox action "${action}". Use list or triage.\n`,
         );
         return;
       }
@@ -4639,6 +4750,9 @@ function buildProgram(
           action: normalizedAction,
           ...(id !== undefined ? { captureId: id } : {}),
           triageAction,
+          ...(Array.isArray(commandOptions.tag)
+            ? { tag: commandOptions.tag as string[] }
+            : {}),
           ...(commandOptions.due ? { due: commandOptions.due as string } : {}),
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath as string,

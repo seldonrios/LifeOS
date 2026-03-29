@@ -229,9 +229,10 @@ export interface CaptureCommandOptions {
   graphPath: string;
 }
 export interface InboxCommandOptions {
-  action: 'triage';
+  action: 'list' | 'triage';
   captureId?: string;
   triageAction?: 'task' | 'note' | 'defer';
+  tag?: string[];
   due?: string;
   outputJson: boolean;
   graphPath: string;

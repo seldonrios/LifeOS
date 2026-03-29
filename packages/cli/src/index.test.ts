@@ -2599,3 +2599,34 @@ test('init --verbose emits [verbose] diagnostics to stderr', async () => {
   assert.match(output, /\[verbose\] base_cwd=/);
   assert.match(output, /\[verbose\] platform=/);
 });
+
+test('capture command returns ERR_CAPTURE_FAILED on graph append failure', async () => {
+  const stderr: string[] = [];
+  const baseDir = await mkdtemp(join(tmpdir(), 'lifeos-cli-capture-fail-'));
+  const graphPath = join(baseDir, 'life-graph.json');
+
+  const exitCode = await runCli(['capture', 'test content', '--graph-path', graphPath], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: new Date().toISOString(),
+            plans: [],
+            captureEntries: [],
+            calendarEvents: [],
+            researchResults: [],
+          };
+        },
+        async appendCaptureEntry() {
+          throw new Error('Database write failed');
+        },
+      }) as never,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_CAPTURE_FAILED:/);
+});

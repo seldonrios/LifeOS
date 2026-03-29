@@ -122,6 +122,36 @@ async function main(): Promise<void> {
     );
 
     // ------------------------------------------------------------------
+    // Stage 1.5 – capture idempotency (immediate duplicate with same content)
+    // ------------------------------------------------------------------
+    stages.push(
+      await runStage('capture idempotency', async () => {
+        const { exitCode, stdout, stderr } = await collectCli(
+          [
+            'capture',
+            'Plan team sync for Friday',
+            '--json',
+            '--graph-path',
+            graphPath,
+          ],
+          env,
+        );
+        assert(exitCode === 0, `Expected exit 0, got ${exitCode}`);
+        const result = JSON.parse(stdout) as {
+          id?: string;
+          status?: string;
+          content?: string;
+        };
+        assert(typeof result.id === 'string' && result.id.length > 0, 'id must be present');
+        assert(
+          result.id === captureId,
+          `Expected same id "${captureId}" on duplicate capture, got "${result.id}"`,
+        );
+        assert(result.status === 'pending', `Expected status "pending", got "${result.status}"`);
+      }),
+    );
+
+    // ------------------------------------------------------------------
     // Stage 2 – inbox triage
     // ------------------------------------------------------------------
     stages.push(
@@ -154,13 +184,14 @@ async function main(): Promise<void> {
           typeof result.plannedAction?.id === 'string' && result.plannedAction.id.length > 0,
           'plannedAction.id must be present',
         );
-        actionId = result.plannedAction.id as string;
-        actionTitle = result.plannedAction.title ?? '';
+        const plannedAction = result.plannedAction as { id: string; title?: string };
+        actionId = plannedAction.id;
+        actionTitle = plannedAction.title ?? '';
       }),
     );
 
     // ------------------------------------------------------------------
-    // Stage 3 – remind
+    // Stage 4 – remind
     // ------------------------------------------------------------------
     stages.push(
       await runStage('remind', async () => {
@@ -186,7 +217,7 @@ async function main(): Promise<void> {
     );
 
     // ------------------------------------------------------------------
-    // Stage 4 – task complete
+    // Stage 5 – task complete
     // ------------------------------------------------------------------
     stages.push(
       await runStage('task complete', async () => {
@@ -202,7 +233,7 @@ async function main(): Promise<void> {
     );
 
     // ------------------------------------------------------------------
-    // Stage 5 – review
+    // Stage 6 – review
     // ------------------------------------------------------------------
     stages.push(
       await runStage('review', async () => {
@@ -239,7 +270,7 @@ async function main(): Promise<void> {
     );
 
     // ------------------------------------------------------------------
-    // Stage 6 – failure mode (triage nonexistent capture)
+    // Stage 7 – failure mode (triage nonexistent capture)
     // ------------------------------------------------------------------
     stages.push(
       await runStage('failure mode (nonexistent capture)', async () => {
