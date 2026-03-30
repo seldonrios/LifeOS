@@ -700,13 +700,19 @@ test('generateReview daily loopSummary counts only items in the active day windo
   await client.appendCaptureEntry({
     id: 'capture_today',
     content: 'Close review loop',
+    type: 'text',
     capturedAt: now.toISOString(),
+    source: 'test',
+    tags: [],
     status: 'pending',
   });
   await client.appendCaptureEntry({
     id: 'capture_yesterday',
     content: 'Old capture',
+    type: 'text',
     capturedAt: yesterday.toISOString(),
+    source: 'test',
+    tags: [],
     status: 'pending',
   });
 
@@ -733,13 +739,13 @@ test('generateReview daily loopSummary counts only items in the active day windo
 
   await client.appendReminderEvent({
     id: 'reminder_today',
-    plannedActionId: 'action_today_todo',
+    actionId: 'action_today_todo',
     scheduledFor: now.toISOString(),
     status: 'fired',
   });
   await client.appendReminderEvent({
     id: 'reminder_yesterday',
-    plannedActionId: 'action_today_todo',
+    actionId: 'action_today_todo',
     scheduledFor: yesterday.toISOString(),
     status: 'fired',
   });
@@ -750,6 +756,37 @@ test('generateReview daily loopSummary counts only items in the active day windo
   assert.equal(insights.loopSummary.actionsDueToday, 1);
   assert.equal(insights.loopSummary.unacknowledgedReminders, 1);
   assert.deepEqual(insights.loopSummary.completedActions, ['Send update (action_today_done)']);
+});
+
+test('appendPlannedAction stamps completedAt for done actions used by loop summaries', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  await client.appendPlannedAction({
+    id: 'action_done_without_timestamp',
+    title: 'Close follow-up loop',
+    status: 'done',
+  });
+
+  const storedAction = await client.getPlannedAction('action_done_without_timestamp');
+  assert.equal(typeof storedAction?.completedAt, 'string');
+
+  const insights = await client.generateReview('daily');
+  assert.deepEqual(insights.loopSummary.completedActions, [
+    'Close follow-up loop (action_done_without_timestamp)',
+  ]);
 });
 
 test('generateReview weekly loopSummary aggregates across the trailing seven-day window', async () => {
@@ -779,13 +816,19 @@ test('generateReview weekly loopSummary aggregates across the trailing seven-day
   await client.appendCaptureEntry({
     id: 'capture_weekly_in',
     content: 'Follow up on budget',
+    type: 'text',
     capturedAt: withinWindow.toISOString(),
+    source: 'test',
+    tags: [],
     status: 'pending',
   });
   await client.appendCaptureEntry({
     id: 'capture_weekly_out',
     content: 'Too old',
+    type: 'text',
     capturedAt: outsideWindow.toISOString(),
+    source: 'test',
+    tags: [],
     status: 'pending',
   });
 
@@ -818,13 +861,13 @@ test('generateReview weekly loopSummary aggregates across the trailing seven-day
 
   await client.appendReminderEvent({
     id: 'reminder_weekly_in',
-    plannedActionId: 'action_weekly_due_in',
+    actionId: 'action_weekly_due_in',
     scheduledFor: withinWindow.toISOString(),
     status: 'fired',
   });
   await client.appendReminderEvent({
     id: 'reminder_weekly_out',
-    plannedActionId: 'action_weekly_due_in',
+    actionId: 'action_weekly_due_in',
     scheduledFor: outsideWindow.toISOString(),
     status: 'fired',
   });
@@ -838,6 +881,7 @@ test('generateReview weekly loopSummary aggregates across the trailing seven-day
     'Plan retrospective (action_weekly_done_in)',
   ]);
   assert.deepEqual(insights.loopSummary.suggestedNextActions, [
+    'Review sprint notes',
     'Follow up on overdue budget review',
   ]);
 });

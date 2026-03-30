@@ -4,7 +4,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 
 import { sdk } from './sdk';
 
-export type QueueActionType = 'capture' | 'approve' | 'reject' | 'mark_read';
+export type QueueActionType = 'capture' | 'approve' | 'reject' | 'mark_read' | 'complete_action';
 export type ConflictPolicy = 'last-write-wins' | 'fail-on-conflict';
 export type QueueItemStatus = 'pending' | 'syncing' | 'failed';
 
@@ -77,6 +77,14 @@ async function executeQueueItem(item: QueueItem): Promise<void> {
         throw new Error('Missing itemId for mark_read queue item.');
       }
       await markRead(itemId);
+      return;
+    }
+    case 'complete_action': {
+      const actionId = item.payload.actionId;
+      if (typeof actionId !== 'string' || actionId.length === 0) {
+        throw new Error('Missing actionId for complete_action queue item.');
+      }
+      await sdk.inbox.completeAction(actionId);
       return;
     }
     default:

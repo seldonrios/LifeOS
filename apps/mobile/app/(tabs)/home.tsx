@@ -16,7 +16,7 @@ import {
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 import { ErrorBanner } from '../../components/ErrorBanner';
-import { sdk } from '../../lib/sdk';
+import { sdk, getDailyReview } from '../../lib/sdk';
 import { useSessionStore } from '../../lib/session';
 
 type ReminderItemData = {
@@ -108,7 +108,7 @@ export default function HomeScreen() {
     refetch: refetchReview,
   } = useQuery({
     queryKey: ['review', 'daily'],
-    queryFn: () => sdk.review.getDailyReview(),
+    queryFn: () => getDailyReview(),
   });
 
   const openTasks = useMemo(

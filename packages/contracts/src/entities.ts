@@ -8,7 +8,9 @@ import { CaptureResultSchema } from './capture';
 import { InboxItemSchema } from './inbox';
 import { PlanSchema } from './plan';
 import { ReminderSchema } from './reminder';
-import { ReviewPayloadSchema } from './review';
+import { ReviewReportSchema } from './review';
+
+const ReviewPayloadSchema = ReviewReportSchema;
 
 export const HeroLoopEntitySchemas = {
   capture: CaptureResultSchema,

@@ -38,6 +38,14 @@ export interface GoalPlan {
   deadline?: string;
 }
 
+export interface ReviewLoopSummary {
+  pendingCaptures: number;
+  actionsDueToday: number;
+  unacknowledgedReminders: number;
+  completedActions: string[];
+  suggestedNextActions?: string[];
+}
+
 export interface ModuleRow {
   id: string;
   tier: string;
@@ -247,6 +255,20 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     } as T;
   }
 
+  if (command === 'task_complete') {
+    const taskId = payload?.taskId;
+    return { id: taskId, status: 'done' } as T;
+  }
+
+  if (command === 'review_daily') {
+    return {
+      pendingCaptures: 1,
+      actionsDueToday: 2,
+      unacknowledgedReminders: 0,
+      completedActions: [],
+    } as T;
+  }
+
   throw new Error(`No mock available for command: ${command}`);
 }
 
@@ -264,6 +286,14 @@ export async function listTasks(): Promise<Array<{ id: string; title: string; du
 
 export async function completeTask(taskId: string): Promise<SidecarResponse<{ taskId: string }>> {
   return invokeOrMock<SidecarResponse<{ taskId: string }>>('task_complete', { taskId });
+}
+
+export async function getDailyReview(): Promise<ReviewLoopSummary> {
+  return invokeOrMock<ReviewLoopSummary>('review_daily');
+}
+
+export async function completeAction(actionId: string): Promise<void> {
+  await completeTask(actionId);
 }
 
 export async function listModules(): Promise<ModuleRow[]> {

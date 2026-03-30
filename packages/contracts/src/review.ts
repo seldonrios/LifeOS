@@ -21,7 +21,7 @@ export const ReviewLoopSummarySchema = z
   .strict();
 export type ReviewLoopSummary = z.infer<typeof ReviewLoopSummarySchema>;
 
-export const ReviewPayloadSchema = z
+export const ReviewReportSchema = z
   .object({
     period: ReviewPeriodSchema,
     wins: z.array(z.string().min(1)),
@@ -32,7 +32,7 @@ export const ReviewPayloadSchema = z
     source: ReviewSourceSchema,
   })
   .strict();
-export type ReviewPayload = z.infer<typeof ReviewPayloadSchema>;
+export type ReviewReport = z.infer<typeof ReviewReportSchema>;
 
-export const ReviewReportSchema = ReviewPayloadSchema;
-export type ReviewReport = ReviewPayload;
+export const ReviewPayloadSchema = ReviewReportSchema;
+export type ReviewPayload = ReviewReport;

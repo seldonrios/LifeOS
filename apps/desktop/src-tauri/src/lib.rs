@@ -5,6 +5,7 @@ use commands::goal::{goal_run, task_complete, task_list};
 use commands::graph::graph_summary;
 use commands::marketplace::marketplace_list;
 use commands::modules::{module_disable, module_enable, modules_list};
+use commands::review::review_daily;
 use commands::settings::{settings_models, settings_read, settings_write};
 use commands::trust::trust_status;
 
@@ -16,6 +17,7 @@ pub fn run() {
             goal_run,
             task_list,
             task_complete,
+            review_daily,
             modules_list,
             module_enable,
             module_disable,

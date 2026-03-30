@@ -12,6 +12,7 @@ const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
     "goal_run",
     "task_list",
     "task_complete",
+    "review_daily",
     "modules_list",
     "module_enable",
     "module_disable",

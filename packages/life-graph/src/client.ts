@@ -1782,11 +1782,15 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
     },
 
     async appendPlannedAction(action: PlannedAction): Promise<void> {
-      PlannedActionSchema.parse(action);
+      const normalizedAction = { ...action } as PlannedAction;
+      if (normalizedAction.status === 'done' && !normalizedAction.completedAt) {
+        normalizedAction.completedAt = new Date().toISOString();
+      }
+      PlannedActionSchema.parse(normalizedAction);
       const graph = await manager.load(resolvedGraphPath);
       const existing = graph.plannedActions ?? [];
-      const updated = existing.filter((a) => a.id !== action.id);
-      updated.push(action);
+      const updated = existing.filter((a) => a.id !== normalizedAction.id);
+      updated.push(normalizedAction);
       await manager.save({ ...graph, plannedActions: updated }, resolvedGraphPath);
     },
 

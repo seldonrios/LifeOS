@@ -19,7 +19,7 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { queryClient } from '../../lib/query-client';
-import { sdk } from '../../lib/sdk';
+import { sdk, completeAction } from '../../lib/sdk';
 
 type ReminderItemData = {
   actionId?: string;
@@ -160,7 +160,7 @@ export default function InboxScreen() {
     removeItemOptimistically(item.id);
 
     try {
-      await sdk.inbox.completeAction(actionId);
+      await completeAction(actionId);
       // Sync all surfaces that render loop state.
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['inbox'] }),

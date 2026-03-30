@@ -8,6 +8,7 @@ import {
   runGoalCommand,
   runMarketplaceCommand,
   runModuleCommand,
+  runReviewCommand,
   runStatusCommand,
   runTaskCommand,
   runTrustCommand,
@@ -18,6 +19,7 @@ type RpcCommand =
   | 'goal_run'
   | 'task_list'
   | 'task_complete'
+  | 'review_daily'
   | 'modules_list'
   | 'module_enable'
   | 'module_disable'
@@ -89,6 +91,7 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'goal_run',
   'task_list',
   'task_complete',
+  'review_daily',
   'modules_list',
   'module_enable',
   'module_disable',
@@ -544,6 +547,25 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         throw new Error(output.stderr || 'task_complete failed');
       }
       return parseJsonOutput(output.stdout);
+    }
+
+    case 'review_daily': {
+      const output = await runCapture((dependencies) =>
+        runReviewCommand(
+          {
+            period: 'daily',
+            outputJson: true,
+            verbose: false,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'review_daily failed');
+      }
+      const result = parseJsonOutput<{ loopSummary?: unknown }>(output.stdout);
+      return result.loopSummary;
     }
 
     case 'modules_list': {
