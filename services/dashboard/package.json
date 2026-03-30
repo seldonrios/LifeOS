@@ -17,6 +17,7 @@
     "zod": "^4.1.11"
   },
   "devDependencies": {
-    "fastify": "^5.6.1"
+    "fastify": "^5.6.1",
+    "node-ical": "^0.25.6"
   }
 }

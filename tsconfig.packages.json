@@ -50,6 +50,9 @@
       "path": "./modules/email-summarizer"
     },
     {
+      "path": "./modules/household-calendar"
+    },
+    {
       "path": "./packages/personality"
     },
     {

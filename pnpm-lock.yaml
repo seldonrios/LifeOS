@@ -4,11 +4,6 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
-overrides:
-  '@lifeos/mobile>react': 18.3.1
-  '@lifeos/mobile>react-dom': 18.3.1
-  '@lifeos/mobile>react-native': 0.76.9
-
 importers:
 
   .:
@@ -220,6 +215,25 @@ importers:
       '@lifeos/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
+
+  modules/household-calendar:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/household-identity-module':
+        specifier: workspace:*
+        version: link:../household-identity
+      '@lifeos/module-sdk':
+        specifier: workspace:*
+        version: link:../../packages/module-sdk
+    devDependencies:
+      node-ical:
+        specifier: ^0.25.6
+        version: 0.25.6
 
   modules/household-chores:
     dependencies:
@@ -782,6 +796,40 @@ importers:
       '@lifeos/voice-core':
         specifier: workspace:*
         version: link:../voice-core
+
+  services/dashboard:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/household-chores-module':
+        specifier: workspace:*
+        version: link:../../modules/household-chores
+      '@lifeos/household-identity-module':
+        specifier: workspace:*
+        version: link:../../modules/household-identity
+      '@lifeos/household-shopping-module':
+        specifier: workspace:*
+        version: link:../../modules/household-shopping
+      '@lifeos/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      '@lifeos/service-runtime':
+        specifier: workspace:*
+        version: link:../../packages/service-runtime
+      zod:
+        specifier: ^4.1.11
+        version: 4.3.6
+    devDependencies:
+      fastify:
+        specifier: ^5.6.1
+        version: 5.8.4
+      node-ical:
+        specifier: ^0.25.6
+        version: 0.25.6
 
 packages:
 
@@ -2253,6 +2301,10 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
+
+  '@js-temporal/polyfill@0.5.1':
+    resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
+    engines: {node: '>=12'}
 
   '@lancedb/lancedb-darwin-arm64@0.27.1':
     resolution: {integrity: sha512-yF9N0Kyq2uIlfaoAoxBrCJ5M3cLRB+Iwx/uvwtt99UMZ5ZbUFXgMzJb8FYJwj/5voteal+53jQcbIbAH41MwUw==}
@@ -4836,6 +4888,9 @@ packages:
     resolution: {integrity: sha512-qQKT4zQxXl8lLwBtHMWwaTcGfFOZviOJet3Oy/xmGk2gZH677CJM9EvtfdSkgWcATZhj/55JZ0rmy3myCT5lsA==}
     hasBin: true
 
+  jsbi@4.3.2:
+    resolution: {integrity: sha512-9fqMSQbhJykSeii05nxKl4m6Eqn2P6rOlYiS+C5Dr/HPIU/7yZxu5qzbs40tgaFORiw2Amd0mirjxatXYMkIew==}
+
   jsc-android@250231.0.0:
     resolution: {integrity: sha512-rS46PvsjYmdmuz1OAWXY/1kCYG7pnf1TBqeTiOJr1iDz7s5DLxxC9n/ZMknLDxzYzNVfI7R95MH10emSSG1Wuw==}
 
@@ -5436,6 +5491,10 @@ packages:
   node-forge@1.4.0:
     resolution: {integrity: sha512-LarFH0+6VfriEhqMMcLX2F7SwSXeWwnEAJEsYm5QKWchiVYVvJyV9v7UDvUv+w5HO23ZpQTXDv/GxdDdMyOuoQ==}
     engines: {node: '>= 6.13.0'}
+
+  node-ical@0.25.6:
+    resolution: {integrity: sha512-Wo3GSBGYUNkcxOjHhevKTGa/+eB7ZwNLCq50h/eTX/YHSDZz1nT4KzXArO455CGHLD68gc5vw3nevqWQpOjjLQ==}
+    engines: {node: '>=18'}
 
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
@@ -6056,6 +6115,9 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
+  rrule-temporal@1.5.1:
+    resolution: {integrity: sha512-mV82lZ7OzMOXX5g+SCR8FWRMSvhTnPSznjQ2Vguezjz1nEPEv/Ap/Z/FsIZ/AxA15M9X99m05911/MCXFY+FsA==}
+
   run-async@4.0.6:
     resolution: {integrity: sha512-IoDlSLTs3Yq593mb3ZoKWKXMNu3UpObxhgA/Xuid5p4bbfi2jdY1Hj0m1K+0/tEuQTxIGMhQDqGjKb7RuxGpAQ==}
     engines: {node: '>=0.12.0'}
@@ -6436,6 +6498,12 @@ packages:
   temp@0.8.4:
     resolution: {integrity: sha512-s0ZZzd0BzYv5tLSptZooSjK8oj6C+c19p7Vqta9+6NPOf7r+fxq0cJe6/oN4LTC79sy5NY8ucOJNgwsKCSbfqg==}
     engines: {node: '>=6.0.0'}
+
+  temporal-polyfill@0.3.2:
+    resolution: {integrity: sha512-TzHthD/heRK947GNiSu3Y5gSPpeUDH34+LESnfsq8bqpFhsB79HFBX8+Z834IVX68P3EUyRPZK5bL/1fh437Eg==}
+
+  temporal-spec@0.3.1:
+    resolution: {integrity: sha512-B4TUhezh9knfSIMwt7RVggApDRJZo73uZdj8AacL2mZ8RP5KtLianh2MXxL06GN9ESYiIsiuoLQhgVfwe55Yhw==}
 
   tempy@0.7.1:
     resolution: {integrity: sha512-vXPxwOyaNVi9nyczO16mxmHGpl6ASC5/TVhRRHpqeYHvKQm58EaWNvZXxAhR0lYYnBOQFjXjhzeLsaXdjxLjRg==}
@@ -8907,6 +8975,10 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@js-temporal/polyfill@0.5.1':
+    dependencies:
+      jsbi: 4.3.2
 
   '@lancedb/lancedb-darwin-arm64@0.27.1':
     optional: true
@@ -11732,6 +11804,8 @@ snapshots:
     dependencies:
       argparse: 2.0.1
 
+  jsbi@4.3.2: {}
+
   jsc-android@250231.0.0: {}
 
   jsc-safe-url@0.2.4: {}
@@ -12388,6 +12462,11 @@ snapshots:
       whatwg-url: 5.0.0
 
   node-forge@1.4.0: {}
+
+  node-ical@0.25.6:
+    dependencies:
+      rrule-temporal: 1.5.1
+      temporal-polyfill: 0.3.2
 
   node-int64@0.4.0: {}
 
@@ -13076,6 +13155,10 @@ snapshots:
       '@rolldown/binding-win32-arm64-msvc': 1.0.0-rc.12
       '@rolldown/binding-win32-x64-msvc': 1.0.0-rc.12
 
+  rrule-temporal@1.5.1:
+    dependencies:
+      '@js-temporal/polyfill': 0.5.1
+
   run-async@4.0.6: {}
 
   run-parallel@1.2.0:
@@ -13483,6 +13566,12 @@ snapshots:
   temp@0.8.4:
     dependencies:
       rimraf: 2.6.3
+
+  temporal-polyfill@0.3.2:
+    dependencies:
+      temporal-spec: 0.3.1
+
+  temporal-spec@0.3.1: {}
 
   tempy@0.7.1:
     dependencies:

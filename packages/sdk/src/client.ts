@@ -359,6 +359,24 @@ interface ChoreAssignmentRow {
   status: string;
 }
 
+interface CalendarRow {
+  id: string;
+  name: string;
+  color: string;
+}
+
+interface CalendarEventRow {
+  id: string;
+  title: string;
+  startAt: string;
+  endAt: string;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+  recurrenceRule: string | null;
+  reminderAt: string | null;
+  attendeeUserIds: string[];
+  calendarColor: string;
+}
+
 interface ReminderRow {
   id: string;
   household_id: string;
@@ -505,6 +523,112 @@ class HouseholdNamespace {
         this.config.getAccessToken,
         this.config,
       );
+    },
+  };
+
+  readonly calendar = {
+    list: async (householdId: string): Promise<CalendarRow[]> => {
+      const response = await sendHttpRequest<CalendarRow[]>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/calendars`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    events: async (
+      householdId: string,
+      calendarId: string,
+      from?: string,
+      to?: string,
+    ): Promise<CalendarEventRow[]> => {
+      const queryParams = new URLSearchParams();
+      if (from) {
+        queryParams.set('from', from);
+      }
+      if (to) {
+        queryParams.set('to', to);
+      }
+
+      const queryString = queryParams.toString();
+      const url =
+        queryString.length > 0
+          ? `${this.config.baseUrl}/api/households/${householdId}/calendars/${calendarId}/events?${queryString}`
+          : `${this.config.baseUrl}/api/households/${householdId}/calendars/${calendarId}/events`;
+
+      const response = await sendHttpRequest<CalendarEventRow[]>(
+        {
+          url,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    createEvent: async (
+      householdId: string,
+      calendarId: string,
+      event: {
+        title: string;
+        startAt: string;
+        endAt: string;
+        status?: 'confirmed' | 'tentative' | 'cancelled';
+        recurrenceRule?: string;
+        reminderAt?: string;
+        attendeeUserIds: string[];
+      },
+    ): Promise<CalendarEventRow> => {
+      const response = await sendHttpRequest<CalendarEventRow>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/calendars/${calendarId}/events`,
+          method: 'POST',
+          body: event,
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    updateEvent: async (
+      householdId: string,
+      calendarId: string,
+      eventId: string,
+      patch: {
+        title?: string;
+        startAt?: string;
+        endAt?: string;
+        status?: 'confirmed' | 'tentative' | 'cancelled';
+      },
+    ): Promise<CalendarEventRow> => {
+      const response = await sendHttpRequest<CalendarEventRow>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/calendars/${calendarId}/events/${eventId}`,
+          method: 'PATCH',
+          body: patch,
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    exportIcs: async (householdId: string, calendarId: string): Promise<string> => {
+      const response = await sendHttpRequest<string>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/calendars/${calendarId}/events.ics`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data as string;
     },
   };
 

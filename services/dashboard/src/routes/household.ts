@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 
 import {
+  HouseholdCalendarEventCreatedSchema,
   HouseholdChoreAssignedSchema,
   HouseholdChoreCompletedSchema,
   HouseholdAddShoppingItemRequestSchema,
@@ -22,6 +23,11 @@ import {
 } from '@lifeos/contracts';
 import { type BaseEvent, type ManagedEventBus, Topics } from '@lifeos/event-bus';
 import {
+  type CalendarPublishContext,
+  generateIcs,
+  publishCalendarEventCreated,
+} from '../../../../modules/household-calendar/src/index';
+import {
   publishChoreAssigned,
   publishChoreCompleted,
   type ChorePublishContext,
@@ -33,6 +39,7 @@ import {
 } from '../../../../modules/household-shopping/src/index';
 import {
   HouseholdGraphClient,
+  InvalidAttendeeError,
   InvalidShoppingItemTransitionError,
   canPerform,
   generateInviteExpiry,
@@ -69,6 +76,22 @@ function isZodLikeError(error: unknown): error is { issues: unknown[] } {
   );
 }
 
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+function normalizeCalendarRangeFilter(value: string, boundary: 'start' | 'end'): string {
+  if (DATE_ONLY_PATTERN.test(value)) {
+    const suffix = boundary === 'start' ? 'T00:00:00.000Z' : 'T23:59:59.999Z';
+    return `${value}${suffix}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error('Calendar date filters must be valid ISO dates or datetimes');
+  }
+
+  return parsed.toISOString();
+}
+
 async function requireMember(
   db: HouseholdGraphClient,
   householdId: string,
@@ -97,6 +120,11 @@ function replyError(reply: { status: (code: number) => { send: (body: unknown) =
   }
 
   if (error instanceof InvalidShoppingItemTransitionError) {
+    reply.status(400).send({ error: (error as Error).message });
+    return;
+  }
+
+  if (error instanceof InvalidAttendeeError) {
     reply.status(400).send({ error: (error as Error).message });
     return;
   }
@@ -187,6 +215,38 @@ function createShoppingPublishContext(
   actorId: string,
   traceId: string,
 ): ShoppingPublishContext {
+  return {
+    async publish<T extends Record<string, unknown>>(
+      topic: string,
+      data: T,
+      source = 'dashboard-service',
+    ): Promise<BaseEvent<T>> {
+      const event: BaseEvent<T> = {
+        id: randomUUID(),
+        type: topic,
+        timestamp: new Date().toISOString(),
+        source,
+        version: '1',
+        data,
+        metadata: {
+          household_id: householdId,
+          actor_id: actorId,
+          trace_id: traceId,
+        },
+      };
+
+      await eventBus.publish(topic, event);
+      return event;
+    },
+  };
+}
+
+function createCalendarPublishContext(
+  eventBus: ManagedEventBus,
+  householdId: string,
+  actorId: string,
+  traceId: string,
+): CalendarPublishContext {
   return {
     async publish<T extends Record<string, unknown>>(
       topic: string,
@@ -501,6 +561,228 @@ export function registerHouseholdRoutes(
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       db.clearPurchasedItems(params.id, params.listId);
       reply.status(204).send();
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/calendars', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      reply.status(200).send(db.listCalendars(params.id));
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/calendars', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const body = z
+        .object({
+          name: z.string().min(1),
+          color: z.string().min(1),
+        })
+        .parse(request.body);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const calendar = db.createCalendar(params.id, body.name, body.color);
+      reply.status(201).send(calendar);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/calendars/:calendarId/events', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          calendarId: z.string().min(1),
+        })
+        .parse(request.params);
+      const query = z
+        .object({
+          from: z.string().min(1).optional(),
+          to: z.string().min(1).optional(),
+        })
+        .parse(request.query);
+      const from = query.from ? normalizeCalendarRangeFilter(query.from, 'start') : undefined;
+      const to = query.to ? normalizeCalendarRangeFilter(query.to, 'end') : undefined;
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const events = db.listEvents(params.id, params.calendarId, from, to).map((row) => ({
+        id: row.id,
+        title: row.title,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        status: row.status,
+        recurrenceRule: row.recurrence_rule,
+        reminderAt: row.reminder_at,
+        attendeeUserIds: JSON.parse(row.attendee_user_ids_json) as string[],
+        calendarColor: row.calendar_color,
+      }));
+      reply.status(200).send(events);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/calendars/:calendarId/events', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          calendarId: z.string().min(1),
+        })
+        .parse(request.params);
+      const body = z
+        .object({
+          title: z.string().min(1),
+          startAt: z.string().datetime(),
+          endAt: z.string().datetime(),
+          status: z.enum(['confirmed', 'tentative', 'cancelled']).default('confirmed'),
+          recurrenceRule: z.string().optional(),
+          reminderAt: z.string().datetime().optional(),
+          attendeeUserIds: z.array(z.string().min(1)),
+        })
+        .parse(request.body);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const event = db.createEvent(
+        params.calendarId,
+        params.id,
+        body.title,
+        body.startAt,
+        body.endAt,
+        body.status,
+        body.recurrenceRule ?? null,
+        body.reminderAt ?? null,
+        body.attendeeUserIds,
+      );
+      const calendar = db.getCalendar(params.id, params.calendarId);
+      reply.status(201).send({
+        id: event.id,
+        title: event.title,
+        startAt: event.start_at,
+        endAt: event.end_at,
+        status: event.status,
+        recurrenceRule: event.recurrence_rule,
+        reminderAt: event.reminder_at,
+        attendeeUserIds: JSON.parse(event.attendee_user_ids_json) as string[],
+        calendarColor: calendar?.color ?? '',
+      });
+
+      const eventData = HouseholdCalendarEventCreatedSchema.parse({
+        householdId: params.id,
+        calendarId: params.calendarId,
+        eventId: event.id,
+        title: event.title,
+        startAt: event.start_at,
+        endAt: event.end_at,
+        recurrenceRule: event.recurrence_rule ?? undefined,
+        reminderAt: event.reminder_at ?? undefined,
+        attendeeUserIds: JSON.parse(event.attendee_user_ids_json) as string[],
+      });
+      void publishCalendarEventCreated(
+        createCalendarPublishContext(eventBus, params.id, callerUserId, request.id),
+        eventData,
+      ).catch((error) => {
+        app.log.error(error);
+      });
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.patch('/api/households/:id/calendars/:calendarId/events/:eventId', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          calendarId: z.string().min(1),
+          eventId: z.string().min(1),
+        })
+        .parse(request.params);
+      const body = z
+        .object({
+          title: z.string().min(1).optional(),
+          startAt: z.string().datetime().optional(),
+          endAt: z.string().datetime().optional(),
+          status: z.enum(['confirmed', 'tentative', 'cancelled']).optional(),
+        })
+        .parse(request.body);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const event = db.updateEvent(params.id, params.calendarId, params.eventId, body);
+      const calendar = db.getCalendar(params.id, params.calendarId);
+      reply.status(200).send({
+        id: event.id,
+        title: event.title,
+        startAt: event.start_at,
+        endAt: event.end_at,
+        status: event.status,
+        recurrenceRule: event.recurrence_rule,
+        reminderAt: event.reminder_at,
+        attendeeUserIds: JSON.parse(event.attendee_user_ids_json) as string[],
+        calendarColor: calendar?.color ?? '',
+      });
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/calendars/:calendarId/events.ics', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          calendarId: z.string().min(1),
+        })
+        .parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const events = db.listEvents(params.id, params.calendarId);
+      const ics = generateIcs(events);
+      reply.header('Content-Type', 'text/calendar').status(200).send(ics);
     } catch (error) {
       replyError(reply, error);
     }

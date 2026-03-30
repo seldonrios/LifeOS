@@ -27,6 +27,13 @@ const migration002Path = resolve(
   '002_household_features.sql',
 );
 const migration002Sql = readFileSync(migration002Path, 'utf8');
+const migration003Path = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'migrations',
+  '003_calendar_events.sql',
+);
+const migration003Sql = readFileSync(migration003Path, 'utf8');
 
 function parseInviteExpiry(expiresAt: string): number {
   const expiresAtMs = new Date(expiresAt).getTime();
@@ -71,6 +78,29 @@ export interface ShoppingListRow {
   id: string;
   household_id: string;
   name: string;
+}
+
+export interface CalendarRow {
+  id: string;
+  household_id: string;
+  name: string;
+  color: string;
+}
+
+export interface CalendarEventRow {
+  id: string;
+  calendar_id: string;
+  title: string;
+  start_at: string;
+  end_at: string;
+  status: 'confirmed' | 'tentative' | 'cancelled';
+  recurrence_rule: string | null;
+  reminder_at: string | null;
+  attendee_user_ids_json: string;
+}
+
+export interface CalendarEventWithCalendarColorRow extends CalendarEventRow {
+  calendar_color: string;
 }
 
 export interface ChoreRow {
@@ -148,6 +178,15 @@ export class InvalidShoppingItemTransitionError extends Error {
   }
 }
 
+export class InvalidAttendeeError extends Error {
+  readonly code = 'INVALID_ATTENDEE';
+
+  constructor(attendeeUserIds: string[]) {
+    super(`Invalid attendee user ids: ${attendeeUserIds.join(', ')}`);
+    this.name = 'InvalidAttendeeError';
+  }
+}
+
 export class HouseholdGraphClient {
   private readonly db: Database.Database;
 
@@ -165,6 +204,14 @@ export class HouseholdGraphClient {
   initializeSchema(): void {
     this.db.exec(migrationSql);
     this.db.exec(migration002Sql);
+    try {
+      this.db.exec(migration003Sql);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/duplicate column name/i.test(message)) {
+        throw error;
+      }
+    }
     this.ensureFeatureSchema();
   }
 
@@ -183,6 +230,10 @@ export class HouseholdGraphClient {
     this.ensureColumn('chores', 'completed_at', 'TEXT');
     this.ensureColumn('chores', 'created_at', "TEXT DEFAULT ''");
 
+    this.ensureColumn('events', 'status', "TEXT NOT NULL DEFAULT 'confirmed'");
+    this.ensureColumn('events', 'attendee_user_ids_json', "TEXT NOT NULL DEFAULT '[]'");
+    this.ensureColumn('events', 'household_id', 'TEXT');
+
     this.db.exec(
       'CREATE INDEX IF NOT EXISTS idx_shopping_items_household_id ON shopping_items(household_id)',
     );
@@ -190,6 +241,8 @@ export class HouseholdGraphClient {
       'CREATE INDEX IF NOT EXISTS idx_shopping_items_list_id ON shopping_items(list_id)',
     );
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_chores_household_id ON chores(household_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at)');
   }
 
   private ensureColumn(tableName: string, columnName: string, columnDefinition: string): void {
@@ -520,6 +573,180 @@ export class HouseholdGraphClient {
     return member ?? null;
   }
 
+  createCalendar(householdId: string, name: string, color: string): CalendarRow {
+    const id = randomUUID();
+
+    this.db
+      .prepare(
+        `INSERT INTO household_calendars
+          (id, household_id, name, color)
+         VALUES (?, ?, ?, ?)`,
+      )
+      .run(id, householdId, name, color);
+
+    return this.getCalendar(householdId, id) as CalendarRow;
+  }
+
+  listCalendars(householdId: string): CalendarRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, household_id, name, color
+         FROM household_calendars
+         WHERE household_id = ?
+         ORDER BY name ASC`,
+      )
+      .all(householdId) as CalendarRow[];
+  }
+
+  getCalendar(householdId: string, calendarId: string): CalendarRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT id, household_id, name, color
+         FROM household_calendars
+         WHERE household_id = ? AND id = ?`,
+      )
+      .get(householdId, calendarId) as CalendarRow | undefined;
+    return row ?? null;
+  }
+
+  createEvent(
+    calendarId: string,
+    householdId: string,
+    title: string,
+    startAt: string,
+    endAt: string,
+    status: 'confirmed' | 'tentative' | 'cancelled',
+    recurrenceRule: string | null,
+    reminderAt: string | null,
+    attendeeUserIds: string[],
+  ): CalendarEventRow {
+    const calendar = this.getCalendar(householdId, calendarId);
+    if (!calendar) {
+      throw new Error('Calendar not found');
+    }
+
+    const uniqueAttendeeUserIds = [...new Set(attendeeUserIds)];
+    this.assertValidActiveAttendees(householdId, uniqueAttendeeUserIds);
+
+    const id = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO events
+          (id, calendar_id, household_id, title, start_at, end_at, status, recurrence_rule, reminder_at, attendee_user_ids_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        calendarId,
+        householdId,
+        title,
+        startAt,
+        endAt,
+        status,
+        recurrenceRule,
+        reminderAt,
+        JSON.stringify(uniqueAttendeeUserIds),
+      );
+
+    return this.getEvent(householdId, calendarId, id) as CalendarEventRow;
+  }
+
+  listEvents(
+    householdId: string,
+    calendarId: string,
+    from?: string,
+    to?: string,
+  ): CalendarEventWithCalendarColorRow[] {
+    const filters: string[] = ['e.household_id = ?', 'e.calendar_id = ?'];
+    const args: string[] = [householdId, calendarId];
+
+    if (from) {
+      filters.push('e.start_at >= ?');
+      args.push(from);
+    }
+    if (to) {
+      filters.push('e.start_at <= ?');
+      args.push(to);
+    }
+
+    return this.db
+      .prepare(
+        `SELECT e.id, e.calendar_id, e.title, e.start_at, e.end_at, e.status,
+                e.recurrence_rule, e.reminder_at, e.attendee_user_ids_json,
+                c.color AS calendar_color
+         FROM events e
+         INNER JOIN household_calendars c ON c.id = e.calendar_id
+         WHERE ${filters.join(' AND ')}
+         ORDER BY e.start_at ASC`,
+      )
+      .all(...args) as CalendarEventWithCalendarColorRow[];
+  }
+
+  getEvent(householdId: string, calendarId: string, eventId: string): CalendarEventRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT e.id, e.calendar_id, e.title, e.start_at, e.end_at, e.status,
+                e.recurrence_rule, e.reminder_at, e.attendee_user_ids_json
+         FROM events e
+         INNER JOIN household_calendars c ON c.id = e.calendar_id
+         WHERE e.id = ? AND e.calendar_id = ? AND e.household_id = ? AND c.household_id = ?`,
+      )
+      .get(eventId, calendarId, householdId, householdId) as CalendarEventRow | undefined;
+    return row ?? null;
+  }
+
+  updateEvent(
+    householdId: string,
+    calendarId: string,
+    eventId: string,
+    patch: {
+      title?: string;
+      startAt?: string;
+      endAt?: string;
+      status?: 'confirmed' | 'tentative' | 'cancelled';
+    },
+  ): CalendarEventRow {
+    const existing = this.getEvent(householdId, calendarId, eventId);
+    if (!existing) {
+      throw new Error('Event not found');
+    }
+
+    const updates: string[] = [];
+    const args: string[] = [];
+
+    if (patch.title !== undefined) {
+      updates.push('title = ?');
+      args.push(patch.title);
+    }
+    if (patch.startAt !== undefined) {
+      updates.push('start_at = ?');
+      args.push(patch.startAt);
+    }
+    if (patch.endAt !== undefined) {
+      updates.push('end_at = ?');
+      args.push(patch.endAt);
+    }
+    if (patch.status !== undefined) {
+      updates.push('status = ?');
+      args.push(patch.status);
+    }
+
+    if (updates.length === 0) {
+      return existing;
+    }
+
+    args.push(eventId, calendarId, householdId);
+    this.db
+      .prepare(
+        `UPDATE events
+         SET ${updates.join(', ')}
+         WHERE id = ? AND calendar_id = ? AND household_id = ?`,
+      )
+      .run(...args);
+
+    return this.getEvent(householdId, calendarId, eventId) as CalendarEventRow;
+  }
+
   addShoppingItem(
     householdId: string,
     title: string,
@@ -844,6 +1071,29 @@ export class HouseholdGraphClient {
     if (member.status !== 'active') {
       throw new Error('Invalid assignee status');
     }
+  }
+
+  private assertValidActiveAttendees(householdId: string, attendeeUserIds: string[]): void {
+    if (attendeeUserIds.length === 0) {
+      return;
+    }
+
+    const placeholders = attendeeUserIds.map(() => '?').join(', ');
+    const rows = this.db
+      .prepare(
+        `SELECT user_id
+         FROM household_members
+         WHERE household_id = ? AND status = 'active' AND user_id IN (${placeholders})`,
+      )
+      .all(householdId, ...attendeeUserIds) as Array<{ user_id: string }>;
+
+    if (rows.length === attendeeUserIds.length) {
+      return;
+    }
+
+    const activeAttendees = new Set(rows.map((row) => row.user_id));
+    const invalidAttendees = attendeeUserIds.filter((userId) => !activeAttendees.has(userId));
+    throw new InvalidAttendeeError(invalidAttendees);
   }
 
   private createChoreAssignmentRecord(

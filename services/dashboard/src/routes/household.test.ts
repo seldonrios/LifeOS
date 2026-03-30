@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import ical from 'node-ical';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
@@ -1295,6 +1296,166 @@ test('POST /api/households/:id/notes child role returns 403', async () => {
     });
 
     assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/calendars/:calendarId/events supports from/to filters and response shape', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const calendar = db.createCalendar(householdId, 'Family', '#22aa88');
+    db.createEvent(
+      calendar.id,
+      householdId,
+      'In range',
+      '2026-04-10T10:00:00.000Z',
+      '2026-04-10T11:00:00.000Z',
+      'confirmed',
+      null,
+      null,
+      ['admin-1'],
+    );
+    db.createEvent(
+      calendar.id,
+      householdId,
+      'Out of range',
+      '2026-05-10T10:00:00.000Z',
+      '2026-05-10T11:00:00.000Z',
+      'confirmed',
+      null,
+      null,
+      ['admin-1'],
+    );
+    db.createEvent(
+      calendar.id,
+      householdId,
+      'Inclusive end day',
+      '2026-04-30T23:00:00.000Z',
+      '2026-04-30T23:30:00.000Z',
+      'confirmed',
+      null,
+      null,
+      ['admin-1'],
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/calendars/${calendar.id}/events?from=2026-04-01&to=2026-04-30`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.ok(Array.isArray(body));
+    assert.equal(body.length, 2);
+    assert.equal(body[0]?.title, 'In range');
+    assert.equal(typeof body[0]?.startAt, 'string');
+    assert.equal(typeof body[0]?.endAt, 'string');
+    assert.equal(body[0]?.status, 'confirmed');
+    assert.equal(body[0]?.recurrenceRule, null);
+    assert.equal(body[0]?.reminderAt, null);
+    assert.deepEqual(body[0]?.attendeeUserIds, ['admin-1']);
+    assert.equal(body[0]?.calendarColor, '#22aa88');
+    assert.equal(body[1]?.title, 'Inclusive end day');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/calendars/:calendarId/events returns 201 with valid attendee', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const calendar = db.createCalendar(householdId, 'Family', '#3366ff');
+    activateMember(db, householdId, 'adult-2', 'Adult', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/calendars/${calendar.id}/events`,
+      headers: { authorization: adminAuth },
+      payload: {
+        title: 'Planning meeting',
+        startAt: '2026-04-15T09:00:00.000Z',
+        endAt: '2026-04-15T09:30:00.000Z',
+        attendeeUserIds: ['admin-1', 'adult-2'],
+      },
+    });
+
+    assert.equal(response.statusCode, 201, response.body);
+    const body = response.json();
+    assert.equal(body.title, 'Planning meeting');
+    assert.equal(body.status, 'confirmed');
+    assert.deepEqual(body.attendeeUserIds, ['admin-1', 'adult-2']);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/calendars/:calendarId/events returns 400 with non-member attendee', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const calendar = db.createCalendar(householdId, 'Family', '#8844cc');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/calendars/${calendar.id}/events`,
+      headers: { authorization: adminAuth },
+      payload: {
+        title: 'Bad attendee',
+        startAt: '2026-04-16T09:00:00.000Z',
+        endAt: '2026-04-16T10:00:00.000Z',
+        attendeeUserIds: ['missing-user'],
+      },
+    });
+
+    assert.equal(response.statusCode, 400, response.body);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/calendars/:calendarId/events.ics returns text/calendar VCALENDAR body', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const calendar = db.createCalendar(householdId, 'Family', '#ff6600');
+    db.createEvent(
+      calendar.id,
+      householdId,
+      'Calendar export test',
+      '2026-04-20T10:00:00.000Z',
+      '2026-04-20T11:00:00.000Z',
+      'confirmed',
+      'FREQ=WEEKLY;BYDAY=MO',
+      '2026-04-20T09:45:00.000Z',
+      ['admin-1'],
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/calendars/${calendar.id}/events.ics`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    assert.match(response.headers['content-type'] ?? '', /^text\/calendar/i);
+    const parsed = ical.parseICS(response.body);
+    const event = Object.values(parsed).find((entry) => entry?.type === 'VEVENT');
+
+    assert.ok(event);
+    assert.equal(event.summary, 'Calendar export test');
+    assert.ok(event.dtstamp instanceof Date);
+    assert.ok(event.rrule);
+    assert.match(event.rrule?.toString() ?? '', /BYDAY=MO/);
+    assert.ok(Array.isArray(event.alarms));
+    assert.equal(event.alarms?.length, 1);
   } finally {
     await cleanup();
   }

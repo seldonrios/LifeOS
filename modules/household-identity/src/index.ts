@@ -2,7 +2,11 @@ import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-sdk';
 import type { AuditLogEntry } from '@lifeos/contracts';
 import { createEventBusClient, type ManagedEventBus } from '@lifeos/event-bus';
 
-import { HouseholdGraphClient, InvalidShoppingItemTransitionError } from './client';
+import {
+  HouseholdGraphClient,
+  InvalidAttendeeError,
+  InvalidShoppingItemTransitionError,
+} from './client';
 import { registerAuditInterceptor } from './audit-interceptor';
 import { generateInviteExpiry, generateInviteToken, isInviteExpired } from './invites';
 import { canPerform } from './roles';
@@ -38,6 +42,7 @@ export const householdIdentityModule: LifeOSModule = {
 
 export {
   HouseholdGraphClient,
+  InvalidAttendeeError,
   InvalidShoppingItemTransitionError,
   registerAuditInterceptor,
   canPerform,

@@ -1,0 +1,19 @@
+{
+  "name": "household-calendar",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "household calendar event publishing and ICS export helpers",
+  "permissions": {
+    "graph": ["read"],
+    "network": [],
+    "voice": [],
+    "events": ["publish:lifeos.household.calendar.event.created"]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/cli@>=0.1.0 <0.2.0", "@lifeos/module-sdk@>=0.1.0 <0.2.0"],
+  "category": "household",
+  "tags": ["household", "calendar", "ics"]
+}
