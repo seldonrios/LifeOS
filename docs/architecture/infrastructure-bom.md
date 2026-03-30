@@ -19,12 +19,12 @@ Prices are representative list prices (B&H, vendor MSRPs) as of 2026. Adjust by 
 
 ### Hardware
 
-| Component | Model | Notes | Price |
-|-----------|-------|-------|-------|
-| **Primary Host** | Beelink EQR6 (AMD Ryzen 5 6600U, 24GB LPDDR5, 500GB SSD) | x86 always-on, dual M.2 PCIe 4.0 up to 8TB, 85W PSU | $509.00 |
-| **UPS** | APC BX1500M (1500VA / 900W, 10 outlets) | Protects against brief power loss | $189.99 |
-| **Backup Drive** | WD Elements Desktop 8TB (external HDD) | Offline rotation backup | $209.99 |
-| | | **Estimated Total** | **$908.98** |
+| Component        | Model                                                    | Notes                                               | Price       |
+| ---------------- | -------------------------------------------------------- | --------------------------------------------------- | ----------- |
+| **Primary Host** | Beelink EQR6 (AMD Ryzen 5 6600U, 24GB LPDDR5, 500GB SSD) | x86 always-on, dual M.2 PCIe 4.0 up to 8TB, 85W PSU | $509.00     |
+| **UPS**          | APC BX1500M (1500VA / 900W, 10 outlets)                  | Protects against brief power loss                   | $189.99     |
+| **Backup Drive** | WD Elements Desktop 8TB (external HDD)                   | Offline rotation backup                             | $209.99     |
+|                  |                                                          | **Estimated Total**                                 | **$908.98** |
 
 ### Why This Tier
 
@@ -37,6 +37,7 @@ This is the **cheapest build I'd still call "real"**. It gives you:
 - Separate backup disk for rotation off-site
 
 Cost savings come from:
+
 - Single mini PC (no NAS)
 - Bare UPS (no redundancy layer)
 - External HDD backup instead of NAS RAID
@@ -56,14 +57,14 @@ Cost savings come from:
 
 ### Hardware
 
-| Component | Model | Notes | Price |
-|-----------|-------|-------|-------|
-| **Primary Host** | MINISFORUM UM890 Pro (AMD Ryzen 9 8945HS, 64GB RAM, 1TB SSD) | Dual 2.5GbE, dual M.2 PCIe 4.0, Oculink, USB4, up to 96GB RAM | $1,135.00 |
-| **NAS / Online Backup** | Synology DS923+ (4-bay NAS) | Always-on, 10GbE & NVMe cache support, `>50TB` potential | $599.99 |
-| **NAS Drives** | 2 × WD Red Plus 8TB (B&H 2-pack) | RAID-optimized for NAS up to 8 bays | $399.98 |
-| **UPS** | APC BX1500M (1500VA / 900W) | Protects NAS + primary host | $189.99 |
-| **Off-Box Rotation Backup** | WD Elements Desktop 8TB (external HDD) | Rotate off-site monthly/quarterly | $209.99 |
-| | | **Estimated Total** | **$2,534.95** |
+| Component                   | Model                                                        | Notes                                                         | Price         |
+| --------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------- | ------------- |
+| **Primary Host**            | MINISFORUM UM890 Pro (AMD Ryzen 9 8945HS, 64GB RAM, 1TB SSD) | Dual 2.5GbE, dual M.2 PCIe 4.0, Oculink, USB4, up to 96GB RAM | $1,135.00     |
+| **NAS / Online Backup**     | Synology DS923+ (4-bay NAS)                                  | Always-on, 10GbE & NVMe cache support, `>50TB` potential      | $599.99       |
+| **NAS Drives**              | 2 × WD Red Plus 8TB (B&H 2-pack)                             | RAID-optimized for NAS up to 8 bays                           | $399.98       |
+| **UPS**                     | APC BX1500M (1500VA / 900W)                                  | Protects NAS + primary host                                   | $189.99       |
+| **Off-Box Rotation Backup** | WD Elements Desktop 8TB (external HDD)                       | Rotate off-site monthly/quarterly                             | $209.99       |
+|                             |                                                              | **Estimated Total**                                           | **$2,534.95** |
 
 ### Why This Is the Sweet Spot
 
@@ -79,6 +80,7 @@ This is **the tier I would actually buy first for LifeOS**:
 **Important nuance:** If your privacy goal is **local voice but not full local LLM inference**, this tier is often enough.
 
 Home Assistant's local voice docs report:
+
 - Whisper on a Raspberry Pi 4: ~8 seconds per request
 - Whisper on an Intel NUC: `<1 second`
 
@@ -101,14 +103,14 @@ This is a good signal that **local voice is much lighter than serious local mode
 
 ### Hardware
 
-| Component | Model | Notes | Price |
-|-----------|-------|-------|-------|
-| **Primary Host** | CLX SET Gaming Desktop (Intel Core Ultra 9 285K, 64GB DDR5, GeForce RTX 5070, 2TB NVMe, 4TB HDD) | Heavy compute for local models + agents, excellent cooling | $3,049.99 |
-| **NAS / Online Backup** | Synology DS923+ (4-bay NAS) | 10GbE, NVMe cache, always-on target | $599.99 |
-| **NAS Drives** | 4 × WD Red Plus 8TB (B&H 4-pack) | Full 4-bay RAID, near `50TB` usable | $799.96 |
-| **UPS** | APC BX1500M (1500VA / 900W) | Protects NAS + primary host | $189.99 |
-| **Off-Box Rotation Backup** | WD Elements Desktop 8TB (external HDD) | Rotate off-site | $209.99 |
-| | | **Estimated Total** | **$4,849.92** |
+| Component                   | Model                                                                                            | Notes                                                      | Price         |
+| --------------------------- | ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- | ------------- |
+| **Primary Host**            | CLX SET Gaming Desktop (Intel Core Ultra 9 285K, 64GB DDR5, GeForce RTX 5070, 2TB NVMe, 4TB HDD) | Heavy compute for local models + agents, excellent cooling | $3,049.99     |
+| **NAS / Online Backup**     | Synology DS923+ (4-bay NAS)                                                                      | 10GbE, NVMe cache, always-on target                        | $599.99       |
+| **NAS Drives**              | 4 × WD Red Plus 8TB (B&H 4-pack)                                                                 | Full 4-bay RAID, near `50TB` usable                        | $799.96       |
+| **UPS**                     | APC BX1500M (1500VA / 900W)                                                                      | Protects NAS + primary host                                | $189.99       |
+| **Off-Box Rotation Backup** | WD Elements Desktop 8TB (external HDD)                                                           | Rotate off-site                                            | $209.99       |
+|                             |                                                                                                  | **Estimated Total**                                        | **$4,849.92** |
 
 ### Why This Is the Local AI Tier
 
@@ -162,6 +164,157 @@ If you need to cut cost **within** a tier, cut in this order:
 4. **Do not overbuy local-AI hardware until local models are truly part of your plan**
 
 This keeps the system **professional and resilient** without forcing you into the most expensive tier too early.
+
+---
+
+## Migration Playbook: Budget -> Recommended (Minimal Downtime)
+
+This playbook assumes you are moving from:
+
+- Budget: one mini PC + UPS + external backup disk
+- To Recommended: stronger mini PC + Synology DS923+ + RAID + off-box rotation backup
+
+### Target Architecture After Migration
+
+- Primary compute: MINISFORUM UM890 (apps, API, workers, DB if still single-node)
+- NAS: DS923+ (online backups, file target, snapshots)
+- External drive: WD Elements (off-box rotation)
+
+### Downtime Goal
+
+- Planned downtime window: **10-30 minutes** for final data cutover
+- Service read-only/degraded mode before cutover: **optional but recommended**
+
+### Phase 0: Prep (No Downtime)
+
+1. Rack/power/network the DS923+ on UPS power.
+2. Install two WD Red Plus drives and configure RAID 1 + health monitoring.
+3. Create shared folders:
+
+- `lifeos-backups`
+- `lifeos-archives`
+- `lifeos-media` (optional)
+
+4. Enable NAS snapshots/retention policy (hourly short retention + daily long retention).
+5. Build the UM890 host image (OS hardening, Docker, compose, secrets tooling).
+6. Pin static DHCP leases or static IPs for old host, new host, and NAS.
+7. Lower DNS TTL for LifeOS endpoint(s) to `60` seconds at least 24h before cutover.
+
+### Phase 1: Baseline Backups and Restore Test (No Downtime)
+
+1. Run a full backup from Budget host to NAS (`lifeos-backups`).
+2. Copy latest backup set to external WD disk.
+3. Run a **test restore** on UM890 in an isolated network or alternate ports:
+
+- Restore DB snapshot
+- Start core services
+- Verify app/API health endpoints and one login flow
+
+4. Record measured restore time; this is your realistic rollback/recovery baseline.
+
+Exit criteria:
+
+- You can restore and boot a working stack on UM890 from backup alone.
+
+### Phase 2: Parallel Warmup on New Host (No Downtime)
+
+1. Deploy LifeOS compose stack on UM890 but keep it non-public (no production DNS yet).
+2. Configure secrets and environment parity with the Budget host.
+3. Mirror non-critical data continuously (attachments, exports, static files) from old host to NAS.
+4. Run smoke tests repeatedly on UM890:
+
+- Authentication
+- Core module load
+- DB connectivity
+- Queue/event bus health
+
+Exit criteria:
+
+- New host passes smoke checks for at least 24h while old host remains primary.
+
+### Phase 3: Cutover Rehearsal (No Downtime)
+
+1. Schedule a rehearsal window and execute the exact cutover sequence below without DNS switch.
+2. Time each step and create a run-sheet with owner + fallback action.
+3. Fix any step that exceeds expected time.
+
+Exit criteria:
+
+- Rehearsal completes inside target maintenance window.
+
+### Phase 4: Production Cutover (10-30 Minutes)
+
+1. Announce maintenance start and freeze writes (read-only mode if supported).
+2. Stop write-producing services on Budget host:
+
+- API write endpoints
+- background workers/schedulers
+
+3. Take final incremental backup (DB + stateful volumes) to NAS.
+4. Validate backup artifact integrity (checksums / backup tool verification).
+5. Restore final delta to UM890.
+6. Start core dependencies on UM890 (DB, queue/event bus, cache if used).
+7. Start LifeOS app/API/workers on UM890.
+8. Run production smoke checks:
+
+- Login/session creation
+- Read/write transaction (create note/task, then read back)
+- Module-loader startup diagnostics
+
+9. Switch traffic:
+
+- Update reverse proxy upstream to UM890 or
+- Move DNS A/AAAA record to UM890
+
+10. Keep Budget host powered but isolated from write traffic for rapid rollback.
+
+### Phase 5: Immediate Post-Cutover Validation (First 2 Hours)
+
+1. Watch logs and error rates continuously.
+2. Confirm scheduled jobs execute once (no duplicates).
+3. Verify sync clients (mobile/desktop) reconnect and complete one round-trip sync.
+4. Trigger one on-demand backup from UM890 to NAS.
+5. Create and verify off-box copy to external WD disk.
+
+Success criteria:
+
+- No critical errors for 2 hours
+- Backups complete successfully from new primary host
+- User workflows function normally
+
+### Rollback Plan (If Cutover Fails)
+
+Trigger rollback if any of these occur and cannot be fixed in 15 minutes:
+
+- Authentication failure for all users
+- Persistent DB migration/runtime errors
+- Data integrity mismatch on verification transactions
+
+Rollback steps:
+
+1. Stop UM890 public traffic.
+2. Repoint reverse proxy/DNS to Budget host.
+3. Re-enable write services on Budget host.
+4. Announce rollback completion.
+5. Preserve UM890 logs/artifacts for incident review.
+
+### Hardening After Successful Migration
+
+1. Keep Budget host as warm standby for 7-14 days.
+2. Add NAS snapshot replication and alerting (disk health, failed backups, UPS events).
+3. Document new RPO/RTO targets and validate monthly restore drills.
+4. Only then repurpose/decommission old hardware.
+
+### Practical Sequencing Rule
+
+To minimize downtime and risk, always migrate in this order:
+
+1. **Backup destination first** (NAS)
+2. **Restore confidence second** (test restore)
+3. **Compute cutover third** (new host)
+4. **Traffic switch last** (DNS/reverse proxy)
+
+This sequence keeps your rollback path open until the final step.
 
 ---
 
