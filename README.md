@@ -398,6 +398,23 @@ New to LifeOS? Start with one of these:
 - 📦 [Submit a community module](docs/community/works-with-lifeos-checklist.md)
   — build a module that improves one loop stage using only `@lifeos/module-sdk`
 
+Good first issues are a good fit when they:
+
+- improve one loop stage or one platform foundation area
+- have a clear user-visible outcome or docs gap to close
+- avoid broad architecture changes or cross-repo coordination
+- can be validated with a focused command, test, or docs update
+
+Recommended first contribution paths:
+
+- docs and onboarding: tighten `README.md`, `docs/SETUP.md`, or command help for first-run clarity
+- core loop CLI: improve `lifeos capture`, `lifeos inbox`, `lifeos remind`, or `lifeos review` behavior and evidence
+- community modules: add or refine a small local-first module with the marketplace checklist
+
+Before opening a PR, read [CONTRIBUTING.md](CONTRIBUTING.md) and state which loop stage your change improves. If you are proposing a new feature instead of implementing one, use the [feature request form](.github/ISSUE_TEMPLATE/feature_request.yml).
+
+If you want a lightweight map of where contributions are most useful, start with [docs/community/contributor-map.md](docs/community/contributor-map.md).
+
 Contribution scope: work should improve one loop stage (capture, inbox, plan, reminders, review) or the platform foundation. PRs that add breadth without improving loop reliability will be deferred to Phase 4.
 
 ## Project Direction

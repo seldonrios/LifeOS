@@ -33,17 +33,30 @@ pnpm --filter @lifeos/cli exec tsx --test src/index.test.ts
 
 Which loop stage does your change improve?
 
+Every issue and PR should name one primary loop stage or `Cross-cutting / Infrastructure`.
+If the work is cross-cutting, explain which daily user workflow becomes more dependable because of the change.
+
 Phase 3 accepts work that improves one of these stages:
 
-| Stage | Examples |
-|---|---|
-| **Capture** | reliability, speed, voice support, deduplication |
-| **Inbox / Triage** | accuracy, error handling, `inbox list` / `inbox triage` UX |
-| **Plan / Schedule** | action creation, due date handling, `PlannedAction` schema |
-| **Reminders** | firing reliability, idempotency, `ReminderEvent` lifecycle |
-| **Review** | daily/weekly aggregation, `loopSummary` insights |
+| Stage                              | What gets better for the user                                 | Typical change areas                                              |
+| ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------- |
+| **Capture**                        | Getting ideas/tasks into LifeOS is faster and more reliable   | `lifeos capture`, voice capture, deduplication, capture contracts |
+| **Inbox / Triage**                 | Incoming items are easier to classify and route correctly     | `lifeos inbox list`, `lifeos inbox triage`, approvals, queue UX   |
+| **Plan / Schedule**                | Next actions become clearer and easier to schedule            | action creation, due dates, `PlannedAction`, scheduler behavior   |
+| **Reminders**                      | Users can trust reminders to fire and recover cleanly         | `lifeos remind`, idempotency, reminder events, overdue handling   |
+| **Review**                         | Daily/weekly summaries are more useful and accurate           | `lifeos review`, `loopSummary`, history aggregation, insights     |
+| **Cross-cutting / Infrastructure** | One or more stages become more dependable without new breadth | contracts, tests, docs, shared runtime, CI, observability         |
 
 Changes that add breadth without improving loop reliability will be deferred to Phase 4.
+
+When you open a PR, include:
+
+- the primary loop stage affected
+- the user-visible workflow or command that gets better
+- the test or validation evidence for that stage
+- any docs or contracts updated alongside the behavior change
+
+Good first issues usually stay within one loop stage, one surface area, and one clear acceptance path.
 
 ## How to create a new module (recommended way)
 
