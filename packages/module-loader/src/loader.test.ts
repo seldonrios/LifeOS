@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import test from 'node:test';
-import { mkdtemp } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
 import type { BaseEvent, ManagedEventBus } from '@lifeos/event-bus';
 
+import householdIdentityModule, {
+  getHouseholdGraphClient,
+} from '../../../modules/household-identity/src/index';
 import { ModuleLoader, type LifeOSModule } from './loader';
 
 class MockEventBus implements ManagedEventBus {
@@ -239,6 +242,33 @@ test('ModuleLoader rejects invalid module id before loading', async () => {
       },
     });
   });
+});
+
+test('ModuleLoader validates and loads household-identity with db path env set', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-household-db-'));
+  const dbPath = join(tempDir, 'household.db');
+  const baseDir = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+  const loader = new ModuleLoader({
+    baseDir,
+    env: {
+      ...process.env,
+      LIFEOS_HOUSEHOLD_DB_PATH: dbPath,
+    },
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  try {
+    await loader.load(householdIdentityModule);
+    assert.equal(loader.has('household-identity'), true);
+  } finally {
+    getHouseholdGraphClient().close();
+    await loader.close();
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('ModuleLoader rejects manifest name mismatch', async () => {

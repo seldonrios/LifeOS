@@ -1,0 +1,22 @@
+{
+  "name": "household-identity",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "household CRUD, invites, roles, membership",
+  "permissions": {
+    "graph": ["read"],
+    "network": [],
+    "voice": [],
+    "events": []
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": [
+    "@lifeos/cli@>=0.1.0 <0.2.0",
+    "@lifeos/module-sdk@>=0.1.0 <0.2.0"
+  ],
+  "category": "household",
+  "tags": ["household", "identity", "roles", "membership"]
+}

@@ -221,6 +221,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/module-sdk
 
+  modules/household-identity:
+    dependencies:
+      '@lifeos/module-sdk':
+        specifier: workspace:*
+        version: link:../../packages/module-sdk
+      better-sqlite3:
+        specifier: ^12.8.0
+        version: 12.8.0
+
   modules/notification-bridge:
     dependencies:
       '@lifeos/module-sdk':
@@ -385,6 +394,9 @@ importers:
 
   packages/contracts:
     dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1867,7 +1879,7 @@ packages:
 
   '@expo/bunyan@4.0.1':
     resolution: {integrity: sha512-+Lla7nYSiHZirgK+U/uYzsLv/X+HaJienbD5AKX1UQZHYfWaP+9uuQluRB4GrEVWF0GZ7vEVp/jzaOT9k/SQlg==}
-    engines: {'0': node >=0.10.0}
+    engines: {node: '>=0.10.0'}
 
   '@expo/cli@0.22.28':
     resolution: {integrity: sha512-lvt72KNitGuixYD2l3SZmRKVu2G4zJpmg5V7WfUBNpmUU5oODBw/6qmiJ6kSLAlfDozscUk+BBGknBBzxUrwrA==}
@@ -2248,6 +2260,7 @@ packages:
   '@lancedb/lancedb@0.27.1':
     resolution: {integrity: sha512-LqXw19VYXaG1bV/03wN5JrYOSrRv38RPbKHW0hukbyfsNV4+VuZ3VpObk3gDeJGPkkJ56MS3lbbB2pqqg1DiNQ==}
     engines: {node: '>= 18'}
+    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'
