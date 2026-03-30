@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/routes/household.test.ts"
+    "test": "tsx --test src/routes/household.test.ts src/routes/capture.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
@@ -12,6 +12,7 @@
     "@lifeos/household-chores-module": "workspace:*",
     "@lifeos/household-identity-module": "workspace:*",
     "@lifeos/household-shopping-module": "workspace:*",
+    "@lifeos/life-graph": "workspace:*",
     "@lifeos/security": "workspace:*",
     "@lifeos/service-runtime": "workspace:*",
     "zod": "^4.1.11"

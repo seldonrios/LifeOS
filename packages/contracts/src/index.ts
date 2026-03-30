@@ -15,6 +15,7 @@ export {
   CaptureResultSchema,
   type CaptureType,
   type CaptureRequest,
+  type CaptureRequestMetadata,
   type CaptureStatus,
   type CaptureResult,
 } from './capture';

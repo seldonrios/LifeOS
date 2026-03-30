@@ -1,7 +1,9 @@
 import { createEnvSecretStore, startService } from "@lifeos/service-runtime";
 import { createEventBusClient } from '@lifeos/event-bus';
 import { HouseholdGraphClient, registerAuditInterceptor } from '@lifeos/household-identity-module';
+import { createLifeGraphClient, getDefaultLifeGraphPath } from '@lifeos/life-graph';
 
+import { registerCaptureRoutes } from './routes/capture';
 import { registerHouseholdRoutes } from './routes/household';
 
 startService({
@@ -16,9 +18,13 @@ startService({
       env: process.env,
       allowInMemoryFallback: false,
     });
+    const lifeGraphClient = createLifeGraphClient({
+      graphPath: process.env.LIFEOS_GRAPH_PATH || getDefaultLifeGraphPath(),
+    });
 
     await registerAuditInterceptor(eventBus, householdGraphClient);
     registerHouseholdRoutes(app, householdGraphClient, eventBus);
+    registerCaptureRoutes(app, householdGraphClient, eventBus, lifeGraphClient);
 
     app.addHook('onClose', async () => {
       await eventBus.close();
