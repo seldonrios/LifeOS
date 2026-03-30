@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import type { GoalSummary, InboxItem, ReviewLoopSummary } from '@lifeos/contracts';
@@ -16,6 +16,7 @@ import {
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 import { ErrorBanner } from '../../components/ErrorBanner';
+import { HouseholdHomeView } from '../../components/HouseholdHomeView';
 import { sdk, getDailyReview } from '../../lib/sdk';
 import { useSessionStore } from '../../lib/session';
 
@@ -75,8 +76,13 @@ export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const palette = colorScheme === 'dark' ? darkColors : lightColors;
   const displayName = useSessionStore((state) => state.user?.displayName);
+  const householdId = useSessionStore((state) => state.householdId);
   const router = useRouter();
   const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [activeContext, setActiveContext] = useState<'personal' | 'household'>(() =>
+    householdId ? 'household' : 'personal',
+  );
+  const [pendingHouseholdEntry, setPendingHouseholdEntry] = useState(false);
 
   const {
     data: inbox,
@@ -163,6 +169,24 @@ export default function HomeScreen() {
     };
   }, [pulseAnim, unreadApprovalCount]);
 
+  useEffect(() => {
+    if (householdId && !pendingHouseholdEntry) {
+      setActiveContext('household');
+      return;
+    }
+
+    if (!householdId) {
+      setActiveContext('personal');
+    }
+  }, [householdId, pendingHouseholdEntry]);
+
+  useEffect(() => {
+    if (pendingHouseholdEntry && householdId) {
+      setActiveContext('household');
+      setPendingHouseholdEntry(false);
+    }
+  }, [householdId, pendingHouseholdEntry]);
+
   const greeting = greetingForHour(new Date().getHours());
 
   if (isInboxLoading || isGoalsLoading || isReviewLoading) {
@@ -199,64 +223,135 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View>
-          <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
-          <Text style={[styles.name, { color: palette.text.primary }]}>
-            {displayName?.split(' ')[0] ?? 'there'}
-          </Text>
-        </View>
-
         <View
           style={[
-            styles.card,
+            styles.contextSwitcher,
             {
               backgroundColor: palette.background.card,
               borderColor: palette.border.default,
             },
           ]}
         >
-          <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Active goals</Text>
-          {(goals ?? []).length === 0 ? (
-            <Text style={[styles.cardBody, { color: palette.text.muted }]}>No active goals</Text>
-          ) : (
-            <>
-              {(goals ?? []).slice(0, 3).map((goal: GoalSummary) => {
-                const progress = (goal.completedTasks / Math.max(goal.totalTasks, 1)) * 100;
+          <Pressable
+            style={[
+              styles.contextSegment,
+              {
+                backgroundColor:
+                  activeContext === 'personal' ? palette.accent.brand : palette.background.card,
+              },
+            ]}
+            onPress={() => {
+              setActiveContext('personal');
+              setPendingHouseholdEntry(false);
+            }}
+          >
+            <Text
+              style={[
+                styles.contextSegmentText,
+                {
+                  color:
+                    activeContext === 'personal'
+                      ? palette.background.primary
+                      : palette.text.secondary,
+                },
+              ]}
+            >
+              Personal
+            </Text>
+          </Pressable>
+          <Pressable
+            style={[
+              styles.contextSegment,
+              {
+                backgroundColor:
+                  activeContext === 'household' ? palette.accent.brand : palette.background.card,
+              },
+            ]}
+            onPress={() => {
+              if (!householdId) {
+                setPendingHouseholdEntry(true);
+                router.push('/modal/household-onboarding');
+                return;
+              }
+              setActiveContext('household');
+            }}
+          >
+            <Text
+              style={[
+                styles.contextSegmentText,
+                {
+                  color:
+                    activeContext === 'household'
+                      ? palette.background.primary
+                      : palette.text.secondary,
+                },
+              ]}
+            >
+              🏠 Household
+            </Text>
+          </Pressable>
+        </View>
 
-                return (
-                  <View key={goal.id} style={styles.inlineGoalRow}>
-                    <Text
-                      style={[styles.taskTitle, { color: palette.text.primary }]}
-                      numberOfLines={1}
-                    >
-                      {goal.title}
+        {activeContext === 'personal' ? (
+          <>
+            <View>
+              <Text style={[styles.greeting, { color: palette.text.secondary }]}>{greeting}</Text>
+              <Text style={[styles.name, { color: palette.text.primary }]}>
+                {displayName?.split(' ')[0] ?? 'there'}
+              </Text>
+            </View>
+
+            <View
+              style={[
+                styles.card,
+                {
+                  backgroundColor: palette.background.card,
+                  borderColor: palette.border.default,
+                },
+              ]}
+            >
+              <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Active goals</Text>
+              {(goals ?? []).length === 0 ? (
+                <Text style={[styles.cardBody, { color: palette.text.muted }]}>No active goals</Text>
+              ) : (
+                <>
+                  {(goals ?? []).slice(0, 3).map((goal: GoalSummary) => {
+                    const progress = (goal.completedTasks / Math.max(goal.totalTasks, 1)) * 100;
+
+                    return (
+                      <View key={goal.id} style={styles.inlineGoalRow}>
+                        <Text
+                          style={[styles.taskTitle, { color: palette.text.primary }]}
+                          numberOfLines={1}
+                        >
+                          {goal.title}
+                        </Text>
+                        <View
+                          style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}
+                        >
+                          <View
+                            style={[
+                              styles.progressFill,
+                              {
+                                backgroundColor: palette.accent.brand,
+                                width: `${progress}%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+                  {(goals ?? []).length > 3 ? (
+                    <Text style={[styles.moreGoals, { color: palette.text.muted }]}>
+                      +{(goals ?? []).length - 3} more
                     </Text>
-                    <View
-                      style={[styles.progressTrack, { backgroundColor: palette.border.subtle }]}
-                    >
-                      <View
-                        style={[
-                          styles.progressFill,
-                          {
-                            backgroundColor: palette.accent.brand,
-                            width: `${progress}%`,
-                          },
-                        ]}
-                      />
-                    </View>
-                  </View>
-                );
-              })}
-              {(goals ?? []).length > 3 ? (
-                <Text style={[styles.moreGoals, { color: palette.text.muted }]}>
-                  +{(goals ?? []).length - 3} more
-                </Text>
-              ) : null}
-            </>
-          )}
-        </View>
+                  ) : null}
+                </>
+              )}
+            </View>
 
-        <View
+            <View
           style={[
             styles.card,
             {
@@ -264,7 +359,7 @@ export default function HomeScreen() {
               borderColor: palette.border.default,
             },
           ]}
-        >
+            >
           <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Open tasks</Text>
           {openTasks.length === 0 ? (
             <Text style={[styles.cardBody, { color: palette.text.muted }]}>
@@ -310,9 +405,9 @@ export default function HomeScreen() {
               );
             })
           )}
-        </View>
+          </View>
 
-        <View
+            <View
           style={[
             styles.card,
             {
@@ -320,7 +415,7 @@ export default function HomeScreen() {
               borderColor: palette.border.default,
             },
           ]}
-        >
+            >
           <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Daily review</Text>
           {!review || (review.pendingCaptures === 0 &&
             review.actionsDueToday === 0 &&
@@ -365,9 +460,9 @@ export default function HomeScreen() {
               </View>
             </View>
           )}
-        </View>
+          </View>
 
-        <Pressable
+            <Pressable
           onPress={() => router.push('/(tabs)/inbox')}
           style={[
             styles.card,
@@ -376,7 +471,7 @@ export default function HomeScreen() {
               borderColor: palette.border.default,
             },
           ]}
-        >
+            >
           <View style={styles.cardTitleRow}>
             <Text style={[styles.cardTitle, { color: palette.text.secondary }]}>Inbox</Text>
             <Ionicons
@@ -411,7 +506,13 @@ export default function HomeScreen() {
               No unread approvals
             </Text>
           )}
-        </Pressable>
+            </Pressable>
+          </>
+        ) : null}
+
+        {activeContext === 'household' && householdId ? (
+          <HouseholdHomeView householdId={householdId} />
+        ) : null}
       </ScrollView>
     </SafeAreaView>
   );
@@ -426,6 +527,23 @@ const styles = StyleSheet.create({
   scrollContent: {
     gap: spacing[3],
     paddingBottom: spacing[8],
+  },
+  contextSwitcher: {
+    borderWidth: 1,
+    borderRadius: 999,
+    padding: spacing[1],
+    flexDirection: 'row',
+  },
+  contextSegment: {
+    flex: 1,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: spacing[2],
+  },
+  contextSegmentText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
   },
   greeting: {
     fontSize: typography.fontSize.base,

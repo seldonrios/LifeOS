@@ -291,6 +291,13 @@ interface HouseholdMemberRow {
   invite_expires_at: string | null;
 }
 
+interface HouseholdInviteLinkRow {
+  inviteToken: string;
+  inviteUrl: string;
+  role: HouseholdRole;
+  expiresAt: string | null;
+}
+
 interface ShoppingListRow {
   id: string;
   household_id: string;
@@ -656,6 +663,36 @@ class HouseholdNamespace {
         url: `${this.config.baseUrl}/api/households/${householdId}/members/invite`,
         method: 'POST',
         body: { invitedUserId, role },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async listMembers(householdId: string): Promise<HouseholdMemberRow[]> {
+    const response = await sendHttpRequest<HouseholdMemberRow[]>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/members`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async createInviteLink(
+    householdId: string,
+    role: HouseholdRole = 'Adult',
+  ): Promise<HouseholdInviteLinkRow> {
+    const response = await sendHttpRequest<HouseholdInviteLinkRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/members/invite-link`,
+        method: 'POST',
+        body: { role },
       },
       this.config.getAccessToken,
       this.config,

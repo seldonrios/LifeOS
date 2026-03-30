@@ -13,9 +13,11 @@ type SessionState = {
   status: SessionStatus;
   accessToken: string | null;
   user: UserProfile | null;
+  householdId: string | null;
   biometricEnabled: boolean;
   biometricAvailable: boolean;
   restoreSession: () => Promise<void>;
+  setHouseholdId: (id: string) => Promise<void>;
   loadBiometricPreference: () => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   requireBiometric: () => Promise<void>;
@@ -24,6 +26,7 @@ type SessionState = {
 };
 
 const REFRESH_TOKEN_KEY = 'lifeos.refresh_token';
+const HOUSEHOLD_ID_KEY = 'lifeos.household_id';
 const BIOMETRIC_ENABLED_KEY = 'lifeos.biometric_enabled';
 
 function userFromAccessToken(accessToken: string): UserProfile {
@@ -38,12 +41,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   status: 'loading',
   accessToken: null,
   user: null,
+  householdId: null,
   biometricEnabled: false,
   biometricAvailable: false,
   async restoreSession() {
     let nextStatus: SessionStatus = 'unauthenticated';
     let nextAccessToken: string | null = null;
     let nextUser: UserProfile | null = null;
+    let nextHouseholdId: string | null = null;
 
     try {
       const refreshToken = await SecureStore.getItemAsync(REFRESH_TOKEN_KEY);
@@ -55,6 +60,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
           nextStatus = 'authenticated';
           nextAccessToken = accessToken;
           nextUser = userFromAccessToken(accessToken);
+          nextHouseholdId = await SecureStore.getItemAsync(HOUSEHOLD_ID_KEY);
         } catch {
           try {
             await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
@@ -66,13 +72,22 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     } catch {
       // If SecureStore read fails, fall back to unauthenticated state.
     } finally {
-      set({ status: nextStatus, accessToken: nextAccessToken, user: nextUser });
+      set({
+        status: nextStatus,
+        accessToken: nextAccessToken,
+        user: nextUser,
+        householdId: nextHouseholdId,
+      });
       try {
         await get().loadBiometricPreference();
       } catch {
         set({ biometricAvailable: false, biometricEnabled: false });
       }
     }
+  },
+  async setHouseholdId(id) {
+    await SecureStore.setItemAsync(HOUSEHOLD_ID_KEY, id);
+    set({ householdId: id });
   },
   async loadBiometricPreference() {
     const [hasHardware, isEnrolled, storedValue] = await Promise.all([
@@ -120,13 +135,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     try {
       await Promise.allSettled([
         SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY),
+        SecureStore.deleteItemAsync(HOUSEHOLD_ID_KEY),
         SecureStore.deleteItemAsync(PUSH_TOKEN_KEY),
       ]);
     } catch {
       // Continue resetting in-memory session even when storage delete fails.
     } finally {
       useQueueStore.getState().clear();
-      set({ status: 'unauthenticated', accessToken: null, user: null });
+      set({ status: 'unauthenticated', accessToken: null, user: null, householdId: null });
     }
   },
 }));
