@@ -41,10 +41,27 @@ pnpm lifeos review --period daily
 
 Setup paths:
 
-- Recommended path (CLI MVP): `docs/SETUP.md` -> "Primary Path - Dev Container (Recommended)" or "Local Development (No Dev Container)"
+- Recommended path (CLI MVP): `docs/SETUP.md` -> "Recommended: Dev Container" or "Advanced: Native Install"
 - Advanced path (full Docker profile): `docker compose --profile dormant up`
 
 These commands work in Linux/macOS shells (`bash`/`zsh`) and in PowerShell unless noted otherwise.
+
+## Personal Operations OS Onboarding Checklist
+
+### Core loop smoke test
+
+- [ ] Run the system locally via the recommended path
+- [ ] Create a capture: `pnpm lifeos capture "test"`
+- [ ] Triage a capture: `pnpm lifeos inbox triage <id> --action task`
+- [ ] Schedule a reminder: `pnpm lifeos remind <action-id> --at <datetime>`
+- [ ] Mark completion: `pnpm lifeos task complete <id>`
+- [ ] Review history: `pnpm lifeos review --period daily`
+
+### Contributor readiness
+
+- [ ] `pnpm validate` passes locally
+- [ ] `pnpm test:core-loop` passes
+- [ ] Open a PR and it passes CI
 
 ## Module Marketplace
 
@@ -142,6 +159,10 @@ lifeos doctor [--json] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
+lifeos capture "<text>" [--json] [--graph-path <path>]
+lifeos inbox [list|triage] [id] [--action task|note|defer] [--json] [--graph-path <path>]
+lifeos remind <action-id> --at <datetime> [--json] [--graph-path <path>]
+lifeos demo:loop [--dry-run] [--json]
 lifeos next [--json] [--graph-path <path>] [--verbose]
 lifeos tick [--json] [--graph-path <path>] [--verbose]
 lifeos modules [list|load] [id]

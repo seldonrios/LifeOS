@@ -133,6 +133,23 @@ Use this checklist before opening a PR:
 - Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
 - Startup diagnostics report is emitted (full stack path)
 
+## Personal Operations OS Onboarding Checklist
+
+### Core loop smoke test
+
+- [ ] Run the system locally via the recommended path
+- [ ] Create a capture: `pnpm lifeos capture "test"`
+- [ ] Triage a capture: `pnpm lifeos inbox triage <id> --action task`
+- [ ] Schedule a reminder: `pnpm lifeos remind <action-id> --at <datetime>`
+- [ ] Mark completion: `pnpm lifeos task complete <id>`
+- [ ] Review history: `pnpm lifeos review --period daily`
+
+### Contributor readiness
+
+- [ ] `pnpm validate` passes locally
+- [ ] `pnpm test:core-loop` passes
+- [ ] Open a PR and it passes CI
+
 ## First-Run Journey Smoke Check
 
 Run this exact sequence to verify the recommended contributor path:
