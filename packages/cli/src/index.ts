@@ -68,6 +68,7 @@ import {
   type ImapCredentials,
 } from '@lifeos/email-summarizer-module';
 import { habitStreakModule } from '@lifeos/habit-streak-module';
+import { householdShoppingModule } from '@lifeos/household-shopping-module';
 import {
   MeshCoordinator,
   MeshRegistry,
@@ -1319,6 +1320,7 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       weatherModule,
       newsModule,
       googleBridgeModule,
+      householdShoppingModule,
       syncModule,
       orchestratorModule,
     ]
@@ -4739,7 +4741,9 @@ export async function runInboxCommand(
   try {
     if (options.action === 'list') {
       const graph = await client.loadGraph();
-      const pendingCaptures = (graph.captureEntries ?? []).filter((entry) => entry.status === 'pending');
+      const pendingCaptures = (graph.captureEntries ?? []).filter(
+        (entry) => entry.status === 'pending',
+      );
 
       if (options.outputJson) {
         writeStdout(`${JSON.stringify(pendingCaptures, null, 2)}\n`);
@@ -4864,7 +4868,6 @@ export async function runRemindCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
-  const verboseLog = (_line: string): void => void 0;
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
 
@@ -5077,9 +5080,7 @@ function buildProgram(
           action: normalizedAction,
           ...(id !== undefined ? { captureId: id } : {}),
           triageAction,
-          ...(Array.isArray(commandOptions.tag)
-            ? { tag: commandOptions.tag as string[] }
-            : {}),
+          ...(Array.isArray(commandOptions.tag) ? { tag: commandOptions.tag as string[] } : {}),
           ...(commandOptions.due ? { due: commandOptions.due as string } : {}),
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath as string,

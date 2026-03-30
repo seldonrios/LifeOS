@@ -38,6 +38,7 @@ export type HouseholdChangeMemberRoleRequest = z.infer<
 >;
 
 export const HouseholdAddShoppingItemRequestSchema = z.object({
+  listId: z.string().min(1).optional(),
   title: z.string().min(1),
   source: z.enum(['manual', 'voice', 'routine']),
 });

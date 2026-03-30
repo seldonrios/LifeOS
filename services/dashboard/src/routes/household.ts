@@ -27,6 +27,11 @@ import {
   type ChorePublishContext,
 } from '../../../../modules/household-chores/src/index';
 import {
+  publishShoppingItemAdded,
+  publishShoppingItemPurchased,
+  type ShoppingPublishContext,
+} from '../../../../modules/household-shopping/src/index';
+import {
   HouseholdGraphClient,
   InvalidShoppingItemTransitionError,
   canPerform,
@@ -92,7 +97,7 @@ function replyError(reply: { status: (code: number) => { send: (body: unknown) =
   }
 
   if (error instanceof InvalidShoppingItemTransitionError) {
-    reply.status(400).send({ error: error.message });
+    reply.status(400).send({ error: (error as Error).message });
     return;
   }
 
@@ -150,6 +155,38 @@ function createChorePublishContext(
   actorId: string,
   traceId: string,
 ): ChorePublishContext {
+  return {
+    async publish<T extends Record<string, unknown>>(
+      topic: string,
+      data: T,
+      source = 'dashboard-service',
+    ): Promise<BaseEvent<T>> {
+      const event: BaseEvent<T> = {
+        id: randomUUID(),
+        type: topic,
+        timestamp: new Date().toISOString(),
+        source,
+        version: '1',
+        data,
+        metadata: {
+          household_id: householdId,
+          actor_id: actorId,
+          trace_id: traceId,
+        },
+      };
+
+      await eventBus.publish(topic, event);
+      return event;
+    },
+  };
+}
+
+function createShoppingPublishContext(
+  eventBus: ManagedEventBus,
+  householdId: string,
+  actorId: string,
+  traceId: string,
+): ShoppingPublishContext {
   return {
     async publish<T extends Record<string, unknown>>(
       topic: string,
@@ -332,7 +369,8 @@ export function registerHouseholdRoutes(
       const body = HouseholdAddShoppingItemRequestSchema.parse(request.body);
 
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
-      const item = db.addShoppingItem(params.id, body.title, callerUserId, body.source);
+      const item = db.addShoppingItem(params.id, body.title, callerUserId, body.source, body.listId);
+      reply.status(201).send(item);
 
       const eventData = HouseholdShoppingItemAddedSchema.parse({
         householdId: params.id,
@@ -342,16 +380,63 @@ export function registerHouseholdRoutes(
         addedByUserId: callerUserId,
         source: item.source,
       });
-      await publishHouseholdEvent(
-        eventBus,
-        Topics.lifeos.householdShoppingItemAdded,
+      void publishShoppingItemAdded(
+        createShoppingPublishContext(eventBus, params.id, callerUserId, request.id),
         eventData,
-        params.id,
-        callerUserId,
-        request.id,
+      ).catch((error) => {
+        app.log.error(error);
+      });
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/shopping/lists', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      reply.status(200).send(db.listShoppingLists(params.id));
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/shopping/lists/:listId/items', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          listId: z.string().min(1),
+        })
+        .parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const rows = db.listShoppingItems(params.id, params.listId).map((row) => ({
+        id: row.id,
+        title: row.title,
+        addedBy: row.added_by_user_id,
+        status: row.status,
+        addedAt: row.created_at,
+        purchasedAt: row.purchased_at ?? null,
+      }));
+      const items = rows.filter((row) => row.status !== 'purchased').concat(
+        rows.filter((row) => row.status === 'purchased'),
       );
 
-      reply.status(201).send(item);
+      reply.status(200).send(items);
     } catch (error) {
       replyError(reply, error);
     }
@@ -375,6 +460,7 @@ export function registerHouseholdRoutes(
 
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       const item = db.updateShoppingItemStatus(params.id, params.itemId, body.status);
+      reply.status(200).send(item);
 
       if (body.status === 'purchased') {
         const eventData = HouseholdShoppingItemPurchasedSchema.parse({
@@ -383,19 +469,38 @@ export function registerHouseholdRoutes(
           itemId: item.id,
           title: item.title,
           purchasedByUserId: callerUserId,
-          purchasedAt: new Date().toISOString(),
+          purchasedAt: item.purchased_at ?? new Date().toISOString(),
         });
-        await publishHouseholdEvent(
-          eventBus,
-          Topics.lifeos.householdShoppingItemPurchased,
+        void publishShoppingItemPurchased(
+          createShoppingPublishContext(eventBus, params.id, callerUserId, request.id),
           eventData,
-          params.id,
-          callerUserId,
-          request.id,
-        );
+        ).catch((error) => {
+          app.log.error(error);
+        });
+      }
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.delete('/api/households/:id/shopping/lists/:listId/items/purchased', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
       }
 
-      reply.status(200).send(item);
+      const params = z
+        .object({
+          id: z.string().min(1),
+          listId: z.string().min(1),
+        })
+        .parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'add_shopping_item');
+      db.clearPurchasedItems(params.id, params.listId);
+      reply.status(204).send();
     } catch (error) {
       replyError(reply, error);
     }

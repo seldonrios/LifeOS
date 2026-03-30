@@ -13,12 +13,13 @@ import type {
   GoalSummary,
   PushTokenRegistration,
   ReviewLoopSummary,
-  HouseholdRole,
-  ShoppingItemStatus,
 } from '@lifeos/contracts';
 import { InboxListResponseSchema, ReviewLoopSummarySchema } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
 import { sendHttpRequest } from './http';
+
+type HouseholdRole = 'Admin' | 'Adult' | 'Teen' | 'Child' | 'Guest';
+type ShoppingItemStatus = 'added' | 'in_cart' | 'purchased';
 
 /**
  * Inbox namespace.
@@ -290,6 +291,12 @@ interface HouseholdMemberRow {
   invite_expires_at: string | null;
 }
 
+interface ShoppingListRow {
+  id: string;
+  household_id: string;
+  name: string;
+}
+
 interface ShoppingItemRow {
   id: string;
   household_id: string;
@@ -298,6 +305,16 @@ interface ShoppingItemRow {
   added_by_user_id: string;
   source: 'manual' | 'voice' | 'routine';
   created_at: string;
+  purchasedAt: string | null;
+}
+
+interface ShoppingListItemRow {
+  id: string;
+  title: string;
+  addedBy: string;
+  status: ShoppingItemStatus;
+  addedAt: string;
+  purchasedAt: string | null;
 }
 
 interface ChoreRow {
@@ -426,6 +443,71 @@ class HouseholdNamespace {
     },
   };
 
+  readonly shopping = {
+    lists: async (householdId: string): Promise<ShoppingListRow[]> => {
+      const response = await sendHttpRequest<ShoppingListRow[]>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/shopping/lists`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    items: async (householdId: string, listId: string): Promise<ShoppingListItemRow[]> => {
+      const response = await sendHttpRequest<ShoppingListItemRow[]>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/shopping/lists/${listId}/items`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    addItem: async (
+      householdId: string,
+      listId: string,
+      title: string,
+      source: 'manual' | 'voice' | 'routine' = 'manual',
+    ): Promise<ShoppingItemRow> => {
+      const response = await sendHttpRequest<ShoppingItemRow>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/shopping/items`,
+          method: 'POST',
+          body: { listId, title, source },
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return {
+        ...response.data,
+        purchasedAt:
+          (response.data as ShoppingItemRow & { purchased_at?: string | null }).purchased_at ??
+          null,
+      };
+    },
+    updateStatus: async (
+      householdId: string,
+      itemId: string,
+      status: ShoppingItemStatus,
+    ): Promise<ShoppingItemRow> => this.updateShoppingItemStatus(householdId, itemId, status),
+    clearPurchased: async (householdId: string, listId: string): Promise<void> => {
+      await sendHttpRequest(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/shopping/lists/${listId}/items/purchased`,
+          method: 'DELETE',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+    },
+  };
+
   async createHousehold(name: string): Promise<HouseholdRow> {
     const response = await sendHttpRequest<HouseholdRow>(
       {
@@ -505,7 +587,11 @@ class HouseholdNamespace {
       this.config,
     );
 
-    return response.data;
+    return {
+      ...response.data,
+      purchasedAt:
+        (response.data as ShoppingItemRow & { purchased_at?: string | null }).purchased_at ?? null,
+    };
   }
 
   async updateShoppingItemStatus(
@@ -523,7 +609,11 @@ class HouseholdNamespace {
       this.config,
     );
 
-    return response.data;
+    return {
+      ...response.data,
+      purchasedAt:
+        (response.data as ShoppingItemRow & { purchased_at?: string | null }).purchased_at ?? null,
+    };
   }
 
   async createChore(

@@ -221,8 +221,44 @@ importers:
         specifier: workspace:*
         version: link:../../packages/module-sdk
 
+  modules/household-chores:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/module-sdk':
+        specifier: workspace:*
+        version: link:../../packages/module-sdk
+      better-sqlite3:
+        specifier: ^12.8.0
+        version: 12.8.0
+
   modules/household-identity:
     dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/household-chores-module':
+        specifier: workspace:*
+        version: link:../household-chores
+      '@lifeos/module-sdk':
+        specifier: workspace:*
+        version: link:../../packages/module-sdk
+      better-sqlite3:
+        specifier: ^12.8.0
+        version: 12.8.0
+
+  modules/household-shopping:
+    dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
       '@lifeos/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
@@ -325,6 +361,9 @@ importers:
       '@lifeos/habit-streak-module':
         specifier: workspace:*
         version: link:../../modules/habit-streak
+      '@lifeos/household-shopping-module':
+        specifier: workspace:*
+        version: link:../../modules/household-shopping
       '@lifeos/life-graph':
         specifier: workspace:*
         version: link:../life-graph

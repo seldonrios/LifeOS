@@ -115,3 +115,76 @@ test('canPerform enforces role permissions matrix', () => {
   assert.equal(canPerform('Guest', 'invite'), false);
   assert.equal(canPerform('Adult', 'add_shopping_item'), true);
 });
+
+test('clearPurchasedItems archives purchased rows and leaves active rows untouched', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold('Shopping Home');
+    const listId = (
+      client as unknown as {
+        getOrCreateDefaultShoppingListId: (householdId: string) => string;
+      }
+    ).getOrCreateDefaultShoppingListId(household.id);
+    const rawDb = (
+      client as unknown as {
+        db: {
+          prepare: (sql: string) => {
+            run: (...args: unknown[]) => unknown;
+            get: (...args: unknown[]) => Record<string, unknown> | undefined;
+          };
+        };
+      }
+    ).db;
+
+    const purchasedId = 'purchased-item';
+    const activeId = 'active-item';
+    rawDb
+      .prepare(
+        `INSERT INTO shopping_items
+          (id, list_id, household_id, title, added_by, added_by_user_id, status, source, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        purchasedId,
+        listId,
+        household.id,
+        'Milk',
+        'admin-1',
+        'admin-1',
+        'purchased',
+        'manual',
+        new Date().toISOString(),
+      );
+    rawDb
+      .prepare(
+        `INSERT INTO shopping_items
+          (id, list_id, household_id, title, added_by, added_by_user_id, status, source, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        activeId,
+        listId,
+        household.id,
+        'Eggs',
+        'admin-1',
+        'admin-1',
+        'added',
+        'manual',
+        new Date().toISOString(),
+      );
+
+    client.clearPurchasedItems(household.id, listId);
+
+    const purchasedRow = rawDb
+      .prepare('SELECT archived_at FROM shopping_items WHERE id = ?')
+      .get(purchasedId) as { archived_at: string | null };
+    const activeRow = rawDb
+      .prepare('SELECT archived_at FROM shopping_items WHERE id = ?')
+      .get(activeId) as { archived_at: string | null };
+
+    assert.ok(purchasedRow.archived_at);
+    assert.equal(activeRow.archived_at, null);
+  } finally {
+    cleanup();
+  }
+});

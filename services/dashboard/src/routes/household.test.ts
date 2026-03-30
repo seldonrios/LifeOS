@@ -16,6 +16,19 @@ import { JwtService } from '@lifeos/security';
 
 import { registerHouseholdRoutes } from './household';
 
+async function waitFor(condition: () => boolean, timeoutMs = 500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (condition()) {
+      return;
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  assert.ok(condition());
+}
+
 const jwtService = new JwtService();
 
 async function bearerFor(userId: string): Promise<string> {
@@ -443,19 +456,49 @@ test('POST /api/households/:id/shopping/items happy path returns 201', async () 
   const { db, app, cleanup } = createHarness();
   try {
     const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const rawDb = (db as unknown as {
+      db: { prepare: (sql: string) => { run: (...args: unknown[]) => unknown } };
+    }).db;
+    const listId = 'shopping-list-explicit';
+    rawDb
+      .prepare('INSERT INTO shopping_lists (id, household_id, name) VALUES (?, ?, ?)')
+      .run(listId, householdId, 'Weekly');
     await app.ready();
 
     const response = await app.inject({
       method: 'POST',
       url: `/api/households/${householdId}/shopping/items`,
       headers: { authorization: adminAuth },
-      payload: { title: 'Milk', source: 'manual' },
+      payload: { listId, title: 'Milk', source: 'manual' },
     });
 
     assert.equal(response.statusCode, 201);
     const body = response.json();
     assert.equal(body.title, 'Milk');
     assert.equal(body.status, 'added');
+    assert.equal(body.list_id, listId);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/shopping/items responds within the fast-add budget', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const startedAt = performance.now();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/shopping/items`,
+      headers: { authorization: adminAuth },
+      payload: { title: 'Fast Milk', source: 'manual' },
+    });
+    const durationMs = performance.now() - startedAt;
+
+    assert.equal(response.statusCode, 201);
+    assert.ok(durationMs < 200, `Expected shopping add to complete in under 200ms, received ${durationMs.toFixed(2)}ms`);
   } finally {
     await cleanup();
   }
@@ -574,6 +617,103 @@ test('PATCH /api/households/:id/shopping/items/:itemId/status role failure retur
     });
 
     assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/shopping/items/:itemId/status rejects invalid transitions with 400', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const item = db.addShoppingItem(householdId, 'Eggs', 'admin-1', 'manual');
+    db.updateShoppingItemStatus(householdId, item.id, 'purchased');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/shopping/items/${item.id}/status`,
+      headers: { authorization: adminAuth },
+      payload: { status: 'added' },
+    });
+
+    assert.equal(response.statusCode, 400);
+    assert.match(response.json().error as string, /Cannot transition shopping item from purchased to added/i);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/shopping/lists returns household lists', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    db.addShoppingItem(householdId, 'Milk', 'admin-1', 'manual');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/shopping/lists`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.ok(Array.isArray(body));
+    assert.equal(body.length, 1);
+    assert.equal(body[0]?.household_id, householdId);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/shopping/lists/:listId/items returns active items before purchased items', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const addedItem = db.addShoppingItem(householdId, 'Bread', 'admin-1', 'manual');
+    const purchasedItem = db.addShoppingItem(householdId, 'Milk', 'admin-1', 'manual');
+    db.updateShoppingItemStatus(householdId, purchasedItem.id, 'purchased');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/shopping/lists/${addedItem.list_id}/items`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.ok(Array.isArray(body));
+    assert.equal(body[0]?.id, addedItem.id);
+    assert.equal(body[0]?.addedBy, 'admin-1');
+    assert.equal(body[0]?.addedAt, addedItem.created_at);
+    assert.equal(body[1]?.id, purchasedItem.id);
+    assert.ok(body[1]?.purchasedAt);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('DELETE /api/households/:id/shopping/lists/:listId/items/purchased archives purchased rows', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const purchasedItem = db.addShoppingItem(householdId, 'Milk', 'admin-1', 'manual');
+    const activeItem = db.addShoppingItem(householdId, 'Bread', 'admin-1', 'manual');
+    db.updateShoppingItemStatus(householdId, purchasedItem.id, 'purchased');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'DELETE',
+      url: `/api/households/${householdId}/shopping/lists/${purchasedItem.list_id}/items/purchased`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 204);
+    const rows = db.listShoppingItems(householdId, purchasedItem.list_id);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.id, activeItem.id);
   } finally {
     await cleanup();
   }
@@ -1185,14 +1325,28 @@ test('household mutation writes both domain row and audit_log row when intercept
     const rows = (db as unknown as { db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } } }).db
       .prepare('SELECT * FROM audit_log WHERE household_id = ?')
       .all(householdId);
-    assert.equal(rows.length, 1);
-    assert.equal(rows[0]?.action_type, 'lifeos.household.shopping.item.added');
+    await waitFor(() => {
+      const pendingRows = (db as unknown as {
+        db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } };
+      }).db
+        .prepare('SELECT * FROM audit_log WHERE household_id = ?')
+        .all(householdId);
+      return pendingRows.length === 1;
+    });
+
+    const settledRows = (db as unknown as {
+      db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } };
+    }).db
+      .prepare('SELECT * FROM audit_log WHERE household_id = ?')
+      .all(householdId);
+    assert.equal(settledRows.length, 1);
+    assert.equal(settledRows[0]?.action_type, 'lifeos.household.shopping.item.added');
   } finally {
     await cleanup();
   }
 });
 
-test('strict event bus outage returns 500 for POST household mutation endpoint', async () => {
+test('strict event bus outage still returns 201 for shopping POST after async publish handoff', async () => {
   const { db, app, cleanup } = createStrictOutageHarness();
   try {
     const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
@@ -1205,7 +1359,7 @@ test('strict event bus outage returns 500 for POST household mutation endpoint',
       payload: { title: 'Outage Milk', source: 'manual' },
     });
 
-    assert.equal(response.statusCode, 500);
+    assert.equal(response.statusCode, 201);
   } finally {
     await cleanup();
   }

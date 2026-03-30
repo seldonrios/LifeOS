@@ -64,6 +64,13 @@ export interface ShoppingItemRow {
   added_by_user_id: string;
   source: 'manual' | 'voice' | 'routine';
   created_at: string;
+  purchased_at?: string | null;
+}
+
+export interface ShoppingListRow {
+  id: string;
+  household_id: string;
+  name: string;
 }
 
 export interface ChoreRow {
@@ -166,6 +173,8 @@ export class HouseholdGraphClient {
     this.ensureColumn('shopping_items', 'added_by_user_id', "TEXT DEFAULT ''");
     this.ensureColumn('shopping_items', 'source', "TEXT DEFAULT 'manual'");
     this.ensureColumn('shopping_items', 'created_at', "TEXT DEFAULT ''");
+    this.ensureColumn('shopping_items', 'archived_at', 'TEXT');
+    this.ensureColumn('shopping_items', 'purchased_at', 'TEXT');
 
     this.ensureColumn('chores', 'assigned_to_user_id', "TEXT DEFAULT ''");
     this.ensureColumn('chores', 'due_at', "TEXT DEFAULT ''");
@@ -176,6 +185,9 @@ export class HouseholdGraphClient {
 
     this.db.exec(
       'CREATE INDEX IF NOT EXISTS idx_shopping_items_household_id ON shopping_items(household_id)',
+    );
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_shopping_items_list_id ON shopping_items(list_id)',
     );
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_chores_household_id ON chores(household_id)');
   }
@@ -298,14 +310,16 @@ export class HouseholdGraphClient {
     return transaction(parsedRole);
   }
 
-  updateMemberRole(householdId: string, userId: string, newRole: HouseholdRole): HouseholdMemberRow {
+  updateMemberRole(
+    householdId: string,
+    userId: string,
+    newRole: HouseholdRole,
+  ): HouseholdMemberRow {
     const parsedRole = HouseholdRoleSchema.parse(newRole) as HouseholdRole;
 
     const transaction = this.db.transaction((validatedRole: HouseholdRole) => {
       this.db
-        .prepare(
-          'UPDATE household_members SET role = ? WHERE household_id = ? AND user_id = ?',
-        )
+        .prepare('UPDATE household_members SET role = ? WHERE household_id = ? AND user_id = ?')
         .run(validatedRole, householdId, userId);
 
       return this.db
@@ -424,7 +438,11 @@ export class HouseholdGraphClient {
     return transaction(token, nowIso);
   }
 
-  acceptInviteForUser(token: string, expectedHouseholdId: string, expectedUserId: string): HouseholdMemberRow {
+  acceptInviteForUser(
+    token: string,
+    expectedHouseholdId: string,
+    expectedUserId: string,
+  ): HouseholdMemberRow {
     const nowIso = new Date().toISOString();
 
     const transaction = this.db.transaction((inviteToken: string, acceptedAt: string) => {
@@ -507,19 +525,31 @@ export class HouseholdGraphClient {
     title: string,
     addedByUserId: string,
     source: 'manual' | 'voice' | 'routine',
+    listId?: string,
   ): ShoppingItemRow {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
 
     const transaction = this.db.transaction(() => {
-      const listId = this.getOrCreateDefaultShoppingListId(householdId);
+      const targetListId = listId
+        ? ((
+            this.db
+              .prepare('SELECT id FROM shopping_lists WHERE household_id = ? AND id = ? LIMIT 1')
+              .get(householdId, listId) as { id: string } | undefined
+          )?.id ?? null)
+        : this.getOrCreateDefaultShoppingListId(householdId);
+
+      if (!targetListId) {
+        throw new Error('Shopping list not found');
+      }
+
       this.db
         .prepare(
           `INSERT INTO shopping_items
             (id, list_id, household_id, title, added_by, added_by_user_id, status, source, created_at)
            VALUES (?, ?, ?, ?, ?, ?, 'added', ?, ?)`,
         )
-        .run(id, listId, householdId, title, addedByUserId, addedByUserId, source, createdAt);
+        .run(id, targetListId, householdId, title, addedByUserId, addedByUserId, source, createdAt);
 
       return this.getShoppingItem(householdId, id) as ShoppingItemRow;
     });
@@ -538,7 +568,7 @@ export class HouseholdGraphClient {
     }
 
     const allowedTransitions: Record<ShoppingItemRow['status'], ShoppingItemRow['status'][]> = {
-      added: ['in_cart'],
+      added: ['in_cart', 'purchased'],
       in_cart: ['purchased'],
       purchased: [],
     };
@@ -547,17 +577,52 @@ export class HouseholdGraphClient {
       throw new InvalidShoppingItemTransitionError(item.status, newStatus);
     }
 
+    const purchasedAt = newStatus === 'purchased' ? new Date().toISOString() : null;
+
     this.db
-      .prepare('UPDATE shopping_items SET status = ? WHERE id = ? AND household_id = ?')
-      .run(newStatus, itemId, householdId);
+      .prepare(
+        'UPDATE shopping_items SET status = ?, purchased_at = ? WHERE id = ? AND household_id = ?',
+      )
+      .run(newStatus, purchasedAt, itemId, householdId);
 
     return this.getShoppingItem(householdId, itemId) as ShoppingItemRow;
+  }
+
+  listShoppingLists(householdId: string): ShoppingListRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, household_id, name
+         FROM shopping_lists
+         WHERE household_id = ?`,
+      )
+      .all(householdId) as ShoppingListRow[];
+  }
+
+  listShoppingItems(householdId: string, listId: string): ShoppingItemRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, list_id, household_id, title, status, added_by_user_id, source, created_at, purchased_at
+         FROM shopping_items
+         WHERE household_id = ? AND list_id = ? AND archived_at IS NULL
+         ORDER BY created_at ASC`,
+      )
+      .all(householdId, listId) as ShoppingItemRow[];
+  }
+
+  clearPurchasedItems(householdId: string, listId: string): void {
+    this.db
+      .prepare(
+        `UPDATE shopping_items
+         SET archived_at = ?
+         WHERE household_id = ? AND list_id = ? AND status = 'purchased' AND archived_at IS NULL`,
+      )
+      .run(new Date().toISOString(), householdId, listId);
   }
 
   getShoppingItem(householdId: string, itemId: string): ShoppingItemRow | null {
     const row = this.db
       .prepare(
-        `SELECT id, list_id, household_id, title, status, added_by_user_id, source, created_at
+        `SELECT id, list_id, household_id, title, status, added_by_user_id, source, created_at, purchased_at
          FROM shopping_items
          WHERE household_id = ? AND id = ?`,
       )
@@ -729,12 +794,7 @@ export class HouseholdGraphClient {
           const currentIndex = Math.max(assignees.indexOf(currentAssignee), 0);
           const nextAssignee = assignees[(currentIndex + 1) % assignees.length];
 
-          this.createChoreAssignmentRecord(
-            householdId,
-            chore,
-            nextAssignee,
-            new Date(completedAt),
-          );
+          this.createChoreAssignmentRecord(householdId, chore, nextAssignee, new Date(completedAt));
         }
       }
 
@@ -849,7 +909,9 @@ export class HouseholdGraphClient {
       if (!Array.isArray(parsed)) {
         return [];
       }
-      return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+      return parsed.filter(
+        (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+      );
     } catch {
       return [];
     }
@@ -882,7 +944,15 @@ export class HouseholdGraphClient {
           (id, household_id, object_type, object_id, target_user_ids_json, remind_at, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, householdId, objectType, objectId, JSON.stringify(targetUserIds), remindAt, createdAt);
+      .run(
+        id,
+        householdId,
+        objectType,
+        objectId,
+        JSON.stringify(targetUserIds),
+        remindAt,
+        createdAt,
+      );
 
     return this.db
       .prepare(

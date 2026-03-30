@@ -37,6 +37,7 @@
     "@lifeos/goal-engine": "workspace:*",
     "@lifeos/google-bridge": "workspace:*",
     "@lifeos/habit-streak-module": "workspace:*",
+    "@lifeos/household-shopping-module": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
     "@lifeos/mesh": "workspace:*",
     "@lifeos/module-loader": "workspace:*",
