@@ -22,6 +22,11 @@ import {
 } from '@lifeos/contracts';
 import { type BaseEvent, type ManagedEventBus, Topics } from '@lifeos/event-bus';
 import {
+  publishChoreAssigned,
+  publishChoreCompleted,
+  type ChorePublishContext,
+} from '../../../../modules/household-chores/src/index';
+import {
   HouseholdGraphClient,
   InvalidShoppingItemTransitionError,
   canPerform,
@@ -137,6 +142,38 @@ async function publishHouseholdEvent<T extends Record<string, unknown>>(
   };
 
   await eventBus.publish(topic, event);
+}
+
+function createChorePublishContext(
+  eventBus: ManagedEventBus,
+  householdId: string,
+  actorId: string,
+  traceId: string,
+): ChorePublishContext {
+  return {
+    async publish<T extends Record<string, unknown>>(
+      topic: string,
+      data: T,
+      source = 'dashboard-service',
+    ): Promise<BaseEvent<T>> {
+      const event: BaseEvent<T> = {
+        id: randomUUID(),
+        type: topic,
+        timestamp: new Date().toISOString(),
+        source,
+        version: '1',
+        data,
+        metadata: {
+          household_id: householdId,
+          actor_id: actorId,
+          trace_id: traceId,
+        },
+      };
+
+      await eventBus.publish(topic, event);
+      return event;
+    },
+  };
 }
 
 export function registerHouseholdRoutes(
@@ -384,6 +421,8 @@ export function registerHouseholdRoutes(
         body.recurrenceRule,
       );
 
+      db.createReminder(params.id, 'chore', chore.id, [chore.assigned_to_user_id], chore.due_at);
+
       const eventData = HouseholdChoreAssignedSchema.parse({
         householdId: params.id,
         choreId: chore.id,
@@ -392,16 +431,98 @@ export function registerHouseholdRoutes(
         dueAt: chore.due_at,
         recurrenceRule: chore.recurrence_rule ?? undefined,
       });
-      await publishHouseholdEvent(
-        eventBus,
-        Topics.lifeos.householdChoreAssigned,
+      await publishChoreAssigned(
+        createChorePublishContext(eventBus, params.id, callerUserId, request.id),
         eventData,
-        params.id,
-        callerUserId,
-        request.id,
       );
 
       reply.status(201).send(chore);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/chores', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const chores = db.listChores(params.id);
+      reply.status(200).send(chores);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/chores/:choreId/history', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          choreId: z.string().min(1),
+        })
+        .parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const history = db.getChoreHistory(params.id, params.choreId);
+      reply.status(200).send(history);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/chores/:choreId/assign', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          choreId: z.string().min(1),
+        })
+        .parse(request.params);
+      const body = z.object({ userId: z.string().min(1) }).parse(request.body);
+
+      await requireMember(db, params.id, callerUserId, 'complete_chore');
+
+      const assignment = db.assignChore(params.id, params.choreId, body.userId, callerUserId);
+      const chore = db.getChore(params.id, params.choreId);
+      if (!chore) {
+        throw makeStatusError(404, 'Chore not found');
+      }
+
+      db.createReminder(params.id, 'chore', params.choreId, [body.userId], assignment.due_at);
+
+      const eventData = HouseholdChoreAssignedSchema.parse({
+        householdId: params.id,
+        choreId: params.choreId,
+        choreTitle: chore.title,
+        assignedToUserId: body.userId,
+        dueAt: assignment.due_at,
+        recurrenceRule: chore.recurrence_rule ?? undefined,
+      });
+      await publishChoreAssigned(
+        createChorePublishContext(eventBus, params.id, callerUserId, request.id),
+        eventData,
+      );
+
+      reply.status(200).send(assignment);
     } catch (error) {
       replyError(reply, error);
     }
@@ -423,6 +544,21 @@ export function registerHouseholdRoutes(
         .parse(request.params);
 
       await requireMember(db, params.id, callerUserId, 'complete_chore');
+
+      const callerMember = db.getMember(params.id, callerUserId);
+      if (!callerMember || callerMember.status !== 'active') {
+        throw makeStatusError(403, 'Forbidden');
+      }
+
+      const choreBeforeCompletion = db.getChore(params.id, params.choreId);
+      if (!choreBeforeCompletion) {
+        throw makeStatusError(404, 'Chore not found');
+      }
+
+      if (callerMember.role !== 'Admin' && choreBeforeCompletion.assigned_to_user_id !== callerUserId) {
+        throw makeStatusError(403, 'Only assigned member or Admin can complete chore');
+      }
+
       const chore = db.completeChore(params.id, params.choreId, callerUserId);
 
       const eventData = HouseholdChoreCompletedSchema.parse({
@@ -431,15 +567,11 @@ export function registerHouseholdRoutes(
         choreTitle: chore.title,
         completedByUserId: callerUserId,
         completedAt: chore.completed_at ?? new Date().toISOString(),
-        streakCount: 0,
+        streakCount: chore.streakCount,
       });
-      await publishHouseholdEvent(
-        eventBus,
-        Topics.lifeos.householdChoreCompleted,
+      await publishChoreCompleted(
+        createChorePublishContext(eventBus, params.id, callerUserId, request.id),
         eventData,
-        params.id,
-        callerUserId,
-        request.id,
       );
 
       reply.status(200).send(chore);

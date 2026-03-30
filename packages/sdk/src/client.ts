@@ -313,6 +313,35 @@ interface ChoreRow {
   created_at: string;
 }
 
+interface ChoreDetailRow {
+  id: string;
+  title: string;
+  recurrenceRule: string | null;
+  assignedTo: {
+    userId: string;
+    displayName: string;
+  };
+  dueAt: string;
+  status: 'pending' | 'overdue' | 'completed';
+  streakCount: number;
+  isOverdue: boolean;
+}
+
+interface ChoreRunRow {
+  id: string;
+  choreId: string;
+  completedBy: string;
+  completedAt: string;
+}
+
+interface ChoreAssignmentRow {
+  id: string;
+  chore_id: string;
+  assigned_to: string;
+  due_at: string;
+  status: string;
+}
+
 interface ReminderRow {
   id: string;
   household_id: string;
@@ -333,6 +362,69 @@ interface NoteRow {
 
 class HouseholdNamespace {
   constructor(private config: SDKConfig) {}
+
+  readonly chores = {
+    list: async (householdId: string): Promise<ChoreDetailRow[]> => {
+      const response = await sendHttpRequest<ChoreDetailRow[]>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/chores`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    complete: async (householdId: string, choreId: string): Promise<ChoreRow> => {
+      const response = await sendHttpRequest<ChoreRow>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/chores/${choreId}/complete`,
+          method: 'PATCH',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    assign: async (
+      householdId: string,
+      choreId: string,
+      userId: string,
+    ): Promise<ChoreAssignmentRow> => {
+      const response = await sendHttpRequest<ChoreAssignmentRow>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/chores/${choreId}/assign`,
+          method: 'POST',
+          body: { userId },
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+    history: async (householdId: string, choreId: string): Promise<ChoreRunRow[]> => {
+      const response = await sendHttpRequest<
+        Array<{ id: string; chore_id: string; completed_by: string; completed_at: string }>
+      >(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/chores/${choreId}/history`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data.map((row) => ({
+        id: row.id,
+        choreId: row.chore_id,
+        completedBy: row.completed_by,
+        completedAt: row.completed_at,
+      }));
+    },
+  };
 
   async createHousehold(name: string): Promise<HouseholdRow> {
     const response = await sendHttpRequest<HouseholdRow>(
@@ -454,17 +546,24 @@ class HouseholdNamespace {
     return response.data;
   }
 
-  async completeChore(householdId: string, choreId: string): Promise<ChoreRow> {
-    const response = await sendHttpRequest<ChoreRow>(
-      {
-        url: `${this.config.baseUrl}/api/households/${householdId}/chores/${choreId}/complete`,
-        method: 'PATCH',
-      },
-      this.config.getAccessToken,
-      this.config,
-    );
+  async listChores(householdId: string): Promise<ChoreDetailRow[]> {
+    return this.chores.list(householdId);
+  }
 
-    return response.data;
+  async assignChore(
+    householdId: string,
+    choreId: string,
+    userId: string,
+  ): Promise<ChoreAssignmentRow> {
+    return this.chores.assign(householdId, choreId, userId);
+  }
+
+  async choreHistory(householdId: string, choreId: string): Promise<ChoreRunRow[]> {
+    return this.chores.history(householdId, choreId);
+  }
+
+  async completeChore(householdId: string, choreId: string): Promise<ChoreRow> {
+    return this.chores.complete(householdId, choreId);
   }
 
   async createReminder(

@@ -7,6 +7,10 @@ import { fileURLToPath } from 'node:url';
 import type { AuditLogEntry } from '@lifeos/contracts';
 import { HouseholdRoleSchema } from '@lifeos/module-sdk';
 
+import { calculateStreak, getNextDueDate, isOverdue } from '../../household-chores/src/index';
+
+import { canPerform } from './roles';
+
 type HouseholdRole = 'Admin' | 'Adult' | 'Teen' | 'Child' | 'Guest';
 
 const migrationPath = resolve(
@@ -70,9 +74,44 @@ export interface ChoreRow {
   due_at: string;
   status: 'pending' | 'completed';
   recurrence_rule: string | null;
+  assigned_to_json?: string | null;
+  rotation_policy?: string | null;
   completed_by_user_id: string | null;
   completed_at: string | null;
   created_at: string;
+}
+
+export interface ChoreAssignmentRow {
+  id: string;
+  chore_id: string;
+  assigned_to: string;
+  due_at: string;
+  status: string;
+}
+
+export interface ChoreRunRow {
+  id: string;
+  chore_id: string;
+  completed_by: string;
+  completed_at: string;
+}
+
+export interface ChoreWithDetail {
+  id: string;
+  title: string;
+  recurrenceRule: string | null;
+  assignedTo: {
+    userId: string;
+    displayName: string;
+  };
+  dueAt: string;
+  status: 'pending' | 'overdue' | 'completed';
+  streakCount: number;
+  isOverdue: boolean;
+}
+
+export interface CompletedChoreRow extends ChoreRow {
+  streakCount: number;
 }
 
 export interface ReminderRow {
@@ -547,30 +586,284 @@ export class HouseholdGraphClient {
     return this.getChore(householdId, id) as ChoreRow;
   }
 
-  completeChore(householdId: string, choreId: string, completedByUserId: string): ChoreRow {
+  listChores(householdId: string): ChoreWithDetail[] {
+    const chores = this.db
+      .prepare(
+        `SELECT id, household_id, title, assigned_to_user_id, due_at, status, recurrence_rule,
+                completed_by_user_id, completed_at, created_at
+         FROM chores
+         WHERE household_id = ?
+         ORDER BY created_at DESC`,
+      )
+      .all(householdId) as ChoreRow[];
+
+    const latestAssignmentStatement = this.db.prepare(
+      `SELECT id, chore_id, assigned_to, due_at, status
+       FROM chore_assignments
+       WHERE chore_id = ?
+       ORDER BY due_at DESC, id DESC
+       LIMIT 1`,
+    );
+
+    return chores.map((chore) => {
+      const assignment = latestAssignmentStatement.get(chore.id) as ChoreAssignmentRow | undefined;
+      const assignedUserId = assignment?.assigned_to ?? chore.assigned_to_user_id;
+      const dueAt = assignment?.due_at ?? chore.due_at;
+
+      const member = assignedUserId
+        ? ((this.db
+            .prepare(
+              `SELECT user_id
+               FROM household_members
+               WHERE household_id = ? AND user_id = ?
+               LIMIT 1`,
+            )
+            .get(householdId, assignedUserId) as { user_id: string } | undefined) ?? null)
+        : null;
+
+      const runs = this.getChoreRuns(chore.id);
+      const overdue = isOverdue(dueAt);
+      const derivedStatus: ChoreWithDetail['status'] =
+        chore.status === 'completed' ? 'completed' : overdue ? 'overdue' : 'pending';
+
+      return {
+        id: chore.id,
+        title: chore.title,
+        recurrenceRule: chore.recurrence_rule,
+        assignedTo: {
+          userId: assignedUserId,
+          displayName: member?.user_id ?? assignedUserId,
+        },
+        dueAt,
+        status: derivedStatus,
+        streakCount: calculateStreak(runs, chore.recurrence_rule),
+        isOverdue: overdue,
+      };
+    });
+  }
+
+  getChoreHistory(householdId: string, choreId: string): ChoreRunRow[] {
+    this.assertChoreBelongsToHousehold(householdId, choreId);
+
+    return this.db
+      .prepare(
+        `SELECT id, chore_id, completed_by, completed_at
+         FROM chore_runs
+         WHERE chore_id = ?
+         ORDER BY completed_at DESC`,
+      )
+      .all(choreId) as ChoreRunRow[];
+  }
+
+  assignChore(
+    householdId: string,
+    choreId: string,
+    userId: string,
+    actorId: string,
+    fromDate: Date = new Date(),
+  ): ChoreAssignmentRow {
+    const actorMember = this.getMember(householdId, actorId);
+    if (!actorMember || actorMember.status !== 'active') {
+      throw new Error('Forbidden');
+    }
+    if (!canPerform(actorMember.role, 'complete_chore') || actorMember.role === 'Teen') {
+      throw new Error('Insufficient role');
+    }
+
+    const chore = this.getChore(householdId, choreId);
+    if (!chore) {
+      throw new Error('Chore not found');
+    }
+
+    this.assertActiveHouseholdMember(householdId, userId);
+
+    return this.createChoreAssignmentRecord(householdId, chore, userId, fromDate);
+  }
+
+  completeChore(
+    householdId: string,
+    choreId: string,
+    completedByUserId: string,
+  ): CompletedChoreRow {
     const completedAt = new Date().toISOString();
 
-    this.db
-      .prepare(
-        `UPDATE chores
-         SET status = 'completed', completed_by_user_id = ?, completed_at = ?
-         WHERE household_id = ? AND id = ?`,
-      )
-      .run(completedByUserId, completedAt, householdId, choreId);
+    const transaction = this.db.transaction(() => {
+      const actorMember = this.getMember(householdId, completedByUserId);
+      if (!actorMember || actorMember.status !== 'active') {
+        throw new Error('Forbidden');
+      }
+      if (!canPerform(actorMember.role, 'complete_chore')) {
+        throw new Error('Insufficient role');
+      }
 
-    return this.getChore(householdId, choreId) as ChoreRow;
+      const chore = this.getChore(householdId, choreId);
+      if (!chore) {
+        throw new Error('Chore not found');
+      }
+
+      const currentlyAssignedUserId = this.getCurrentAssignedUserId(chore);
+      if (actorMember.role !== 'Admin' && currentlyAssignedUserId !== completedByUserId) {
+        throw new Error('Only assigned member or Admin can complete chore');
+      }
+
+      this.db
+        .prepare(
+          `UPDATE chores
+           SET status = 'completed', completed_by_user_id = ?, completed_at = ?
+           WHERE household_id = ? AND id = ?`,
+        )
+        .run(completedByUserId, completedAt, householdId, choreId);
+
+      this.db
+        .prepare(
+          `INSERT INTO chore_runs
+            (id, chore_id, completed_by, completed_at)
+           VALUES (?, ?, ?, ?)`,
+        )
+        .run(randomUUID(), choreId, completedByUserId, completedAt);
+
+      if (chore.rotation_policy === 'round-robin' && chore.assigned_to_json) {
+        const assignees = this.parseAssigneeRotation(chore.assigned_to_json);
+        if (assignees.length > 0) {
+          const currentAssignee = currentlyAssignedUserId || completedByUserId;
+          const currentIndex = Math.max(assignees.indexOf(currentAssignee), 0);
+          const nextAssignee = assignees[(currentIndex + 1) % assignees.length];
+
+          this.createChoreAssignmentRecord(
+            householdId,
+            chore,
+            nextAssignee,
+            new Date(completedAt),
+          );
+        }
+      }
+
+      const updated = this.getChore(householdId, choreId);
+      if (!updated) {
+        throw new Error('Chore not found');
+      }
+
+      const runs = this.getChoreRuns(choreId);
+      return {
+        ...updated,
+        streakCount: calculateStreak(runs, updated.recurrence_rule),
+      };
+    });
+
+    return transaction();
   }
 
   getChore(householdId: string, choreId: string): ChoreRow | null {
     const row = this.db
       .prepare(
         `SELECT id, household_id, title, assigned_to_user_id, due_at, status, recurrence_rule,
+                assigned_to_json, rotation_policy,
                 completed_by_user_id, completed_at, created_at
          FROM chores
          WHERE household_id = ? AND id = ?`,
       )
       .get(householdId, choreId) as ChoreRow | undefined;
     return row ?? null;
+  }
+
+  private assertChoreBelongsToHousehold(householdId: string, choreId: string): void {
+    const exists = this.db
+      .prepare('SELECT id FROM chores WHERE household_id = ? AND id = ? LIMIT 1')
+      .get(householdId, choreId) as { id: string } | undefined;
+
+    if (!exists) {
+      throw new Error('Chore not found');
+    }
+  }
+
+  private assertActiveHouseholdMember(householdId: string, userId: string): void {
+    const member = this.getMember(householdId, userId);
+    if (!member) {
+      throw new Error('Assignee not found');
+    }
+    if (member.status !== 'active') {
+      throw new Error('Invalid assignee status');
+    }
+  }
+
+  private createChoreAssignmentRecord(
+    householdId: string,
+    chore: ChoreRow,
+    userId: string,
+    fromDate: Date,
+  ): ChoreAssignmentRow {
+    this.assertActiveHouseholdMember(householdId, userId);
+
+    let dueAt = chore.due_at;
+    if (chore.recurrence_rule) {
+      const nextDue = getNextDueDate(chore.recurrence_rule, fromDate);
+      if (!nextDue) {
+        throw new Error('Chore recurrence has ended');
+      }
+      dueAt = nextDue.toISOString();
+    }
+
+    const assignmentId = randomUUID();
+    this.db
+      .prepare(
+        `INSERT INTO chore_assignments
+          (id, chore_id, assigned_to, due_at, status)
+         VALUES (?, ?, ?, ?, 'pending')`,
+      )
+      .run(assignmentId, chore.id, userId, dueAt);
+
+    this.db
+      .prepare(
+        `UPDATE chores
+         SET assigned_to_user_id = ?, due_at = ?, status = 'pending', completed_by_user_id = NULL, completed_at = NULL
+         WHERE household_id = ? AND id = ?`,
+      )
+      .run(userId, dueAt, householdId, chore.id);
+
+    return this.db
+      .prepare(
+        `SELECT id, chore_id, assigned_to, due_at, status
+         FROM chore_assignments
+         WHERE id = ?`,
+      )
+      .get(assignmentId) as ChoreAssignmentRow;
+  }
+
+  private getCurrentAssignedUserId(chore: ChoreRow): string {
+    const latestAssignment = this.db
+      .prepare(
+        `SELECT assigned_to
+         FROM chore_assignments
+         WHERE chore_id = ?
+         ORDER BY due_at DESC, id DESC
+         LIMIT 1`,
+      )
+      .get(chore.id) as { assigned_to: string } | undefined;
+
+    return latestAssignment?.assigned_to ?? chore.assigned_to_user_id;
+  }
+
+  private parseAssigneeRotation(assignedToJson: string): string[] {
+    try {
+      const parsed = JSON.parse(assignedToJson) as unknown;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+    } catch {
+      return [];
+    }
+  }
+
+  private getChoreRuns(choreId: string): ChoreRunRow[] {
+    return this.db
+      .prepare(
+        `SELECT id, chore_id, completed_by, completed_at
+         FROM chore_runs
+         WHERE chore_id = ?
+         ORDER BY completed_at DESC`,
+      )
+      .all(choreId) as ChoreRunRow[];
   }
 
   createReminder(

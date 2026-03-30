@@ -1,5 +1,5 @@
 {
-  "name": "@lifeos/household-identity-module",
+  "name": "@lifeos/household-chores-module",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,11 +12,11 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts src/audit-interceptor.test.ts"
+    "test": "tsx --test src/index.test.ts"
   },
   "dependencies": {
+    "@lifeos/contracts": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
-    "@lifeos/household-chores-module": "workspace:*",
     "@lifeos/module-sdk": "workspace:*",
     "better-sqlite3": "^12.8.0"
   }

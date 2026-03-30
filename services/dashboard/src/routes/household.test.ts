@@ -715,6 +715,200 @@ test('PATCH /api/households/:id/chores/:choreId/complete happy path returns 200'
 
     assert.equal(response.statusCode, 200);
     assert.equal(response.json().status, 'completed');
+    assert.equal(response.json().streakCount, 1);
+
+    const runs = db.getChoreHistory(householdId, chore.id);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.completed_by, 'admin-1');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/chores returns list with expected detail shape', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    db.createChore(
+      householdId,
+      'Wipe counters',
+      'admin-1',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/chores`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.ok(Array.isArray(body));
+    assert.ok(body.length >= 1);
+    assert.equal(typeof body[0]?.title, 'string');
+    assert.equal(typeof body[0]?.dueAt, 'string');
+    assert.equal(typeof body[0]?.streakCount, 'number');
+    assert.equal(typeof body[0]?.isOverdue, 'boolean');
+    assert.equal(typeof body[0]?.assignedTo?.userId, 'string');
+    assert.equal(typeof body[0]?.assignedTo?.displayName, 'string');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/chores/:choreId/assign creates assignment row', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    activateMember(db, householdId, 'adult-2', 'Adult', 'admin-1');
+    const chore = db.createChore(
+      householdId,
+      'Take out trash',
+      'admin-1',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/chores/${chore.id}/assign`,
+      headers: { authorization: adminAuth },
+      payload: { userId: 'adult-2' },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.equal(body.chore_id, chore.id);
+    assert.equal(body.assigned_to, 'adult-2');
+    assert.equal(body.status, 'pending');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/chores/:choreId/assign child role returns 403', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId } = await seedHouseholdWithAdmin(db);
+    activateMember(db, householdId, 'child-chores', 'Child', 'admin-1');
+    const chore = db.createChore(
+      householdId,
+      'Clean table',
+      'admin-1',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/chores/${chore.id}/assign`,
+      headers: { authorization: await bearerFor('child-chores') },
+      payload: { userId: 'admin-1' },
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/chores/:choreId/assign rejects non-member assignee', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    const chore = db.createChore(
+      householdId,
+      'Laundry',
+      'admin-1',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/chores/${chore.id}/assign`,
+      headers: { authorization: adminAuth },
+      payload: { userId: 'missing-member' },
+    });
+
+    assert.equal(response.statusCode, 404);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/chores/:choreId/complete rejects non-assigned non-admin member', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const household = db.createHousehold('Complete Ownership Home');
+    activateMember(db, household.id, 'adult-owner', 'Adult', 'admin-1');
+    activateMember(db, household.id, 'adult-other', 'Adult', 'admin-1');
+    const chore = db.createChore(
+      household.id,
+      'Take out trash',
+      'adult-owner',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${household.id}/chores/${chore.id}/complete`,
+      headers: { authorization: await bearerFor('adult-other') },
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/chores/:choreId/complete succeeds for assigned Teen with round-robin', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const household = db.createHousehold('Teen Rotation Home');
+    activateMember(db, household.id, 'teen-rotate', 'Teen', 'admin-1');
+    activateMember(db, household.id, 'adult-rotate', 'Adult', 'admin-1');
+
+    const chore = db.createChore(
+      household.id,
+      'Wash dishes',
+      'teen-rotate',
+      new Date(Date.now() + 3_600_000).toISOString(),
+      'FREQ=DAILY',
+    );
+
+    const rawDb = (db as unknown as {
+      db: {
+        prepare: (sql: string) => { run: (...args: unknown[]) => unknown };
+      };
+    }).db;
+    rawDb
+      .prepare('UPDATE chores SET rotation_policy = ?, assigned_to_json = ? WHERE household_id = ? AND id = ?')
+      .run('round-robin', JSON.stringify(['teen-rotate', 'adult-rotate']), household.id, chore.id);
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${household.id}/chores/${chore.id}/complete`,
+      headers: { authorization: await bearerFor('teen-rotate') },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const updated = db.getChore(household.id, chore.id);
+    assert.ok(updated);
+    assert.equal(updated?.assigned_to_user_id, 'adult-rotate');
+
+    const runs = db.getChoreHistory(household.id, chore.id);
+    assert.equal(runs.length, 1);
+    assert.equal(runs[0]?.completed_by, 'teen-rotate');
   } finally {
     await cleanup();
   }
