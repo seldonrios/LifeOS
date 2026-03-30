@@ -18,6 +18,7 @@ export interface CreateEventBusClientOptions {
   timeoutMs?: number;
   maxReconnectAttempts?: number;
   logger?: (message: string) => void;
+  allowInMemoryFallback?: boolean;
 }
 
 function normalizeServers(value: string | string[] | undefined, env?: NodeJS.ProcessEnv): string[] {
@@ -181,6 +182,7 @@ class LifeOSEventBus implements ManagedEventBus {
   private readonly timeoutMs: number;
   private readonly maxReconnectAttempts: number;
   private readonly logger: ((message: string) => void) | undefined;
+  private readonly allowInMemoryFallback: boolean;
   private connectionPromise: Promise<NatsConnection | null> | null = null;
   private connection: NatsConnection | null = null;
   private subscriptions = new Set<Subscription>();
@@ -194,6 +196,7 @@ class LifeOSEventBus implements ManagedEventBus {
     this.timeoutMs = options.timeoutMs ?? 2000;
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? -1;
     this.logger = options.logger;
+    this.allowInMemoryFallback = options.allowInMemoryFallback ?? true;
   }
 
   private logFallback(reason: unknown): void {
@@ -230,6 +233,14 @@ class LifeOSEventBus implements ManagedEventBus {
       this.logger?.(`[event-bus] connected to ${this.servers.join(', ')}`);
       return connection;
     } catch (error: unknown) {
+      if (!this.allowInMemoryFallback) {
+        this.connectionPromise = null;
+        this.transport = 'unknown';
+        throw new Error(
+          `[event-bus] NATS unavailable and in-memory fallback is disabled (${toErrorMessage(error)})`,
+        );
+      }
+
       this.logFallback(error);
       this.connectionPromise = null;
       return null;
@@ -259,6 +270,10 @@ class LifeOSEventBus implements ManagedEventBus {
     }
 
     // Fallback to in-memory bus
+    if (!this.allowInMemoryFallback) {
+      throw new Error('[event-bus] In-memory fallback disabled and no NATS connection available');
+    }
+
     await sharedInMemoryBus.publish(topic, event as BaseEvent<unknown>);
     this.transport = 'in-memory';
   }
@@ -283,6 +298,10 @@ class LifeOSEventBus implements ManagedEventBus {
 
     const connection = await this.getConnection();
     if (!connection) {
+      if (!this.allowInMemoryFallback) {
+        throw new Error('[event-bus] In-memory fallback disabled and no NATS connection available');
+      }
+
       const unsubscribe = sharedInMemoryBus.subscribe(topic, async (event: BaseEvent<unknown>) => {
         try {
           // Timeout protection for handlers

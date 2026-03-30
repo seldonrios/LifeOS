@@ -8,6 +8,7 @@
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
+    "@lifeos/event-bus": "workspace:*",
     "@lifeos/household-identity-module": "workspace:*",
     "@lifeos/security": "workspace:*",
     "@lifeos/service-runtime": "workspace:*",

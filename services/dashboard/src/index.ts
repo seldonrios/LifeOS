@@ -1,5 +1,6 @@
 import { createEnvSecretStore, startService } from "@lifeos/service-runtime";
-import { HouseholdGraphClient } from '@lifeos/household-identity-module';
+import { createEventBusClient } from '@lifeos/event-bus';
+import { HouseholdGraphClient, registerAuditInterceptor } from '@lifeos/household-identity-module';
 
 import { registerHouseholdRoutes } from './routes/household';
 
@@ -11,7 +12,17 @@ startService({
   registerRoutes: async (app) => {
     const householdGraphClient = new HouseholdGraphClient(process.env.LIFEOS_HOUSEHOLD_DB_PATH);
     householdGraphClient.initializeSchema();
-    registerHouseholdRoutes(app, householdGraphClient);
+    const eventBus = createEventBusClient({
+      env: process.env,
+      allowInMemoryFallback: false,
+    });
+
+    await registerAuditInterceptor(eventBus, householdGraphClient);
+    registerHouseholdRoutes(app, householdGraphClient, eventBus);
+
+    app.addHook('onClose', async () => {
+      await eventBus.close();
+    });
 
     app.get('/', async (_request, reply) => {
       reply.type('text/html; charset=utf-8');

@@ -1,0 +1,85 @@
+import { randomUUID } from 'node:crypto';
+
+import type { BaseEvent, ManagedEventBus } from '@lifeos/event-bus';
+
+import type { HouseholdGraphClient } from './client';
+
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function deriveObjectRef(type: string, data: Record<string, unknown>): string {
+  switch (type) {
+    case 'lifeos.household.member.invited':
+      return `member:${String(data.invitedUserId ?? '')}`;
+    case 'lifeos.household.member.joined':
+      return `member:${String(data.userId ?? '')}`;
+    case 'lifeos.household.member.role.changed':
+      return `member:${String(data.userId ?? '')}`;
+    case 'lifeos.household.chore.assigned':
+      return `chore:${String(data.choreId ?? '')}`;
+    case 'lifeos.household.chore.completed':
+      return `chore:${String(data.choreId ?? '')}`;
+    case 'lifeos.household.shopping.item.added':
+      return `shopping_item:${String(data.itemId ?? '')}`;
+    case 'lifeos.household.shopping.item.purchased':
+      return `shopping_item:${String(data.itemId ?? '')}`;
+    case 'lifeos.household.calendar.event.created':
+      return `calendar_event:${String(data.eventId ?? '')}`;
+    case 'lifeos.household.reminder.fired':
+      return `reminder:${String(data.reminderId ?? '')}`;
+    case 'lifeos.household.homestate.changed':
+      return `device:${String(data.deviceId ?? '')}`;
+    case 'lifeos.household.voice.capture.created':
+      return `capture:${String(data.captureId ?? '')}`;
+    default:
+      return type;
+  }
+}
+
+export async function registerAuditInterceptor(
+  eventBus: ManagedEventBus,
+  client: HouseholdGraphClient,
+): Promise<void> {
+  await eventBus.subscribe<unknown>('lifeos.household.>', async (event: BaseEvent<unknown>) => {
+    const metadata = event.metadata ?? {};
+    const householdId = asNonEmptyString(metadata.household_id);
+    const actorId = asNonEmptyString(metadata.actor_id);
+    const traceId = asNonEmptyString(metadata.trace_id);
+
+    if (!householdId || !actorId) {
+      const error = new Error(
+        `Missing required audit metadata for event ${event.type} (trace_id=${traceId ?? 'n/a'})`,
+      );
+      console.error('[household-identity] audit interceptor rejected event:', error.message);
+      throw error;
+    }
+
+    const payload = (event.data ?? {}) as Record<string, unknown>;
+    const objectRef = deriveObjectRef(event.type, payload);
+
+    try {
+      client.writeAuditEntry({
+        id: randomUUID(),
+        householdId,
+        actorId,
+        actionType: event.type,
+        objectRef,
+        payloadJson: payload,
+        createdAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error('[household-identity] failed to write audit entry:', {
+        eventType: event.type,
+        traceId,
+        error,
+      });
+      throw error;
+    }
+  });
+}

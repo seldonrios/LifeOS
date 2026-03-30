@@ -6,7 +6,12 @@ import test from 'node:test';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { HouseholdGraphClient, generateInviteToken } from '@lifeos/household-identity-module';
+import { createEventBusClient, type ManagedEventBus } from '@lifeos/event-bus';
+import {
+  HouseholdGraphClient,
+  generateInviteToken,
+  registerAuditInterceptor,
+} from '@lifeos/household-identity-module';
 import { JwtService } from '@lifeos/security';
 
 import { registerHouseholdRoutes } from './household';
@@ -25,6 +30,7 @@ async function bearerFor(userId: string): Promise<string> {
 function createHarness(): {
   db: HouseholdGraphClient;
   app: FastifyInstance;
+  eventBus: ManagedEventBus;
   cleanup: () => Promise<void>;
 } {
   const tempDir = mkdtempSync(join(tmpdir(), 'lifeos-dashboard-household-'));
@@ -32,14 +38,56 @@ function createHarness(): {
   const db = new HouseholdGraphClient(dbPath);
   db.initializeSchema();
 
+  const eventBus = createEventBusClient({
+    servers: 'nats://127.0.0.1:1',
+    timeoutMs: 25,
+    maxReconnectAttempts: 0,
+  });
+
   const app = Fastify();
-  registerHouseholdRoutes(app, db);
+  registerHouseholdRoutes(app, db, eventBus);
 
   return {
     db,
     app,
+    eventBus,
     cleanup: async () => {
       await app.close();
+      await eventBus.close();
+      db.close();
+      rmSync(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+function createStrictOutageHarness(): {
+  db: HouseholdGraphClient;
+  app: FastifyInstance;
+  eventBus: ManagedEventBus;
+  cleanup: () => Promise<void>;
+} {
+  const tempDir = mkdtempSync(join(tmpdir(), 'lifeos-dashboard-household-strict-'));
+  const dbPath = join(tempDir, 'dashboard-household.db');
+  const db = new HouseholdGraphClient(dbPath);
+  db.initializeSchema();
+
+  const eventBus = createEventBusClient({
+    servers: 'nats://127.0.0.1:1',
+    timeoutMs: 25,
+    maxReconnectAttempts: 0,
+    allowInMemoryFallback: false,
+  });
+
+  const app = Fastify();
+  registerHouseholdRoutes(app, db, eventBus);
+
+  return {
+    db,
+    app,
+    eventBus,
+    cleanup: async () => {
+      await app.close();
+      await eventBus.close();
       db.close();
       rmSync(tempDir, { recursive: true, force: true });
     },
@@ -913,6 +961,77 @@ test('POST /api/households/:id/notes child role returns 403', async () => {
     });
 
     assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('household mutation writes both domain row and audit_log row when interceptor is registered', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  try {
+    await registerAuditInterceptor(eventBus, db);
+
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/shopping/items`,
+      headers: { authorization: adminAuth },
+      payload: { title: 'Audit Milk', source: 'manual' },
+    });
+
+    assert.equal(response.statusCode, 201);
+    const item = response.json();
+    assert.equal(item.title, 'Audit Milk');
+
+    const savedItem = db.getShoppingItem(householdId, item.id as string);
+    assert.ok(savedItem);
+
+    const rows = (db as unknown as { db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } } }).db
+      .prepare('SELECT * FROM audit_log WHERE household_id = ?')
+      .all(householdId);
+    assert.equal(rows.length, 1);
+    assert.equal(rows[0]?.action_type, 'lifeos.household.shopping.item.added');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('strict event bus outage returns 500 for POST household mutation endpoint', async () => {
+  const { db, app, cleanup } = createStrictOutageHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${householdId}/shopping/items`,
+      headers: { authorization: adminAuth },
+      payload: { title: 'Outage Milk', source: 'manual' },
+    });
+
+    assert.equal(response.statusCode, 500);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('strict event bus outage returns 500 for PATCH household mutation endpoint', async () => {
+  const { db, app, cleanup } = createStrictOutageHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    activateMember(db, householdId, 'teen-strict', 'Teen', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/members/teen-strict/role`,
+      headers: { authorization: adminAuth },
+      payload: { role: 'Adult' },
+    });
+
+    assert.equal(response.statusCode, 500);
   } finally {
     await cleanup();
   }

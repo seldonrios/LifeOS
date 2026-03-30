@@ -4,6 +4,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import type { AuditLogEntry } from '@lifeos/contracts';
 import { HouseholdRoleSchema } from '@lifeos/module-sdk';
 
 type HouseholdRole = 'Admin' | 'Adult' | 'Teen' | 'Child' | 'Guest';
@@ -52,6 +53,7 @@ export interface HouseholdMemberRow {
 
 export interface ShoppingItemRow {
   id: string;
+  list_id: string;
   household_id: string;
   title: string;
   status: 'added' | 'in_cart' | 'purchased';
@@ -516,7 +518,7 @@ export class HouseholdGraphClient {
   getShoppingItem(householdId: string, itemId: string): ShoppingItemRow | null {
     const row = this.db
       .prepare(
-        `SELECT id, household_id, title, status, added_by_user_id, source, created_at
+        `SELECT id, list_id, household_id, title, status, added_by_user_id, source, created_at
          FROM shopping_items
          WHERE household_id = ? AND id = ?`,
       )
@@ -617,6 +619,24 @@ export class HouseholdGraphClient {
          WHERE id = ?`,
       )
       .get(id) as NoteRow;
+  }
+
+  writeAuditEntry(entry: AuditLogEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO audit_log
+          (id, household_id, actor_id, action_type, object_ref, payload_json, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.id,
+        entry.householdId,
+        entry.actorId,
+        entry.actionType,
+        entry.objectRef,
+        JSON.stringify(entry.payloadJson),
+        entry.createdAt,
+      );
   }
 
   close(): void {

@@ -1,6 +1,10 @@
+import { randomUUID } from 'node:crypto';
+
 import type { FastifyInstance } from 'fastify';
 
 import {
+  HouseholdChoreAssignedSchema,
+  HouseholdChoreCompletedSchema,
   HouseholdAddShoppingItemRequestSchema,
   HouseholdChangeMemberRoleRequestSchema,
   HouseholdCreateChoreRequestSchema,
@@ -9,8 +13,14 @@ import {
   HouseholdCreateRequestSchema,
   HouseholdInviteMemberRequestSchema,
   HouseholdJoinRequestSchema,
+  HouseholdMemberInvitedSchema,
+  HouseholdMemberJoinedSchema,
+  HouseholdMemberRoleChangedSchema,
+  HouseholdShoppingItemAddedSchema,
+  HouseholdShoppingItemPurchasedSchema,
   HouseholdUpdateShoppingItemStatusRequestSchema,
 } from '@lifeos/contracts';
+import { type BaseEvent, type ManagedEventBus, Topics } from '@lifeos/event-bus';
 import {
   HouseholdGraphClient,
   InvalidShoppingItemTransitionError,
@@ -104,7 +114,36 @@ function replyError(reply: { status: (code: number) => { send: (body: unknown) =
   reply.status(500).send({ error: 'Internal server error' });
 }
 
-export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraphClient): void {
+async function publishHouseholdEvent<T extends Record<string, unknown>>(
+  eventBus: ManagedEventBus,
+  topic: string,
+  data: T,
+  householdId: string,
+  actorId: string,
+  traceId: string,
+): Promise<void> {
+  const event: BaseEvent<T> = {
+    id: randomUUID(),
+    type: topic,
+    timestamp: new Date().toISOString(),
+    source: 'dashboard-service',
+    version: '1',
+    data,
+    metadata: {
+      household_id: householdId,
+      actor_id: actorId,
+      trace_id: traceId,
+    },
+  };
+
+  await eventBus.publish(topic, event);
+}
+
+export function registerHouseholdRoutes(
+  app: FastifyInstance,
+  db: HouseholdGraphClient,
+  eventBus: ManagedEventBus,
+): void {
   app.post('/api/households', async (request, reply) => {
     try {
       const callerUserId = await extractCallerUserId(request);
@@ -141,6 +180,22 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
       const expiresAt = generateInviteExpiry();
       const memberWithToken = db.storeInviteToken(params.id, body.invitedUserId, token, expiresAt);
 
+      const eventData = HouseholdMemberInvitedSchema.parse({
+        householdId: params.id,
+        invitedUserId: body.invitedUserId,
+        role: body.role,
+        inviteToken: token,
+        expiresAt,
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdMemberInvited,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(201).send({
         ...member,
         ...memberWithToken,
@@ -162,6 +217,21 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
       const body = HouseholdJoinRequestSchema.parse(request.body);
 
       const member = db.acceptInviteForUser(body.inviteToken, params.id, callerUserId);
+      const eventData = HouseholdMemberJoinedSchema.parse({
+        householdId: params.id,
+        userId: member.user_id,
+        role: member.role,
+        joinedAt: member.joined_at ?? new Date().toISOString(),
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdMemberJoined,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(200).send(member);
     } catch (error) {
       replyError(reply, error);
@@ -185,7 +255,28 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
       const body = HouseholdChangeMemberRoleRequestSchema.parse(request.body);
 
       await requireMember(db, params.id, callerUserId, 'change_role');
+      const previousMember = db.getMember(params.id, params.userId);
+      if (!previousMember) {
+        throw makeStatusError(404, 'Member not found');
+      }
+
       const member = db.updateMemberRole(params.id, params.userId, body.role);
+
+      const eventData = HouseholdMemberRoleChangedSchema.parse({
+        householdId: params.id,
+        userId: params.userId,
+        previousRole: previousMember.role,
+        newRole: body.role,
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdMemberRoleChanged,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(200).send(member);
     } catch (error) {
       replyError(reply, error);
@@ -205,6 +296,24 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
 
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       const item = db.addShoppingItem(params.id, body.title, callerUserId, body.source);
+
+      const eventData = HouseholdShoppingItemAddedSchema.parse({
+        householdId: params.id,
+        listId: item.list_id,
+        itemId: item.id,
+        title: item.title,
+        addedByUserId: callerUserId,
+        source: item.source,
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdShoppingItemAdded,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(201).send(item);
     } catch (error) {
       replyError(reply, error);
@@ -229,6 +338,26 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
 
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       const item = db.updateShoppingItemStatus(params.id, params.itemId, body.status);
+
+      if (body.status === 'purchased') {
+        const eventData = HouseholdShoppingItemPurchasedSchema.parse({
+          householdId: params.id,
+          listId: item.list_id,
+          itemId: item.id,
+          title: item.title,
+          purchasedByUserId: callerUserId,
+          purchasedAt: new Date().toISOString(),
+        });
+        await publishHouseholdEvent(
+          eventBus,
+          Topics.lifeos.householdShoppingItemPurchased,
+          eventData,
+          params.id,
+          callerUserId,
+          request.id,
+        );
+      }
+
       reply.status(200).send(item);
     } catch (error) {
       replyError(reply, error);
@@ -254,6 +383,24 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
         body.dueAt,
         body.recurrenceRule,
       );
+
+      const eventData = HouseholdChoreAssignedSchema.parse({
+        householdId: params.id,
+        choreId: chore.id,
+        choreTitle: chore.title,
+        assignedToUserId: chore.assigned_to_user_id,
+        dueAt: chore.due_at,
+        recurrenceRule: chore.recurrence_rule ?? undefined,
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdChoreAssigned,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(201).send(chore);
     } catch (error) {
       replyError(reply, error);
@@ -277,6 +424,24 @@ export function registerHouseholdRoutes(app: FastifyInstance, db: HouseholdGraph
 
       await requireMember(db, params.id, callerUserId, 'complete_chore');
       const chore = db.completeChore(params.id, params.choreId, callerUserId);
+
+      const eventData = HouseholdChoreCompletedSchema.parse({
+        householdId: params.id,
+        choreId: chore.id,
+        choreTitle: chore.title,
+        completedByUserId: callerUserId,
+        completedAt: chore.completed_at ?? new Date().toISOString(),
+        streakCount: 0,
+      });
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdChoreCompleted,
+        eventData,
+        params.id,
+        callerUserId,
+        request.id,
+      );
+
       reply.status(200).send(chore);
     } catch (error) {
       replyError(reply, error);
