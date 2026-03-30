@@ -14,6 +14,63 @@ export type ChoreStatus = z.infer<typeof ChoreStatusSchema>;
 export const ShoppingItemStatusSchema = z.enum(['added', 'in_cart', 'purchased']);
 export type ShoppingItemStatus = z.infer<typeof ShoppingItemStatusSchema>;
 
+export const HouseholdCreateRequestSchema = z.object({
+  name: z.string().min(1),
+});
+export type HouseholdCreateRequest = z.infer<typeof HouseholdCreateRequestSchema>;
+
+export const HouseholdInviteMemberRequestSchema = z.object({
+  invitedUserId: z.string().min(1),
+  role: HouseholdRoleSchema,
+});
+export type HouseholdInviteMemberRequest = z.infer<typeof HouseholdInviteMemberRequestSchema>;
+
+export const HouseholdJoinRequestSchema = z.object({
+  inviteToken: z.string().min(1),
+});
+export type HouseholdJoinRequest = z.infer<typeof HouseholdJoinRequestSchema>;
+
+export const HouseholdChangeMemberRoleRequestSchema = z.object({
+  role: HouseholdRoleSchema,
+});
+export type HouseholdChangeMemberRoleRequest = z.infer<
+  typeof HouseholdChangeMemberRoleRequestSchema
+>;
+
+export const HouseholdAddShoppingItemRequestSchema = z.object({
+  title: z.string().min(1),
+  source: z.enum(['manual', 'voice', 'routine']),
+});
+export type HouseholdAddShoppingItemRequest = z.infer<typeof HouseholdAddShoppingItemRequestSchema>;
+
+export const HouseholdUpdateShoppingItemStatusRequestSchema = z.object({
+  status: ShoppingItemStatusSchema,
+});
+export type HouseholdUpdateShoppingItemStatusRequest = z.infer<
+  typeof HouseholdUpdateShoppingItemStatusRequestSchema
+>;
+
+export const HouseholdCreateChoreRequestSchema = z.object({
+  title: z.string().min(1),
+  assignedToUserId: z.string().min(1),
+  dueAt: IsoDateTimeSchema,
+  recurrenceRule: z.string().optional(),
+});
+export type HouseholdCreateChoreRequest = z.infer<typeof HouseholdCreateChoreRequestSchema>;
+
+export const HouseholdCreateReminderRequestSchema = z.object({
+  objectType: z.string().min(1),
+  objectId: z.string().min(1),
+  targetUserIds: z.array(z.string().min(1)),
+  remindAt: IsoDateTimeSchema,
+});
+export type HouseholdCreateReminderRequest = z.infer<typeof HouseholdCreateReminderRequestSchema>;
+
+export const HouseholdCreateNoteRequestSchema = z.object({
+  body: z.string().min(1),
+});
+export type HouseholdCreateNoteRequest = z.infer<typeof HouseholdCreateNoteRequestSchema>;
+
 export const HouseholdMemberInvitedSchema = z.object({
   householdId: z.string().min(1),
   invitedUserId: z.string().min(1),

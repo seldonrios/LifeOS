@@ -1,4 +1,7 @@
 import { createEnvSecretStore, startService } from "@lifeos/service-runtime";
+import { HouseholdGraphClient } from '@lifeos/household-identity-module';
+
+import { registerHouseholdRoutes } from './routes/household';
 
 startService({
   serviceName: "dashboard-service",
@@ -6,6 +9,10 @@ startService({
   secretRefs: [{ name: 'LIFEOS_SESSION_SECRET', policy: 'optional' }],
   secretStore: createEnvSecretStore(),
   registerRoutes: async (app) => {
+    const householdGraphClient = new HouseholdGraphClient(process.env.LIFEOS_HOUSEHOLD_DB_PATH);
+    householdGraphClient.initializeSchema();
+    registerHouseholdRoutes(app, householdGraphClient);
+
     app.get('/', async (_request, reply) => {
       reply.type('text/html; charset=utf-8');
       return `<!doctype html>

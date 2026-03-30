@@ -3,9 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "test": "tsx --test src/routes/household.test.ts"
   },
   "dependencies": {
-    "@lifeos/service-runtime": "workspace:*"
+    "@lifeos/contracts": "workspace:*",
+    "@lifeos/household-identity-module": "workspace:*",
+    "@lifeos/security": "workspace:*",
+    "@lifeos/service-runtime": "workspace:*",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "fastify": "^5.6.1"
   }
 }

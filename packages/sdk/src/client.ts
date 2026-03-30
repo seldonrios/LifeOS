@@ -13,6 +13,8 @@ import type {
   GoalSummary,
   PushTokenRegistration,
   ReviewLoopSummary,
+  HouseholdRole,
+  ShoppingItemStatus,
 } from '@lifeos/contracts';
 import { InboxListResponseSchema, ReviewLoopSummarySchema } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
@@ -270,6 +272,236 @@ class DevicesNamespace {
   }
 }
 
+interface HouseholdRow {
+  id: string;
+  name: string;
+  created_at: string;
+  config_json: string | null;
+}
+
+interface HouseholdMemberRow {
+  household_id: string;
+  user_id: string;
+  role: HouseholdRole;
+  status: string;
+  invited_by: string | null;
+  joined_at: string | null;
+  invite_token: string | null;
+  invite_expires_at: string | null;
+}
+
+interface ShoppingItemRow {
+  id: string;
+  household_id: string;
+  title: string;
+  status: ShoppingItemStatus;
+  added_by_user_id: string;
+  source: 'manual' | 'voice' | 'routine';
+  created_at: string;
+}
+
+interface ChoreRow {
+  id: string;
+  household_id: string;
+  title: string;
+  assigned_to_user_id: string;
+  due_at: string;
+  status: 'pending' | 'completed';
+  recurrence_rule: string | null;
+  completed_by_user_id: string | null;
+  completed_at: string | null;
+  created_at: string;
+}
+
+interface ReminderRow {
+  id: string;
+  household_id: string;
+  object_type: string;
+  object_id: string;
+  target_user_ids_json: string;
+  remind_at: string;
+  created_at: string;
+}
+
+interface NoteRow {
+  id: string;
+  household_id: string;
+  author_user_id: string;
+  body: string;
+  created_at: string;
+}
+
+class HouseholdNamespace {
+  constructor(private config: SDKConfig) {}
+
+  async createHousehold(name: string): Promise<HouseholdRow> {
+    const response = await sendHttpRequest<HouseholdRow>(
+      {
+        url: `${this.config.baseUrl}/api/households`,
+        method: 'POST',
+        body: { name },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async inviteMember(
+    householdId: string,
+    invitedUserId: string,
+    role: HouseholdRole,
+  ): Promise<HouseholdMemberRow> {
+    const response = await sendHttpRequest<HouseholdMemberRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/members/invite`,
+        method: 'POST',
+        body: { invitedUserId, role },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async joinHousehold(householdId: string, inviteToken: string): Promise<HouseholdMemberRow> {
+    const response = await sendHttpRequest<HouseholdMemberRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/members/join`,
+        method: 'POST',
+        body: { inviteToken },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async changeMemberRole(
+    householdId: string,
+    userId: string,
+    role: HouseholdRole,
+  ): Promise<HouseholdMemberRow> {
+    const response = await sendHttpRequest<HouseholdMemberRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/members/${userId}/role`,
+        method: 'PATCH',
+        body: { role },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async addShoppingItem(
+    householdId: string,
+    title: string,
+    source: 'manual' | 'voice' | 'routine',
+  ): Promise<ShoppingItemRow> {
+    const response = await sendHttpRequest<ShoppingItemRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/shopping/items`,
+        method: 'POST',
+        body: { title, source },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async updateShoppingItemStatus(
+    householdId: string,
+    itemId: string,
+    status: ShoppingItemStatus,
+  ): Promise<ShoppingItemRow> {
+    const response = await sendHttpRequest<ShoppingItemRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/shopping/items/${itemId}/status`,
+        method: 'PATCH',
+        body: { status },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async createChore(
+    householdId: string,
+    title: string,
+    assignedToUserId: string,
+    dueAt: string,
+    recurrenceRule?: string,
+  ): Promise<ChoreRow> {
+    const response = await sendHttpRequest<ChoreRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/chores`,
+        method: 'POST',
+        body: { title, assignedToUserId, dueAt, recurrenceRule },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async completeChore(householdId: string, choreId: string): Promise<ChoreRow> {
+    const response = await sendHttpRequest<ChoreRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/chores/${choreId}/complete`,
+        method: 'PATCH',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async createReminder(
+    householdId: string,
+    objectType: string,
+    objectId: string,
+    targetUserIds: string[],
+    remindAt: string,
+  ): Promise<ReminderRow> {
+    const response = await sendHttpRequest<ReminderRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/reminders`,
+        method: 'POST',
+        body: { objectType, objectId, targetUserIds, remindAt },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async createNote(householdId: string, body: string): Promise<NoteRow> {
+    const response = await sendHttpRequest<NoteRow>(
+      {
+        url: `${this.config.baseUrl}/api/households/${householdId}/notes`,
+        method: 'POST',
+        body: { body },
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+}
+
 /**
  * Main LifeOS SDK client.
  */
@@ -281,6 +513,7 @@ export class LifeOSClient {
   readonly notifications: NotificationsNamespace;
   readonly devices: DevicesNamespace;
   readonly review: ReviewNamespace;
+  readonly household: HouseholdNamespace;
 
   constructor(config: SDKConfig) {
     // Apply default timeout if not specified
@@ -296,5 +529,6 @@ export class LifeOSClient {
     this.notifications = new NotificationsNamespace(effectiveConfig);
     this.devices = new DevicesNamespace(effectiveConfig);
     this.review = new ReviewNamespace(effectiveConfig);
+    this.household = new HouseholdNamespace(effectiveConfig);
   }
 }

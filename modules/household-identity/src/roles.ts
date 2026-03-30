@@ -14,7 +14,7 @@ const ROLE_PERMISSIONS: Record<HouseholdRole, ReadonlySet<string>> = {
   ]),
   Adult: new Set(['add_shopping_item', 'complete_chore', 'create_event', 'view']),
   Teen: new Set(['add_shopping_item', 'complete_chore', 'create_event', 'view']),
-  Child: new Set(['add_shopping_item', 'complete_chore', 'view']),
+  Child: new Set(['view']),
   Guest: new Set(['view']),
 };
 

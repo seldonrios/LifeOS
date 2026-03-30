@@ -1,6 +1,6 @@
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-sdk';
 
-import { HouseholdGraphClient } from './client';
+import { HouseholdGraphClient, InvalidShoppingItemTransitionError } from './client';
 import { generateInviteExpiry, generateInviteToken, isInviteExpired } from './invites';
 import { canPerform } from './roles';
 
@@ -29,6 +29,7 @@ export const householdIdentityModule: LifeOSModule = {
 
 export {
   HouseholdGraphClient,
+  InvalidShoppingItemTransitionError,
   canPerform,
   generateInviteToken,
   generateInviteExpiry,
