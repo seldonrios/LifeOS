@@ -4,6 +4,8 @@
  * Shared contracts for SDK/mobile surfaces and the Personal Operations hero loop.
  */
 
+export { Topics } from '@lifeos/event-bus';
+
 export { LoginRequestSchema, type LoginRequest, type AuthTokens, type UserProfile } from './auth';
 
 export {
@@ -16,6 +18,43 @@ export {
   type CaptureStatus,
   type CaptureResult,
 } from './capture';
+
+export {
+  HouseholdRoleSchema,
+  HouseholdMemberStatusSchema,
+  ChoreStatusSchema,
+  ShoppingItemStatusSchema,
+  HouseholdMemberInvitedSchema,
+  HouseholdMemberJoinedSchema,
+  HouseholdMemberRoleChangedSchema,
+  HouseholdChoreAssignedSchema,
+  HouseholdChoreCompletedSchema,
+  HouseholdShoppingItemAddedSchema,
+  HouseholdShoppingItemPurchasedSchema,
+  HouseholdCalendarEventCreatedSchema,
+  HouseholdVoiceCaptureCreatedSchema,
+  HouseholdCaptureUnresolvedSchema,
+  HouseholdHomeStateChangedSchema,
+  HouseholdReminderFiredSchema,
+  AuditLogEntrySchema,
+  type HouseholdRole,
+  type HouseholdMemberStatus,
+  type ChoreStatus,
+  type ShoppingItemStatus,
+  type HouseholdMemberInvited,
+  type HouseholdMemberJoined,
+  type HouseholdMemberRoleChanged,
+  type HouseholdChoreAssigned,
+  type HouseholdChoreCompleted,
+  type HouseholdShoppingItemAdded,
+  type HouseholdShoppingItemPurchased,
+  type HouseholdCalendarEventCreated,
+  type HouseholdVoiceCaptureCreated,
+  type HouseholdCaptureUnresolved,
+  type HouseholdHomeStateChanged,
+  type HouseholdReminderFired,
+  type AuditLogEntry,
+} from './household';
 
 export {
   ApprovalRequestSchema,
