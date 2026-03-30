@@ -23,3 +23,15 @@ Describe the realistic home-server hardware class that the Phase 1 reference arc
 ## Phase 1 Position
 
 This is a reference target, not a hard requirement. LifeOS should remain conceptually portable, but the docs should assume a serious home-lab machine so the design stays realistic.
+
+---
+
+## Concrete Build Guidance
+
+For practical purchasing and deployment decisions, see [Infrastructure Bill of Materials](./infrastructure-bom.md), which provides three budget-tiered BOMs with rationale:
+
+1. **Budget Build** (~$900) — single mini PC, UPS, backup disk
+2. **Recommended Build** (~$2,500) — mini PC + NAS with RAID + rotation backup
+3. **Privacy-Max Build** (~$4,850) — gaming desktop with GPU + full NAS setup for local AI
+
+Each tier explains trade-offs, cost drivers, and when to upgrade.

@@ -389,6 +389,17 @@ Compatibility checklist and CI profile:
 - [Works with LifeOS Checklist](docs/community/works-with-lifeos-checklist.md)
 - [External Module CI Example](templates/module/community-module-ci.yml)
 
+## Good First Issues
+
+New to LifeOS? Start with one of these:
+
+- 🐛 [Browse good first issues](../../issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+  — bug fixes and small improvements to existing loop-stage CLI commands
+- 📦 [Submit a community module](docs/community/works-with-lifeos-checklist.md)
+  — build a module that improves one loop stage using only `@lifeos/module-sdk`
+
+Contribution scope: work should improve one loop stage (capture, inbox, plan, reminders, review) or the platform foundation. PRs that add breadth without improving loop reliability will be deferred to Phase 4.
+
 ## Project Direction
 
 LifeOS is in **Phase 3: Personal Operations OS MVP + Daily-Use Validation**.

@@ -29,6 +29,22 @@ pnpm --filter @lifeos/mesh test
 pnpm --filter @lifeos/cli exec tsx --test src/index.test.ts
 ```
 
+## Loop-stage impact
+
+Which loop stage does your change improve?
+
+Phase 3 accepts work that improves one of these stages:
+
+| Stage | Examples |
+|---|---|
+| **Capture** | reliability, speed, voice support, deduplication |
+| **Inbox / Triage** | accuracy, error handling, `inbox list` / `inbox triage` UX |
+| **Plan / Schedule** | action creation, due date handling, `PlannedAction` schema |
+| **Reminders** | firing reliability, idempotency, `ReminderEvent` lifecycle |
+| **Review** | daily/weekly aggregation, `loopSummary` insights |
+
+Changes that add breadth without improving loop reliability will be deferred to Phase 4.
+
 ## How to create a new module (recommended way)
 
 ```bash
