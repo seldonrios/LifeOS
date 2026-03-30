@@ -43,10 +43,17 @@ test('hero-loop contract schemas parse valid payloads', () => {
     period: 'daily',
     wins: ['Inbox triaged before noon'],
     nextActions: ['Close the highest-priority approval'],
+    loopSummary: {
+      pendingCaptures: 1,
+      actionsDueToday: 2,
+      unacknowledgedReminders: 0,
+      completedActions: ['Close the highest-priority approval (action_1)'],
+    },
     generatedAt: '2026-03-28T22:00:00.000Z',
     source: 'heuristic',
   });
   assert.equal(parsedReview.period, 'daily');
+  assert.equal(parsedReview.loopSummary.completedActions.length, 1);
 
   const parsedCaptureResult = CaptureResultSchema.parse({
     id: 'capture_001',
@@ -66,6 +73,13 @@ test('hero-loop event envelope validates event type and payload pairing', () => 
       period: 'weekly',
       wins: ['Shipped baseline approvals flow'],
       nextActions: ['Document mobile notification edge cases'],
+      loopSummary: {
+        pendingCaptures: 2,
+        actionsDueToday: 3,
+        unacknowledgedReminders: 1,
+        completedActions: ['Shipped baseline approvals flow (action_7)'],
+        suggestedNextActions: ['Follow up on overdue mobile QA'],
+      },
       generatedAt: '2026-03-28T22:00:00.000Z',
       source: 'llm',
     },
@@ -73,6 +87,7 @@ test('hero-loop event envelope validates event type and payload pairing', () => 
 
   assert.equal(parsed.type, 'lifeos.review.generated');
   assert.equal(parsed.payload.source, 'llm');
+  assert.equal(parsed.payload.loopSummary.suggestedNextActions?.length, 1);
 });
 
 test('reminder schema rejects unsupported status values', () => {

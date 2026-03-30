@@ -9,9 +9,7 @@ import { LifeOSErrorSchema } from './errors';
 import { InboxItemSchema } from './inbox';
 import { PlanSchema } from './plan';
 import { ReminderSchema } from './reminder';
-import { ReviewPeriodSchema, ReviewReportSchema } from './review';
-
-const ReviewPayloadSchema = ReviewReportSchema;
+import { ReviewPeriodSchema, ReviewPayloadSchema } from './review';
 
 export const CaptureCreateRequestSchema = CaptureRequestSchema;
 export const CaptureCreateResponseSchema = CaptureResultSchema;

@@ -675,3 +675,169 @@ test('generateReview falls back to heuristic insights on invalid llm output', as
   assert.equal(insights.period, 'daily');
   assert.ok(insights.nextActions.length >= 1);
 });
+
+test('generateReview daily loopSummary counts only items in the active day window', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const yesterday = new Date(now);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+
+  await client.appendCaptureEntry({
+    id: 'capture_today',
+    content: 'Close review loop',
+    capturedAt: now.toISOString(),
+    status: 'pending',
+  });
+  await client.appendCaptureEntry({
+    id: 'capture_yesterday',
+    content: 'Old capture',
+    capturedAt: yesterday.toISOString(),
+    status: 'pending',
+  });
+
+  await client.appendPlannedAction({
+    id: 'action_today_done',
+    title: 'Send update',
+    status: 'done',
+    dueDate: today,
+    completedAt: now.toISOString(),
+  });
+  await client.appendPlannedAction({
+    id: 'action_yesterday_done',
+    title: 'Archive old note',
+    status: 'done',
+    dueDate: yesterday.toISOString().slice(0, 10),
+    completedAt: yesterday.toISOString(),
+  });
+  await client.appendPlannedAction({
+    id: 'action_today_todo',
+    title: 'Draft agenda',
+    status: 'todo',
+    dueDate: today,
+  });
+
+  await client.appendReminderEvent({
+    id: 'reminder_today',
+    plannedActionId: 'action_today_todo',
+    scheduledFor: now.toISOString(),
+    status: 'fired',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder_yesterday',
+    plannedActionId: 'action_today_todo',
+    scheduledFor: yesterday.toISOString(),
+    status: 'fired',
+  });
+
+  const insights = await client.generateReview('daily');
+
+  assert.equal(insights.loopSummary.pendingCaptures, 1);
+  assert.equal(insights.loopSummary.actionsDueToday, 1);
+  assert.equal(insights.loopSummary.unacknowledgedReminders, 1);
+  assert.deepEqual(insights.loopSummary.completedActions, ['Send update (action_today_done)']);
+});
+
+test('generateReview weekly loopSummary aggregates across the trailing seven-day window', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  const now = new Date();
+  const withinWindow = new Date(now);
+  withinWindow.setUTCDate(withinWindow.getUTCDate() - 3);
+  const outsideWindow = new Date(now);
+  outsideWindow.setUTCDate(outsideWindow.getUTCDate() - 8);
+  const overdueDate = new Date(now);
+  overdueDate.setUTCDate(overdueDate.getUTCDate() - 10);
+
+  await client.appendCaptureEntry({
+    id: 'capture_weekly_in',
+    content: 'Follow up on budget',
+    capturedAt: withinWindow.toISOString(),
+    status: 'pending',
+  });
+  await client.appendCaptureEntry({
+    id: 'capture_weekly_out',
+    content: 'Too old',
+    capturedAt: outsideWindow.toISOString(),
+    status: 'pending',
+  });
+
+  await client.appendPlannedAction({
+    id: 'action_weekly_done_in',
+    title: 'Plan retrospective',
+    status: 'done',
+    dueDate: withinWindow.toISOString().slice(0, 10),
+    completedAt: withinWindow.toISOString(),
+  });
+  await client.appendPlannedAction({
+    id: 'action_weekly_done_out',
+    title: 'Old completion',
+    status: 'done',
+    dueDate: outsideWindow.toISOString().slice(0, 10),
+    completedAt: outsideWindow.toISOString(),
+  });
+  await client.appendPlannedAction({
+    id: 'action_weekly_due_in',
+    title: 'Review sprint notes',
+    status: 'todo',
+    dueDate: withinWindow.toISOString().slice(0, 10),
+  });
+  await client.appendPlannedAction({
+    id: 'action_weekly_overdue',
+    title: 'Follow up on overdue budget review',
+    status: 'todo',
+    dueDate: overdueDate.toISOString().slice(0, 10),
+  });
+
+  await client.appendReminderEvent({
+    id: 'reminder_weekly_in',
+    plannedActionId: 'action_weekly_due_in',
+    scheduledFor: withinWindow.toISOString(),
+    status: 'fired',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder_weekly_out',
+    plannedActionId: 'action_weekly_due_in',
+    scheduledFor: outsideWindow.toISOString(),
+    status: 'fired',
+  });
+
+  const insights = await client.generateReview('weekly');
+
+  assert.equal(insights.loopSummary.pendingCaptures, 1);
+  assert.equal(insights.loopSummary.actionsDueToday, 1);
+  assert.equal(insights.loopSummary.unacknowledgedReminders, 1);
+  assert.deepEqual(insights.loopSummary.completedActions, [
+    'Plan retrospective (action_weekly_done_in)',
+  ]);
+  assert.deepEqual(insights.loopSummary.suggestedNextActions, [
+    'Follow up on overdue budget review',
+  ]);
+});

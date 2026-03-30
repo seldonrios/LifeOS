@@ -817,39 +817,46 @@ function deriveLoopSummary(
   now: Date,
 ): LifeGraphLoopSummary {
   const toDateOnly = (value: Date): string => value.toISOString().slice(0, 10);
-  const buildWindow = (currentPeriod: LifeGraphReviewPeriod): { start: string; end: string } => {
+  const buildPeriodWindow = (
+    currentPeriod: LifeGraphReviewPeriod,
+  ): { start: string; end: string } => {
     const end = toDateOnly(now);
     const startDate = new Date(now);
     startDate.setUTCDate(startDate.getUTCDate() - (currentPeriod === 'weekly' ? 6 : 0));
-    const start = toDateOnly(startDate);
-    return { start, end };
+    return {
+      start: toDateOnly(startDate),
+      end,
+    };
   };
-  const isInWindow = (dateOnly: string | undefined, window: { start: string; end: string }): boolean => {
+  const isDateInWindow = (
+    dateOnly: string | undefined,
+    window: { start: string; end: string },
+  ): boolean => {
     if (!dateOnly) {
       return false;
     }
+
     return dateOnly >= window.start && dateOnly <= window.end;
   };
 
-  const today = now.toISOString().slice(0, 10);
-  const window = buildWindow(period);
+  const today = toDateOnly(now);
+  const window = buildPeriodWindow(period);
   const captureEntries = graph.captureEntries ?? [];
   const plannedActions = graph.plannedActions ?? [];
   const reminderEvents = graph.reminderEvents ?? [];
 
   const pendingCaptures = captureEntries.filter(
-    (entry) => entry.status === 'pending' && isInWindow(entry.capturedAt.slice(0, 10), window),
+    (entry) => entry.status === 'pending' && isDateInWindow(entry.capturedAt.slice(0, 10), window),
   ).length;
   const actionsDueToday = plannedActions.filter(
-    (action) => action.status !== 'done' && isInWindow(action.dueDate, window),
+    (action) => action.status !== 'done' && isDateInWindow(action.dueDate, window),
   ).length;
   const unacknowledgedReminders = reminderEvents.filter(
-    (event) => event.status === 'fired' && isInWindow(event.scheduledFor.slice(0, 10), window),
+    (event) => event.status === 'fired' && isDateInWindow(event.scheduledFor.slice(0, 10), window),
   ).length;
   const completedActions = plannedActions
     .filter(
-      (action) =>
-        action.status === 'done' && isInWindow(action.completedAt?.slice(0, 10), window),
+      (action) => action.status === 'done' && isDateInWindow(action.completedAt?.slice(0, 10), window),
     )
     .map((action) => `${action.title} (${action.id})`);
 
@@ -1791,6 +1798,9 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
         throw new Error(`PlannedAction "${id}" not found.`);
       }
       const merged = { ...existing[index], ...patch } as PlannedAction;
+      if (merged.status === 'done' && !merged.completedAt) {
+        merged.completedAt = new Date().toISOString();
+      }
       PlannedActionSchema.parse(merged);
       existing[index] = merged;
       await manager.save({ ...graph, plannedActions: existing }, resolvedGraphPath);

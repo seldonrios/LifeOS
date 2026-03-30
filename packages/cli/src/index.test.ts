@@ -964,6 +964,12 @@ test('next command prints next actions', async () => {
             period: 'daily',
             wins: [],
             nextActions: ['Board Meeting Prep: Draft board deck'],
+            loopSummary: {
+              pendingCaptures: 0,
+              actionsDueToday: 1,
+              unacknowledgedReminders: 0,
+              completedActions: [],
+            },
             generatedAt: '2026-03-21T14:00:00.000Z',
             source: 'heuristic',
           };

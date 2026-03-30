@@ -462,7 +462,7 @@ export interface LifeGraphReviewInsights {
   wins: string[];
   nextActions: string[];
   history?: string[];
-  loopSummary?: LifeGraphLoopSummary;
+  loopSummary: LifeGraphLoopSummary;
   generatedAt: string;
   source: 'llm' | 'heuristic';
 }

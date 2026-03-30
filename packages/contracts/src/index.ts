@@ -58,10 +58,12 @@ export {
   ReviewPeriodSchema,
   ReviewSourceSchema,
   ReviewLoopSummarySchema,
+  ReviewPayloadSchema,
   ReviewReportSchema,
   type ReviewPeriod,
   type ReviewSource,
   type ReviewLoopSummary,
+  type ReviewPayload,
   type ReviewReport,
 } from './review';
 

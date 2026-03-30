@@ -301,6 +301,18 @@ async function main(): Promise<void> {
           Array.isArray(result.loopSummary?.completedActions),
           'loopSummary.completedActions must be an array',
         );
+        const completedActions = Array.isArray(result.loopSummary?.completedActions)
+          ? result.loopSummary.completedActions.filter(
+              (item): item is string => typeof item === 'string',
+            )
+          : [];
+        assert(completedActions.length >= 1, 'loopSummary.completedActions must include the completed action');
+        assert(
+          completedActions.some(
+            (item) => item.includes(actionId) || (actionTitle.length > 0 && item.includes(actionTitle)),
+          ),
+          'loopSummary.completedActions must reference the completed planned action identity/title',
+        );
 
         const nextActions = Array.isArray(result.nextActions)
           ? result.nextActions.filter((item): item is string => typeof item === 'string')

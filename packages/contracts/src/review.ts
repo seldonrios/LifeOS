@@ -21,13 +21,18 @@ export const ReviewLoopSummarySchema = z
   .strict();
 export type ReviewLoopSummary = z.infer<typeof ReviewLoopSummarySchema>;
 
-export const ReviewReportSchema = z.object({
-  period: ReviewPeriodSchema,
-  wins: z.array(z.string().min(1)),
-  nextActions: z.array(z.string().min(1)),
-  history: z.array(z.string().min(1)).optional(),
-  loopSummary: ReviewLoopSummarySchema.optional(),
-  generatedAt: z.string().min(1),
-  source: ReviewSourceSchema,
-});
-export type ReviewReport = z.infer<typeof ReviewReportSchema>;
+export const ReviewPayloadSchema = z
+  .object({
+    period: ReviewPeriodSchema,
+    wins: z.array(z.string().min(1)),
+    nextActions: z.array(z.string().min(1)),
+    history: z.array(z.string().min(1)).optional(),
+    loopSummary: ReviewLoopSummarySchema,
+    generatedAt: z.string().min(1),
+    source: ReviewSourceSchema,
+  })
+  .strict();
+export type ReviewPayload = z.infer<typeof ReviewPayloadSchema>;
+
+export const ReviewReportSchema = ReviewPayloadSchema;
+export type ReviewReport = ReviewPayload;
