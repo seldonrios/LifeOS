@@ -171,6 +171,7 @@ export interface ReminderRow {
   object_id: string;
   target_user_ids_json: string;
   remind_at: string;
+  sensitive: number;
   created_at: string;
 }
 
@@ -273,6 +274,8 @@ export class HouseholdGraphClient {
     this.ensureColumn('events', 'status', "TEXT NOT NULL DEFAULT 'confirmed'");
     this.ensureColumn('events', 'attendee_user_ids_json', "TEXT NOT NULL DEFAULT '[]'");
     this.ensureColumn('events', 'household_id', 'TEXT');
+
+    this.ensureColumn('reminders', 'sensitive', 'INTEGER NOT NULL DEFAULT 0');
 
     // Create capture_routing_log table if it doesn't exist
     this.db.exec(`
@@ -1408,6 +1411,7 @@ export class HouseholdGraphClient {
     objectId: string,
     targetUserIds: string[],
     remindAt: string,
+    sensitive = false,
   ): ReminderRow {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
@@ -1415,8 +1419,8 @@ export class HouseholdGraphClient {
     this.db
       .prepare(
         `INSERT INTO reminders
-          (id, household_id, object_type, object_id, target_user_ids_json, remind_at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          (id, household_id, object_type, object_id, target_user_ids_json, remind_at, sensitive, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
@@ -1425,12 +1429,13 @@ export class HouseholdGraphClient {
         objectId,
         JSON.stringify(targetUserIds),
         remindAt,
+        sensitive ? 1 : 0,
         createdAt,
       );
 
     return this.db
       .prepare(
-        `SELECT id, household_id, object_type, object_id, target_user_ids_json, remind_at, created_at
+        `SELECT id, household_id, object_type, object_id, target_user_ids_json, remind_at, sensitive, created_at
          FROM reminders
          WHERE id = ?`,
       )

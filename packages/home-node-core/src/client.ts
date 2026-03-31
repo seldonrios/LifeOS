@@ -613,6 +613,15 @@ export class HomeNodeGraphClient {
     return toHomeNodeSurface(row);
   }
 
+  getRegisteredSurface(surfaceId: string): HomeNodeSurfaceRegistered | null {
+    const row = this.getSurfaceRowWithHousehold(surfaceId);
+    if (!row) {
+      return null;
+    }
+
+    return toHomeNodeSurfaceRegistered(row);
+  }
+
   listSurfaces(filter: SurfaceListFilter = {}): HomeNodeSurface[] {
     const clauses: string[] = [];
     const params: unknown[] = [];

@@ -170,8 +170,10 @@ test('registerSurface persists and returns active surface details', () => {
     });
 
     const surface = client.getSurface('surface-kitchen-1');
+    const registeredLookup = client.getRegisteredSurface('surface-kitchen-1');
     assert.equal(registered.household_id, 'household-1');
     assert.ok(surface);
+    assert.equal(registeredLookup?.household_id, 'household-1');
     assert.equal(surface?.active, true);
     assert.equal(surface?.kind, 'kitchen_display');
   } finally {

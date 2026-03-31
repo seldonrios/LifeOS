@@ -96,6 +96,34 @@ test('acceptInvite rejects invalid invite expiry timestamps', () => {
   }
 });
 
+test('createReminder persists sensitive flag with default and explicit values', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold('Home Base');
+
+    const defaultReminder = client.createReminder(
+      household.id,
+      'custom',
+      'object-1',
+      ['user-1'],
+      '2026-04-01T10:00:00.000Z',
+    );
+    const sensitiveReminder = client.createReminder(
+      household.id,
+      'custom',
+      'object-2',
+      ['user-2'],
+      '2026-04-02T10:00:00.000Z',
+      true,
+    );
+
+    assert.equal(defaultReminder.sensitive, 0);
+    assert.equal(sensitiveReminder.sensitive, 1);
+  } finally {
+    cleanup();
+  }
+});
+
 test('updateMemberRole persists role and rejects invalid role values', () => {
   const { client, cleanup } = createTestClient();
   try {
