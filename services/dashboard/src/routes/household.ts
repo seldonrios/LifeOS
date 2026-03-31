@@ -18,9 +18,15 @@ import {
   HouseholdMemberInvitedSchema,
   HouseholdMemberJoinedSchema,
   HouseholdMemberRoleChangedSchema,
+  HouseholdHaWebhookRequestSchema,
+  HouseholdHomeStateConfigSchema,
+  HouseholdContextSummarySchema,
+  HouseholdUpdateConfigRequestSchema,
   HouseholdShoppingItemAddedSchema,
   HouseholdShoppingItemPurchasedSchema,
   HouseholdUpdateShoppingItemStatusRequestSchema,
+  HouseholdVoiceCaptureCreatedSchema,
+  HouseholdHomeStateChangedSchema,
 } from '@lifeos/contracts';
 import { type BaseEvent, type ManagedEventBus, Topics } from '@lifeos/event-bus';
 import {
@@ -46,6 +52,13 @@ import {
   generateInviteExpiry,
   generateInviteToken,
 } from '@lifeos/household-identity-module';
+import {
+  buildHaVoiceCaptureEventData,
+  buildHomeStateChangedEventData,
+  isStateKeyConsented,
+  parseHouseholdHomeStateConfig,
+  validateWebhookSecret,
+} from '../../../../modules/home-state/src/index';
 import { z } from 'zod';
 
 import { extractCallerUserId } from '../auth';
@@ -585,6 +598,160 @@ export function registerHouseholdRoutes(
       await requireMember(db, params.id, callerUserId, 'view');
       const status = db.getCaptureStatus(params.id, params.captureId);
       reply.status(200).send(HouseholdCaptureStatusResponseSchema.parse(status));
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.patch('/api/households/:id/config', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const body = HouseholdUpdateConfigRequestSchema.parse(request.body);
+
+      const household = db.getHousehold(params.id);
+      if (!household) {
+        reply.status(404).send({ error: 'Household not found' });
+        return;
+      }
+
+      const member = db.getMember(params.id, callerUserId);
+      if (!member || member.status !== 'active') {
+        reply.status(403).send({ error: 'Forbidden' });
+        return;
+      }
+
+      if (member.role !== 'Admin') {
+        reply.status(403).send({ error: 'Insufficient role' });
+        return;
+      }
+
+      db.updateHouseholdConfig(params.id, body);
+      const config = HouseholdHomeStateConfigSchema.parse(db.getHouseholdConfig(params.id));
+
+      reply.status(200).send({
+        householdId: params.id,
+        config,
+      });
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/context', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const summary = db.getHouseholdContextSummary(params.id);
+      reply.status(200).send(HouseholdContextSummarySchema.parse(summary));
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/ha/webhook', async (request, reply) => {
+    try {
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const sharedWebhookSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET?.trim() ?? '';
+
+      if (!sharedWebhookSecret) {
+        reply.status(503).send({ error: 'HA webhook integration is not configured' });
+        return;
+      }
+
+      const providedSecretHeader = request.headers['x-lifeos-ha-secret'];
+      const providedSecret = Array.isArray(providedSecretHeader)
+        ? providedSecretHeader[0]
+        : providedSecretHeader;
+
+      if (!validateWebhookSecret(sharedWebhookSecret, providedSecret)) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const household = db.getHousehold(params.id);
+      if (!household) {
+        reply.status(404).send({ error: 'Household not found' });
+        return;
+      }
+
+      const body = HouseholdHaWebhookRequestSchema.parse(request.body);
+      const homeStateConfig = parseHouseholdHomeStateConfig(household.config_json);
+
+      if (!homeStateConfig.haIntegrationEnabled) {
+        reply.status(403).send({ error: 'HA integration is disabled for this household' });
+        return;
+      }
+
+      if (!isStateKeyConsented(homeStateConfig.haConsentedStateKeys, body.stateKey)) {
+        reply.status(403).send({ error: 'State key is not consented' });
+        return;
+      }
+
+      db.appendHomeStateLog({
+        householdId: params.id,
+        deviceId: body.deviceId,
+        stateKey: body.stateKey,
+        previousValue: body.previousValue,
+        newValue: body.newValue,
+        source: 'ha_bridge',
+        consentVerified: true,
+      });
+
+      const homeStateEvent = HouseholdHomeStateChangedSchema.parse(
+        buildHomeStateChangedEventData({
+          householdId: params.id,
+          deviceId: body.deviceId,
+          stateKey: body.stateKey,
+          previousValue: body.previousValue ?? null,
+          newValue: body.newValue,
+          consentVerified: true,
+        }),
+      );
+
+      await publishHouseholdEvent(
+        eventBus,
+        Topics.lifeos.householdHomeStateChanged,
+        homeStateEvent,
+        params.id,
+        'ha-bridge',
+        request.id,
+      );
+
+      if (body.voice_transcript && body.voice_transcript.trim().length > 0) {
+        const voiceEvent = HouseholdVoiceCaptureCreatedSchema.parse(
+          buildHaVoiceCaptureEventData({
+            householdId: params.id,
+            transcript: body.voice_transcript,
+            sourceDeviceId: body.sourceDeviceId ?? body.deviceId,
+            actorUserId: body.actorUserId,
+            targetHint: body.targetHint,
+          }),
+        );
+
+        await publishHouseholdEvent(
+          eventBus,
+          Topics.lifeos.householdVoiceCaptureCreated,
+          voiceEvent,
+          params.id,
+          voiceEvent.actorUserId,
+          request.id,
+        );
+      }
+
+      reply.status(202).send({ accepted: true });
     } catch (error) {
       replyError(reply, error);
     }

@@ -4,7 +4,13 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AuditLogEntry, HouseholdCaptureStatusResponse } from '@lifeos/contracts';
+import type {
+  AuditLogEntry,
+  HomeStateChange,
+  HouseholdCaptureStatusResponse,
+  HouseholdContextSummary,
+  HouseholdUpdateConfigRequest,
+} from '@lifeos/contracts';
 import { HouseholdRoleSchema } from '@lifeos/module-sdk';
 
 import { calculateStreak, getNextDueDate, isOverdue } from '../../household-chores/src/index';
@@ -34,6 +40,13 @@ const migration003Path = resolve(
   '003_calendar_events.sql',
 );
 const migration003Sql = readFileSync(migration003Path, 'utf8');
+const migration004Path = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  'migrations',
+  '004_home_state.sql',
+);
+const migration004Sql = readFileSync(migration004Path, 'utf8');
 
 function parseInviteExpiry(expiresAt: string): number {
   const expiresAtMs = new Date(expiresAt).getTime();
@@ -169,6 +182,18 @@ export interface NoteRow {
   created_at: string;
 }
 
+export interface HomeStateLogRow {
+  id: string;
+  household_id: string;
+  device_id: string;
+  state_key: string;
+  previous_value: string | null;
+  new_value: string;
+  source: 'ha_bridge' | 'manual' | 'routine';
+  consent_verified: number;
+  created_at: string;
+}
+
 export class InvalidShoppingItemTransitionError extends Error {
   readonly code = 'INVALID_SHOPPING_ITEM_TRANSITION';
 
@@ -212,6 +237,7 @@ export class HouseholdGraphClient {
         throw error;
       }
     }
+    this.db.exec(migration004Sql);
     this.ensureFeatureSchema();
   }
 
@@ -266,6 +292,30 @@ export class HouseholdGraphClient {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at)');
     this.db.exec(
       'CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_routing_log_capture ON capture_routing_log(household_id, capture_id)',
+    );
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS home_state_log (
+        id TEXT PRIMARY KEY,
+        household_id TEXT NOT NULL,
+        device_id TEXT NOT NULL,
+        state_key TEXT NOT NULL,
+        previous_value TEXT,
+        new_value TEXT NOT NULL,
+        source TEXT NOT NULL,
+        consent_verified INTEGER NOT NULL CHECK(consent_verified IN (0, 1)),
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE
+      )
+    `);
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_home_state_log_household_created ON home_state_log(household_id, created_at DESC)',
+    );
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_home_state_log_household_state_key ON home_state_log(household_id, state_key)',
+    );
+    this.db.exec(
+      'CREATE INDEX IF NOT EXISTS idx_home_state_log_household_device ON home_state_log(household_id, device_id)',
     );
   }
 
@@ -356,6 +406,50 @@ export class HouseholdGraphClient {
       .prepare('SELECT id, name, created_at, config_json FROM households WHERE id = ?')
       .get(id) as HouseholdRow | undefined;
     return row ?? null;
+  }
+
+  getHouseholdConfig(householdId: string): Record<string, unknown> {
+    const household = this.getHousehold(householdId);
+    if (!household?.config_json) {
+      return {};
+    }
+
+    try {
+      const parsed = JSON.parse(household.config_json) as unknown;
+      if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        return {};
+      }
+
+      return parsed as Record<string, unknown>;
+    } catch {
+      return {};
+    }
+  }
+
+  updateHouseholdConfig(householdId: string, patch: HouseholdUpdateConfigRequest): HouseholdRow {
+    const currentConfig = this.getHouseholdConfig(householdId);
+    const nextConfig: Record<string, unknown> = {
+      ...currentConfig,
+    };
+
+    if (patch.haIntegrationEnabled !== undefined) {
+      nextConfig.haIntegrationEnabled = patch.haIntegrationEnabled;
+    }
+
+    if (patch.haConsentedStateKeys !== undefined) {
+      nextConfig.haConsentedStateKeys = patch.haConsentedStateKeys;
+    }
+
+    this.db
+      .prepare('UPDATE households SET config_json = ? WHERE id = ?')
+      .run(JSON.stringify(nextConfig), householdId);
+
+    const household = this.getHousehold(householdId);
+    if (!household) {
+      throw new Error('Household not found');
+    }
+
+    return household;
   }
 
   addMember(
@@ -1299,6 +1393,171 @@ export class HouseholdGraphClient {
          WHERE id = ?`,
       )
       .get(id) as NoteRow;
+  }
+
+  appendHomeStateLog(input: {
+    householdId: string;
+    deviceId: string;
+    stateKey: string;
+    previousValue: unknown;
+    newValue: unknown;
+    source: 'ha_bridge' | 'manual' | 'routine';
+    consentVerified: boolean;
+  }): HomeStateLogRow {
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+
+    this.db
+      .prepare(
+        `INSERT INTO home_state_log
+          (id, household_id, device_id, state_key, previous_value, new_value, source, consent_verified, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        id,
+        input.householdId,
+        input.deviceId,
+        input.stateKey,
+        input.previousValue === undefined ? null : JSON.stringify(input.previousValue),
+        JSON.stringify(input.newValue),
+        input.source,
+        input.consentVerified ? 1 : 0,
+        createdAt,
+      );
+
+    return this.db
+      .prepare(
+        `SELECT id, household_id, device_id, state_key, previous_value, new_value, source, consent_verified, created_at
+         FROM home_state_log
+         WHERE id = ?`,
+      )
+      .get(id) as HomeStateLogRow;
+  }
+
+  listRecentHomeStateChanges(householdId: string, limit = 20): HomeStateChange[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, household_id, device_id, state_key, previous_value, new_value, source, consent_verified, created_at
+         FROM home_state_log
+         WHERE household_id = ?
+         ORDER BY created_at DESC
+         LIMIT ?`,
+      )
+      .all(householdId, limit) as HomeStateLogRow[];
+
+    return rows.map((row) => ({
+      id: row.id,
+      deviceId: row.device_id,
+      stateKey: row.state_key,
+      previousValue: row.previous_value ? JSON.parse(row.previous_value) : null,
+      newValue: JSON.parse(row.new_value),
+      source: row.source,
+      consentVerified: row.consent_verified === 1,
+      createdAt: row.created_at,
+    }));
+  }
+
+  getHouseholdContextSummary(householdId: string): HouseholdContextSummary {
+    const rows = this.db
+      .prepare(
+        `SELECT id, household_id, device_id, state_key, previous_value, new_value, source, consent_verified, created_at
+         FROM home_state_log
+         WHERE household_id = ?
+         ORDER BY created_at DESC`,
+      )
+      .all(householdId) as HomeStateLogRow[];
+
+    const recentStateChanges = rows.slice(0, 20).map((row) => ({
+      id: row.id,
+      deviceId: row.device_id,
+      stateKey: row.state_key,
+      previousValue: row.previous_value ? JSON.parse(row.previous_value) : null,
+      newValue: JSON.parse(row.new_value),
+      source: row.source,
+      consentVerified: row.consent_verified === 1,
+      createdAt: row.created_at,
+    }));
+
+    const seenPresenceKeys = new Set<string>();
+    const membersHome: string[] = [];
+
+    const latestActivityStateByDevice = new Map<string, boolean>();
+
+    for (const row of rows) {
+      if (row.state_key.startsWith('presence.') && !seenPresenceKeys.has(row.state_key)) {
+        seenPresenceKeys.add(row.state_key);
+        const memberId = row.state_key.slice('presence.'.length).trim();
+        const currentValue = JSON.parse(row.new_value) as unknown;
+        if (memberId.length > 0 && this.toBooleanHomeState(currentValue)) {
+          membersHome.push(memberId);
+        }
+      }
+
+      if (
+        this.isActivityStateKey(row.state_key) &&
+        !latestActivityStateByDevice.has(row.device_id)
+      ) {
+        const currentValue = JSON.parse(row.new_value) as unknown;
+        latestActivityStateByDevice.set(row.device_id, this.toBooleanHomeState(currentValue));
+      }
+    }
+
+    const activeDevices: string[] = [];
+    for (const [deviceId, isActive] of latestActivityStateByDevice.entries()) {
+      if (isActive) {
+        activeDevices.push(deviceId);
+      }
+    }
+
+    return {
+      membersHome,
+      activeDevices,
+      recentStateChanges,
+    };
+  }
+
+  private toBooleanHomeState(value: unknown): boolean {
+    if (typeof value === 'boolean') {
+      return value;
+    }
+
+    if (typeof value === 'number') {
+      return value !== 0;
+    }
+
+    if (typeof value !== 'string') {
+      return false;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    return (
+      normalized === 'true' ||
+      normalized === '1' ||
+      normalized === 'on' ||
+      normalized === 'home' ||
+      normalized === 'present' ||
+      normalized === 'active'
+    );
+  }
+
+  private isActivityStateKey(stateKey: string): boolean {
+    const normalized = stateKey.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return false;
+    }
+
+    return (
+      normalized.startsWith('presence.') ||
+      normalized.startsWith('activity.') ||
+      normalized.startsWith('power.') ||
+      normalized.startsWith('occupancy.') ||
+      normalized.startsWith('motion.') ||
+      normalized.endsWith('.presence') ||
+      normalized.endsWith('.activity') ||
+      normalized.endsWith('.power') ||
+      normalized.endsWith('.occupancy') ||
+      normalized.endsWith('.motion')
+    );
   }
 
   getCaptureStatus(householdId: string, captureId: string): HouseholdCaptureStatusResponse {

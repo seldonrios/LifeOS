@@ -7,7 +7,7 @@ import ical from 'node-ical';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { createEventBusClient, type ManagedEventBus } from '@lifeos/event-bus';
+import { createEventBusClient, Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
 import {
   HouseholdGraphClient,
   generateInviteToken,
@@ -347,6 +347,355 @@ test('GET /api/households/:id/captures/:captureId/status returns resolved when r
     assert.equal(response.json().status, 'resolved');
     assert.equal(response.json().resolvedAction, 'Created chore: do the dishes');
     assert.equal(response.json().objectId, choreId);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/config updates HA integration settings for admins', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/config`,
+      headers: { authorization: adminAuth },
+      payload: {
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam', 'device.kitchen.motion'],
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.config.haIntegrationEnabled, true);
+    assert.deepEqual(body.config.haConsentedStateKeys, ['presence.sam', 'device.kitchen.motion']);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/config rejects non-admin members', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const household = db.createHousehold('Config Home');
+    activateMember(db, household.id, 'adult-1', 'Adult', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${household.id}/config`,
+      headers: { authorization: await bearerFor('adult-1') },
+      payload: {
+        haIntegrationEnabled: true,
+      },
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook returns 401 when secret is invalid', async () => {
+  const { db, app, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Home',
+      JSON.stringify({
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'bad-secret',
+      },
+      payload: {
+        deviceId: 'front-door',
+        stateKey: 'presence.sam',
+        newValue: 'home',
+      },
+    });
+
+    assert.equal(response.statusCode, 401);
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook returns 403 when integration is disabled', async () => {
+  const { db, app, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Disabled Home',
+      JSON.stringify({
+        haIntegrationEnabled: false,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'valid-secret',
+      },
+      payload: {
+        deviceId: 'front-door',
+        stateKey: 'presence.sam',
+        newValue: 'home',
+      },
+    });
+
+    assert.equal(response.statusCode, 403);
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook rejects non-consented state keys without logging', async () => {
+  const { db, app, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Consent Home',
+      JSON.stringify({
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'valid-secret',
+      },
+      payload: {
+        deviceId: 'kitchen-motion',
+        stateKey: 'sensor.kitchen.motion',
+        newValue: true,
+      },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.deepEqual(db.listRecentHomeStateChanges(household.id), []);
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook publishes home-state event and writes log for consented keys', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+  const events: Array<BaseEvent<unknown>> = [];
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Event Home',
+      JSON.stringify({
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await eventBus.subscribe(Topics.lifeos.householdHomeStateChanged, async (event) => {
+      events.push(event);
+    });
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'valid-secret',
+      },
+      payload: {
+        deviceId: 'front-door',
+        stateKey: 'presence.sam',
+        previousValue: 'away',
+        newValue: 'home',
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    await waitFor(() => events.length === 1, 800);
+    const changes = db.listRecentHomeStateChanges(household.id);
+    assert.equal(changes.length, 1);
+    assert.equal(changes[0]?.stateKey, 'presence.sam');
+    assert.equal(changes[0]?.consentVerified, true);
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook forwards voice transcript as household voice capture event', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+  const events: Array<BaseEvent<unknown>> = [];
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Voice Home',
+      JSON.stringify({
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await eventBus.subscribe(Topics.lifeos.householdVoiceCaptureCreated, async (event) => {
+      events.push(event);
+    });
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'valid-secret',
+      },
+      payload: {
+        deviceId: 'kitchen-speaker',
+        stateKey: 'presence.sam',
+        newValue: 'home',
+        voice_transcript: 'add oat milk',
+        targetHint: 'shopping',
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    await waitFor(() => events.length === 1, 800);
+
+    const payload = events[0]?.data as Record<string, unknown>;
+    assert.equal(payload.source, 'ha_bridge');
+    assert.equal(payload.audioRef, null);
+    assert.equal(payload.text, 'add oat milk');
+    assert.equal(payload.targetHint, 'shopping');
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/ha/webhook supports legacy camelCase voiceTranscript alias', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
+  const events: Array<BaseEvent<unknown>> = [];
+
+  try {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = 'valid-secret';
+    const household = db.createHousehold(
+      'HA Voice Alias Home',
+      JSON.stringify({
+        haIntegrationEnabled: true,
+        haConsentedStateKeys: ['presence.sam'],
+      }),
+    );
+
+    await eventBus.subscribe(Topics.lifeos.householdVoiceCaptureCreated, async (event) => {
+      events.push(event);
+    });
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/ha/webhook`,
+      headers: {
+        'x-lifeos-ha-secret': 'valid-secret',
+      },
+      payload: {
+        deviceId: 'kitchen-speaker',
+        stateKey: 'presence.sam',
+        newValue: 'home',
+        voiceTranscript: 'add bananas',
+        targetHint: 'shopping',
+      },
+    });
+
+    assert.equal(response.statusCode, 202);
+    await waitFor(() => events.length === 1, 800);
+
+    const payload = events[0]?.data as Record<string, unknown>;
+    assert.equal(payload.text, 'add bananas');
+    assert.equal(payload.source, 'ha_bridge');
+  } finally {
+    process.env.LIFEOS_HA_WEBHOOK_SECRET = previousSecret;
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/context returns membersHome activeDevices and recent state changes', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    db.appendHomeStateLog({
+      householdId,
+      deviceId: 'front-door',
+      stateKey: 'presence.sam',
+      previousValue: 'away',
+      newValue: 'home',
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+    db.appendHomeStateLog({
+      householdId,
+      deviceId: 'hall-motion',
+      stateKey: 'sensor.hall.motion',
+      previousValue: false,
+      newValue: true,
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+    db.appendHomeStateLog({
+      householdId,
+      deviceId: 'weather-station',
+      stateKey: 'sensor.weather.temperature',
+      previousValue: 20,
+      newValue: 23,
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+
+    await app.ready();
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/context`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.ok(Array.isArray(body.membersHome));
+    assert.ok(Array.isArray(body.activeDevices));
+    assert.ok(Array.isArray(body.recentStateChanges));
+    assert.equal(body.membersHome.includes('sam'), true);
+    assert.equal(body.activeDevices.includes('front-door'), true);
+    assert.equal(body.activeDevices.includes('hall-motion'), true);
+    assert.equal(body.activeDevices.includes('weather-station'), false);
+    assert.equal(body.recentStateChanges.length, 3);
   } finally {
     await cleanup();
   }

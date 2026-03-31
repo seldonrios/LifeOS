@@ -232,6 +232,65 @@ export const HouseholdHomeStateChangedSchema = z.object({
 });
 export type HouseholdHomeStateChanged = z.infer<typeof HouseholdHomeStateChangedSchema>;
 
+export const HouseholdHomeStateConfigSchema = z.object({
+  haIntegrationEnabled: z.boolean().optional(),
+  haConsentedStateKeys: z.array(z.string().min(1)).optional(),
+});
+export type HouseholdHomeStateConfig = z.infer<typeof HouseholdHomeStateConfigSchema>;
+
+export const HouseholdUpdateConfigRequestSchema = z
+  .object({
+    haIntegrationEnabled: z.boolean().optional(),
+    haConsentedStateKeys: z.array(z.string().min(1)).optional(),
+  })
+  .refine(
+    (value) => value.haIntegrationEnabled !== undefined || value.haConsentedStateKeys !== undefined,
+    {
+      message: 'At least one config field is required',
+    },
+  );
+export type HouseholdUpdateConfigRequest = z.infer<typeof HouseholdUpdateConfigRequestSchema>;
+
+export const HouseholdHaWebhookRequestSchema = z
+  .object({
+    deviceId: z.string().min(1),
+    stateKey: z.string().min(1),
+    previousValue: z.unknown().optional(),
+    newValue: z.unknown(),
+    voice_transcript: z.string().min(1).optional(),
+    voiceTranscript: z.string().min(1).optional(),
+    sourceDeviceId: z.string().min(1).optional(),
+    actorUserId: z.string().min(1).optional(),
+    targetHint: z.enum(['shopping', 'chore', 'reminder', 'note', 'unknown']).optional(),
+  })
+  .transform((value) => {
+    const { voiceTranscript, ...rest } = value;
+    return {
+      ...rest,
+      voice_transcript: value.voice_transcript ?? voiceTranscript,
+    };
+  });
+export type HouseholdHaWebhookRequest = z.infer<typeof HouseholdHaWebhookRequestSchema>;
+
+export const HomeStateChangeSchema = z.object({
+  id: z.string().min(1),
+  deviceId: z.string().min(1),
+  stateKey: z.string().min(1),
+  previousValue: z.unknown(),
+  newValue: z.unknown(),
+  source: z.enum(['ha_bridge', 'manual', 'routine']),
+  consentVerified: z.boolean(),
+  createdAt: IsoDateTimeSchema,
+});
+export type HomeStateChange = z.infer<typeof HomeStateChangeSchema>;
+
+export const HouseholdContextSummarySchema = z.object({
+  membersHome: z.array(z.string().min(1)),
+  activeDevices: z.array(z.string().min(1)),
+  recentStateChanges: z.array(HomeStateChangeSchema),
+});
+export type HouseholdContextSummary = z.infer<typeof HouseholdContextSummarySchema>;
+
 export const HouseholdReminderFiredSchema = z.object({
   householdId: z.string().min(1),
   reminderId: z.string().min(1),
