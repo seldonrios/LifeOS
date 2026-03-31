@@ -1,0 +1,38 @@
+name: Household feature request
+description: Propose an enhancement for household coordination workflows.
+labels: ["enhancement", "household"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What household coordination pain does this solve?
+    validations:
+      required: true
+
+  - type: textarea
+    id: users
+    attributes:
+      label: Users
+      description: Who uses it (admin/adult/teen/child/guest)?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: data_sensitivity
+    attributes:
+      label: Data sensitivity
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true for this feature to be considered done?
+    validations:
+      required: true

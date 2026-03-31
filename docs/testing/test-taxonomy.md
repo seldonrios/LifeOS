@@ -35,3 +35,9 @@ When opening a PR, explicitly note:
 
 - which test class(es) were updated (`unit`, `integration`, `smoke`, `e2e`)
 - why skipped classes are not needed for this change
+
+## Household-specific test requirements
+
+- Any change touching `modules/household-*` requires a multi-user integration test.
+- Voice capture changes require running `test:voice-capture`.
+- Any PR touching more than one household module must pass `test:household-mvp`.

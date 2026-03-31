@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 
 import {
+  HouseholdAutomationFailedSchema,
   HouseholdCalendarEventCreatedSchema,
   HouseholdCaptureStatusResponseSchema,
   HouseholdChoreAssignedSchema,
@@ -33,17 +34,18 @@ import {
   type CalendarPublishContext,
   generateIcs,
   publishCalendarEventCreated,
-} from '../../../../modules/household-calendar/src/index';
+} from '@lifeos/household-calendar-module';
 import {
   publishChoreAssigned,
   publishChoreCompleted,
+  resolveChoreAutomationFailure,
   type ChorePublishContext,
-} from '../../../../modules/household-chores/src/index';
+} from '@lifeos/household-chores-module';
 import {
   publishShoppingItemAdded,
   publishShoppingItemPurchased,
   type ShoppingPublishContext,
-} from '../../../../modules/household-shopping/src/index';
+} from '@lifeos/household-shopping-module';
 import {
   HouseholdGraphClient,
   InvalidAttendeeError,
@@ -58,7 +60,8 @@ import {
   isStateKeyConsented,
   parseHouseholdHomeStateConfig,
   validateWebhookSecret,
-} from '../../../../modules/home-state/src/index';
+} from '@lifeos/home-state-module';
+import { createObservabilityClient, emitAutomationFailureSpan } from '@lifeos/observability';
 import { z } from 'zod';
 
 import { extractCallerUserId } from '../auth';
@@ -68,8 +71,10 @@ type StatusSentinel = {
   message?: string;
 };
 
+const ReminderObjectTypeSchema = z.enum(['chore', 'event', 'shopping', 'routine', 'custom']);
+
 function makeStatusError(status: number, message?: string): StatusSentinel {
-  return { status, message };
+  return message === undefined ? { status } : { status, message };
 }
 
 function isStatusError(error: unknown): error is StatusSentinel {
@@ -189,6 +194,97 @@ async function publishHouseholdEvent<T extends Record<string, unknown>>(
   };
 
   await eventBus.publish(topic, event);
+}
+
+async function publishAutomationFailure(
+  eventBus: ManagedEventBus,
+  payload: ReturnType<typeof HouseholdAutomationFailedSchema.parse>,
+): Promise<void> {
+  await publishHouseholdEvent(
+    eventBus,
+    Topics.lifeos.householdAutomationFailed,
+    payload,
+    payload.household_id,
+    payload.actor_id,
+    payload.trace_id ?? 'trace-missing',
+  );
+}
+
+async function publishReminderFailureEvents(
+  db: HouseholdGraphClient,
+  eventBus: ManagedEventBus,
+  input: {
+    householdId: string;
+    reminderId: string;
+    objectType: 'chore' | 'event' | 'shopping' | 'routine' | 'custom';
+    objectId: string;
+    targetUserIds: string[];
+    remindAt: string;
+  },
+): Promise<void> {
+  const failures = db.evaluateReminderAutomationFailures(
+    input.householdId,
+    input.targetUserIds,
+    input.remindAt,
+  );
+  if (failures.length === 0) {
+    return;
+  }
+
+  const observability = createObservabilityClient({
+    serviceName: 'dashboard-service',
+    environment: process.env.LIFEOS_PROFILE?.trim() || process.env.NODE_ENV || 'development',
+  });
+
+  for (const failure of failures) {
+    const span = emitAutomationFailureSpan(observability, 'household.reminder.fire', {
+      householdId: input.householdId,
+      actorId: 'system',
+      actionType: 'household.reminder.fire',
+      errorCode: failure.errorCode,
+      fixSuggestion: failure.fixSuggestion,
+      objectId: input.reminderId,
+      objectRef: `reminder:${input.reminderId}`,
+      details: {
+        target_user_id: failure.targetUserId,
+      },
+    });
+
+    await publishAutomationFailure(
+      eventBus,
+      HouseholdAutomationFailedSchema.parse({
+        household_id: input.householdId,
+        actor_id: 'system',
+        action_type: 'household.reminder.fire',
+        error_code: failure.errorCode,
+        fix_suggestion: failure.fixSuggestion,
+        span_id: span.spanId,
+        trace_id: span.traceId,
+        object_id: input.reminderId,
+        object_ref: `reminder:${input.reminderId}`,
+        details: {
+          target_user_id: failure.targetUserId,
+        },
+      }),
+    );
+
+    await publishHouseholdEvent(
+      eventBus,
+      Topics.lifeos.householdReminderFired,
+      {
+        householdId: input.householdId,
+        reminderId: input.reminderId,
+        objectType: input.objectType,
+        objectId: input.objectId,
+        targetUserIds: [failure.targetUserId],
+        firedAt: new Date().toISOString(),
+        deliveryStatus: failure.deliveryStatus,
+      },
+      input.householdId,
+      'system',
+      span.traceId,
+    );
+  }
 }
 
 function createChorePublishContext(
@@ -457,7 +553,7 @@ export function registerHouseholdRoutes(
       void publishShoppingItemAdded(
         createShoppingPublishContext(eventBus, params.id, callerUserId, request.id),
         eventData,
-      ).catch((error) => {
+      ).catch((error: unknown) => {
         app.log.error(error);
       });
     } catch (error) {
@@ -548,7 +644,7 @@ export function registerHouseholdRoutes(
         void publishShoppingItemPurchased(
           createShoppingPublishContext(eventBus, params.id, callerUserId, request.id),
           eventData,
-        ).catch((error) => {
+        ).catch((error: unknown) => {
           app.log.error(error);
         });
       }
@@ -736,8 +832,8 @@ export function registerHouseholdRoutes(
             householdId: params.id,
             transcript: body.voice_transcript,
             sourceDeviceId: body.sourceDeviceId ?? body.deviceId,
-            actorUserId: body.actorUserId,
-            targetHint: body.targetHint,
+            ...(body.actorUserId === undefined ? {} : { actorUserId: body.actorUserId }),
+            ...(body.targetHint === undefined ? {} : { targetHint: body.targetHint }),
           }),
         );
 
@@ -904,7 +1000,7 @@ export function registerHouseholdRoutes(
       void publishCalendarEventCreated(
         createCalendarPublishContext(eventBus, params.id, callerUserId, request.id),
         eventData,
-      ).catch((error) => {
+      ).catch((error: unknown) => {
         app.log.error(error);
       });
     } catch (error) {
@@ -935,9 +1031,15 @@ export function registerHouseholdRoutes(
           status: z.enum(['confirmed', 'tentative', 'cancelled']).optional(),
         })
         .parse(request.body);
+      const update = {
+        ...(body.title === undefined ? {} : { title: body.title }),
+        ...(body.startAt === undefined ? {} : { startAt: body.startAt }),
+        ...(body.endAt === undefined ? {} : { endAt: body.endAt }),
+        ...(body.status === undefined ? {} : { status: body.status }),
+      };
 
       await requireMember(db, params.id, callerUserId, 'view');
-      const event = db.updateEvent(params.id, params.calendarId, params.eventId, body);
+      const event = db.updateEvent(params.id, params.calendarId, params.eventId, update);
       const calendar = db.getCalendar(params.id, params.calendarId);
       reply.status(200).send({
         id: event.id,
@@ -999,7 +1101,21 @@ export function registerHouseholdRoutes(
         body.recurrenceRule,
       );
 
-      db.createReminder(params.id, 'chore', chore.id, [chore.assigned_to_user_id], chore.due_at);
+      const reminder = db.createReminder(
+        params.id,
+        'chore',
+        chore.id,
+        [chore.assigned_to_user_id],
+        chore.due_at,
+      );
+      await publishReminderFailureEvents(db, eventBus, {
+        householdId: params.id,
+        reminderId: reminder.id,
+        objectType: 'chore',
+        objectId: chore.id,
+        targetUserIds: [chore.assigned_to_user_id],
+        remindAt: chore.due_at,
+      });
 
       const eventData = HouseholdChoreAssignedSchema.parse({
         householdId: params.id,
@@ -1085,7 +1201,21 @@ export function registerHouseholdRoutes(
         throw makeStatusError(404, 'Chore not found');
       }
 
-      db.createReminder(params.id, 'chore', params.choreId, [body.userId], assignment.due_at);
+      const reminder = db.createReminder(
+        params.id,
+        'chore',
+        params.choreId,
+        [body.userId],
+        assignment.due_at,
+      );
+      await publishReminderFailureEvents(db, eventBus, {
+        householdId: params.id,
+        reminderId: reminder.id,
+        objectType: 'chore',
+        objectId: params.choreId,
+        targetUserIds: [body.userId],
+        remindAt: assignment.due_at,
+      });
 
       const eventData = HouseholdChoreAssignedSchema.parse({
         householdId: params.id,
@@ -1137,7 +1267,51 @@ export function registerHouseholdRoutes(
         throw makeStatusError(403, 'Only assigned member or Admin can complete chore');
       }
 
-      const chore = db.completeChore(params.id, params.choreId, callerUserId);
+      let chore;
+      try {
+        chore = db.completeChore(params.id, params.choreId, callerUserId);
+      } catch (error) {
+        const failure = resolveChoreAutomationFailure(error, {
+          choreTitle: choreBeforeCompletion.title,
+          recurrenceRule: choreBeforeCompletion.recurrence_rule,
+        });
+        if (failure) {
+          const observability = createObservabilityClient({
+            serviceName: 'dashboard-service',
+            environment: process.env.LIFEOS_PROFILE?.trim() || process.env.NODE_ENV || 'development',
+          });
+          const span = emitAutomationFailureSpan(observability, 'household.chore.run', {
+            householdId: params.id,
+            actorId: callerUserId,
+            actionType: 'household.chore.run',
+            errorCode: failure.errorCode,
+            fixSuggestion: failure.fixSuggestion,
+            objectId: params.choreId,
+            objectRef: `chore:${params.choreId}`,
+            details: {
+              chore_title: choreBeforeCompletion.title,
+            },
+          });
+          await publishAutomationFailure(
+            eventBus,
+            HouseholdAutomationFailedSchema.parse({
+              household_id: params.id,
+              actor_id: callerUserId,
+              action_type: 'household.chore.run',
+              error_code: failure.errorCode,
+              fix_suggestion: failure.fixSuggestion,
+              span_id: span.spanId,
+              trace_id: span.traceId,
+              object_id: params.choreId,
+              object_ref: `chore:${params.choreId}`,
+              details: {
+                chore_title: choreBeforeCompletion.title,
+              },
+            }),
+          );
+        }
+        throw error;
+      }
 
       const eventData = HouseholdChoreCompletedSchema.parse({
         householdId: params.id,
@@ -1168,15 +1342,24 @@ export function registerHouseholdRoutes(
 
       const params = z.object({ id: z.string().min(1) }).parse(request.params);
       const body = HouseholdCreateReminderRequestSchema.parse(request.body);
+      const objectType = ReminderObjectTypeSchema.parse(body.objectType);
 
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       const reminder = db.createReminder(
         params.id,
-        body.objectType,
+        objectType,
         body.objectId,
         body.targetUserIds,
         body.remindAt,
       );
+      await publishReminderFailureEvents(db, eventBus, {
+        householdId: params.id,
+        reminderId: reminder.id,
+        objectType,
+        objectId: body.objectId,
+        targetUserIds: body.targetUserIds,
+        remindAt: body.remindAt,
+      });
       reply.status(201).send(reminder);
     } catch (error) {
       replyError(reply, error);

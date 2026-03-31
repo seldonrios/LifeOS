@@ -1,17 +1,12 @@
 {
-  "extends": "../tsconfig.json",
+  "extends": "../../tsconfig.json",
   "compilerOptions": {
-    "strict": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "composite": true,
     "target": "ES2022",
     "lib": ["ES2022"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "types": ["node"],
-    "ignoreDeprecations": "6.0",
-    "baseUrl": "..",
+    "baseUrl": "../..",
     "paths": {
       "@lifeos/*": ["packages/*/src/index.ts"],
       "@lifeos/*-module": ["modules/*/src/index.ts"],
@@ -22,10 +17,15 @@
       "@lifeos/household-shopping-module": ["modules/household-shopping/src/index.ts"]
     },
     "skipLibCheck": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "rootDir": "./src",
-    "outDir": "./dist"
-  }
+    "noEmit": true
+  },
+  "include": [
+    "src/**/*.ts",
+    "../../modules/home-state/src/**/*.ts",
+    "../../modules/household-calendar/src/**/*.ts",
+    "../../modules/household-chores/src/**/*.ts",
+    "../../modules/household-identity/src/**/*.ts",
+    "../../modules/household-shopping/src/**/*.ts",
+    "../../packages/observability/src/**/*.ts"
+  ]
 }

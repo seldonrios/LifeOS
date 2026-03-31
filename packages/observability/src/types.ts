@@ -10,6 +10,17 @@ export interface ObservabilityConfig {
   endpoint?: string;
 }
 
+export interface AutomationFailureSpanInput {
+  householdId: string;
+  actorId: string;
+  actionType: string;
+  errorCode: string;
+  fixSuggestion: string;
+  objectId?: string;
+  objectRef?: string;
+  details?: Record<string, unknown>;
+}
+
 export interface ObservabilityClient {
   startSpan(name: string, context?: TraceContext): TraceContext;
   endSpan(context: TraceContext): void;

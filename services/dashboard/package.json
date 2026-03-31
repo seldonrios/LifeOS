@@ -9,10 +9,13 @@
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
+    "@lifeos/home-state-module": "workspace:*",
+    "@lifeos/household-calendar-module": "workspace:*",
     "@lifeos/household-chores-module": "workspace:*",
     "@lifeos/household-identity-module": "workspace:*",
     "@lifeos/household-shopping-module": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
+    "@lifeos/observability": "workspace:*",
     "@lifeos/security": "workspace:*",
     "@lifeos/service-runtime": "workspace:*",
     "zod": "^4.1.11"

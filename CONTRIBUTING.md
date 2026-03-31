@@ -38,14 +38,15 @@ If the work is cross-cutting, explain which daily user workflow becomes more dep
 
 Phase 3 accepts work that improves one of these stages:
 
-| Stage                              | What gets better for the user                                 | Typical change areas                                              |
-| ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------- |
-| **Capture**                        | Getting ideas/tasks into LifeOS is faster and more reliable   | `lifeos capture`, voice capture, deduplication, capture contracts |
-| **Inbox / Triage**                 | Incoming items are easier to classify and route correctly     | `lifeos inbox list`, `lifeos inbox triage`, approvals, queue UX   |
-| **Plan / Schedule**                | Next actions become clearer and easier to schedule            | action creation, due dates, `PlannedAction`, scheduler behavior   |
-| **Reminders**                      | Users can trust reminders to fire and recover cleanly         | `lifeos remind`, idempotency, reminder events, overdue handling   |
-| **Review**                         | Daily/weekly summaries are more useful and accurate           | `lifeos review`, `loopSummary`, history aggregation, insights     |
-| **Cross-cutting / Infrastructure** | One or more stages become more dependable without new breadth | contracts, tests, docs, shared runtime, CI, observability         |
+| Stage                              | What gets better for the user                                 | Typical change areas                                                    |
+| ---------------------------------- | ------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Capture**                        | Getting ideas/tasks into LifeOS is faster and more reliable   | `lifeos capture`, voice capture, deduplication, capture contracts       |
+| **Inbox / Triage**                 | Incoming items are easier to classify and route correctly     | `lifeos inbox list`, `lifeos inbox triage`, approvals, queue UX         |
+| **Plan / Schedule**                | Next actions become clearer and easier to schedule            | action creation, due dates, `PlannedAction`, scheduler behavior         |
+| **Reminders**                      | Users can trust reminders to fire and recover cleanly         | `lifeos remind`, idempotency, reminder events, overdue handling         |
+| **Review**                         | Daily/weekly summaries are more useful and accurate           | `lifeos review`, `loopSummary`, history aggregation, insights           |
+| **Household Coordination**         | Shared household actions become reliable and accountable      | `modules/household-*`, `modules/home-state`, `apps/mobile` household UI |
+| **Cross-cutting / Infrastructure** | One or more stages become more dependable without new breadth | contracts, tests, docs, shared runtime, CI, observability               |
 
 Changes that add breadth without improving loop reliability will be deferred to Phase 4.
 
@@ -189,6 +190,27 @@ export const myModule: LifeOSModule = {
 - Writes durable state to Life Graph when behavior is stateful.
 - Includes tests for success path and degraded/failure path.
 - Keeps data local-first and privacy-preserving.
+
+## Household Coordination
+
+Use this addendum when proposing or shipping shared household workflows.
+
+Design principles:
+
+- Household-first: design shared tasks, ownership, and accountability before adding personal-mode shortcuts.
+- Privacy explicitness: classify data as personal, household, or home-state and document boundary decisions.
+- Deterministic by default: prefer explicit routing and stable defaults over probabilistic behavior.
+- Traceable actions: household state mutations must produce auditable events and actor context.
+
+Definition of Done (household features):
+
+- [ ] Includes both unit coverage and at least one multi-user integration test for the changed household flow.
+- [ ] Updates setup guidance, data model/contract docs, and user-facing documentation when behavior changes.
+- [ ] Emits auditable events for household state mutations with actor and outcome context.
+- [ ] Defines notification routing defaults and override behavior for impacted household roles.
+- [ ] Provides reviewer-ready happy-path demo steps (commands/screens) that reproduce the intended end-user flow.
+
+Household contributor onboarding checklist: [docs/onboarding/household-phase.md](docs/onboarding/household-phase.md).
 
 ## Works with LifeOS Badge Eligibility
 

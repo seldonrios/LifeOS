@@ -28,3 +28,14 @@
 - [ ] For Life Graph runtime/client changes, confirmed `git show --name-only HEAD` includes:
   - `packages/life-graph/src/manager.ts`
   - `packages/life-graph/src/index.ts`
+
+## Household impact (if applicable)
+
+- What household roles are affected?
+- Does this change generate notifications? If yes, what are the defaults?
+
+## Privacy & safety checklist (household changes only)
+
+- [ ] Household vs personal vs home-state data separation reviewed
+- [ ] Data retention documented (especially voice)
+- [ ] Audit log entries added for state mutations

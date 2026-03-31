@@ -13,7 +13,8 @@
       "publish:lifeos.household.chore.create.requested",
       "publish:lifeos.household.reminder.create.requested",
       "publish:lifeos.household.note.create.requested",
-      "publish:lifeos.household.capture.unresolved"
+      "publish:lifeos.household.capture.unresolved",
+      "publish:lifeos.household.automation.failed"
     ]
   },
   "resources": {

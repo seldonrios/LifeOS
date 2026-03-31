@@ -6,7 +6,12 @@ import test from 'node:test';
 
 import type Database from 'better-sqlite3';
 
-import { createEventBusClient, Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
+import {
+  createEventBusClient,
+  Topics,
+  type BaseEvent,
+  type ManagedEventBus,
+} from '@lifeos/event-bus';
 
 import { HouseholdGraphClient } from './client';
 import { registerAuditInterceptor } from './audit-interceptor';
@@ -183,6 +188,75 @@ const fixtures: TopicFixture[] = [
     },
     expectedObjectRef: 'capture:capture-1',
   },
+  {
+    topic: Topics.lifeos.householdShoppingItemAddRequested,
+    payload: {
+      householdId: 'household-1',
+      actorUserId: 'member-user',
+      originalCaptureId: 'capture-2',
+      text: 'buy milk',
+      itemTitle: 'Milk',
+    },
+    expectedObjectRef: 'capture:capture-2',
+  },
+  {
+    topic: Topics.lifeos.householdChoreCreateRequested,
+    payload: {
+      householdId: 'household-1',
+      actorUserId: 'member-user',
+      originalCaptureId: 'capture-3',
+      text: 'clean kitchen tonight',
+      choreTitle: 'Clean kitchen',
+    },
+    expectedObjectRef: 'capture:capture-3',
+  },
+  {
+    topic: Topics.lifeos.householdReminderCreateRequested,
+    payload: {
+      householdId: 'household-1',
+      actorUserId: 'member-user',
+      originalCaptureId: 'capture-4',
+      text: 'remind me to water plants',
+      reminderText: 'Water plants',
+    },
+    expectedObjectRef: 'capture:capture-4',
+  },
+  {
+    topic: Topics.lifeos.householdNoteCreateRequested,
+    payload: {
+      householdId: 'household-1',
+      actorUserId: 'member-user',
+      originalCaptureId: 'capture-5',
+      text: 'note the pantry inventory',
+      noteBody: 'Pantry inventory checked',
+    },
+    expectedObjectRef: 'capture:capture-5',
+  },
+  {
+    topic: Topics.lifeos.householdCaptureUnresolved,
+    payload: {
+      captureId: 'capture-6',
+      householdId: 'household-1',
+      text: 'do that thing',
+      reason: 'Could not classify intent',
+    },
+    expectedObjectRef: 'capture:capture-6',
+  },
+  {
+    topic: Topics.lifeos.householdAutomationFailed,
+    payload: {
+      household_id: 'household-1',
+      actor_id: 'system',
+      action_type: 'household.reminder.fire',
+      error_code: 'REMINDER_NO_TOKEN',
+      fix_suggestion: 'Check notification settings for member-user',
+      span_id: 'span-1',
+      trace_id: 'trace-1',
+      object_id: 'reminder-1',
+      object_ref: 'reminder:reminder-1',
+    },
+    expectedObjectRef: 'reminder:reminder-1',
+  },
 ];
 
 for (const fixture of fixtures) {
@@ -249,7 +323,10 @@ class ThrowingTestEventBus implements ManagedEventBus {
     }
   }
 
-  async subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void>): Promise<void> {
+  async subscribe<T>(
+    topic: string,
+    handler: (event: BaseEvent<T>) => Promise<void>,
+  ): Promise<void> {
     this.subscriptions.set(topic, handler as (event: BaseEvent<unknown>) => Promise<void>);
   }
 
@@ -289,12 +366,9 @@ test('registerAuditInterceptor throws when actor metadata is missing', async () 
       },
     };
 
-    await assert.rejects(
-      async () => {
-        await eventBus.publish(Topics.lifeos.householdMemberInvited, event);
-      },
-      /Missing required audit metadata/i,
-    );
+    await assert.rejects(async () => {
+      await eventBus.publish(Topics.lifeos.householdMemberInvited, event);
+    }, /Missing required audit metadata/i);
   } finally {
     await eventBus.close();
     cleanup();

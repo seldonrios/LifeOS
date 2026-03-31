@@ -2,7 +2,7 @@ export * from './types';
 
 import { randomUUID } from 'node:crypto';
 
-import type { ObservabilityClient } from './types';
+import type { AutomationFailureSpanInput, ObservabilityClient } from './types';
 import type { ObservabilityConfig, TraceContext } from './types';
 
 interface LogEntry {
@@ -138,4 +138,27 @@ export function createObservabilityClient(config?: ObservabilityConfig): Observa
       });
     },
   };
+}
+
+export function emitAutomationFailureSpan(
+  client: ObservabilityClient,
+  spanName: string,
+  input: AutomationFailureSpanInput,
+): TraceContext {
+  const span = client.startSpan(spanName);
+  client.log('error', `automation.failure:${input.errorCode}`, {
+    traceId: span.traceId,
+    spanId: span.spanId,
+    parentSpanId: span.parentSpanId,
+    household_id: input.householdId,
+    actor_id: input.actorId,
+    action_type: input.actionType,
+    error_code: input.errorCode,
+    fix_suggestion: input.fixSuggestion,
+    ...(input.objectId ? { object_id: input.objectId } : {}),
+    ...(input.objectRef ? { object_ref: input.objectRef } : {}),
+    ...(input.details ? input.details : {}),
+  });
+  client.endSpan(span);
+  return span;
 }

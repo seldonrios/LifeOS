@@ -1,4 +1,7 @@
+import { randomUUID } from 'node:crypto';
+
 import {
+  HouseholdAutomationFailedSchema,
   HouseholdCaptureUnresolvedSchema,
   HouseholdChoreCreateRequestedSchema,
   HouseholdNoteCreateRequestedSchema,
@@ -6,14 +9,24 @@ import {
   HouseholdShoppingItemAddRequestedSchema,
   HouseholdVoiceCaptureCreatedSchema,
   Topics,
+  type BaseEvent,
   type HouseholdVoiceCaptureCreated,
   type LifeOSModule,
   type ModuleRuntimeContext,
 } from '@lifeos/module-sdk';
+import {
+  createObservabilityClient,
+  emitAutomationFailureSpan,
+  type ObservabilityClient,
+} from '@lifeos/observability';
 
 import { routeHouseholdCapture, type AiClassification } from './router';
 
 const ROUTER_SOURCE = 'household-capture-router';
+
+interface HouseholdCaptureRouterModuleOptions {
+  observabilityClient?: ObservabilityClient;
+}
 
 function isAiEnabled(env: NodeJS.ProcessEnv): boolean {
   return env.LIFEOS_AI_ENABLED?.trim().toLowerCase() === 'true';
@@ -114,75 +127,164 @@ export function createAiClassifier(
   };
 }
 
-export const householdCaptureRouterModule: LifeOSModule = {
-  id: 'household-capture-router',
-  async init(context: ModuleRuntimeContext) {
-    const seenCaptureIds = new Set<string>();
-    const classifyWithAi = createAiClassifier(context.env);
+function createModuleObservabilityClient(context: ModuleRuntimeContext): ObservabilityClient {
+  return createObservabilityClient({
+    serviceName: ROUTER_SOURCE,
+    environment: context.env.LIFEOS_PROFILE?.trim() || process.env.NODE_ENV || 'development',
+  });
+}
 
-    await context.subscribe<HouseholdVoiceCaptureCreated>(
-      Topics.lifeos.householdVoiceCaptureCreated,
-      async (event) => {
-        const capture = HouseholdVoiceCaptureCreatedSchema.parse(event.data);
-        if (seenCaptureIds.has(capture.captureId)) {
-          context.log(`[household-capture-router] skipped duplicate capture ${capture.captureId}`);
-          return;
-        }
+function resolveCaptureFailure(
+  capture: HouseholdVoiceCaptureCreated,
+  routeResult: Awaited<ReturnType<typeof routeHouseholdCapture>>,
+): { errorCode: 'CAPTURE_AMBIGUOUS' | 'CAPTURE_NO_RULE_MATCH'; fixSuggestion: string } {
+  if (routeResult.status === 'unresolved' && routeResult.reason === 'deterministic-ambiguous') {
+    return {
+      errorCode: 'CAPTURE_AMBIGUOUS',
+      fixSuggestion: `Tap to confirm what you meant: ${routeResult.detail.replace(/^Deterministic routing tied between:\s*/i, '')}`,
+    };
+  }
 
-        const routeOptions: Parameters<typeof routeHouseholdCapture>[1] = {
-          aiEnabled: isAiEnabled(context.env),
-        };
-        if (classifyWithAi) {
-          routeOptions.classifyWithAi = classifyWithAi;
-        }
+  return {
+    errorCode: 'CAPTURE_NO_RULE_MATCH',
+    fixSuggestion: `No household action matched '${capture.text}'`,
+  };
+}
 
-        const routeResult = await routeHouseholdCapture(capture, routeOptions);
+async function publishAutomationFailure(
+  eventBus: ModuleRuntimeContext['eventBus'],
+  payload: ReturnType<typeof HouseholdAutomationFailedSchema.parse>,
+): Promise<void> {
+  const event: BaseEvent<typeof payload> = {
+    id: randomUUID(),
+    type: Topics.lifeos.householdAutomationFailed,
+    timestamp: new Date().toISOString(),
+    source: ROUTER_SOURCE,
+    version: '1',
+    data: payload,
+    metadata: {
+      household_id: payload.household_id,
+      actor_id: payload.actor_id,
+      trace_id: payload.trace_id,
+    },
+  };
 
-        if (routeResult.status === 'unresolved') {
-          const unresolved = HouseholdCaptureUnresolvedSchema.parse({
-            captureId: capture.captureId,
-            householdId: capture.householdId,
-            text: capture.text,
-            reason: routeResult.detail,
-          });
-          await context.publish(
-            Topics.lifeos.householdCaptureUnresolved,
-            unresolved,
-            ROUTER_SOURCE,
-          );
-          seenCaptureIds.add(capture.captureId);
-          return;
-        }
+  await eventBus.publish(Topics.lifeos.householdAutomationFailed, event);
+}
 
-        if (routeResult.route.kind === 'shopping') {
-          const payload = HouseholdShoppingItemAddRequestedSchema.parse(routeResult.route.payload);
+export function createHouseholdCaptureRouterModule(
+  options: HouseholdCaptureRouterModuleOptions = {},
+): LifeOSModule {
+  return {
+    id: 'household-capture-router',
+    async init(context: ModuleRuntimeContext) {
+      const seenCaptureIds = new Set<string>();
+      const classifyWithAi = createAiClassifier(context.env);
+      const observabilityClient =
+        options.observabilityClient ?? createModuleObservabilityClient(context);
+
+      await context.subscribe<HouseholdVoiceCaptureCreated>(
+        Topics.lifeos.householdVoiceCaptureCreated,
+        async (event) => {
+          const capture = HouseholdVoiceCaptureCreatedSchema.parse(event.data);
+          if (seenCaptureIds.has(capture.captureId)) {
+            context.log(
+              `[household-capture-router] skipped duplicate capture ${capture.captureId}`,
+            );
+            return;
+          }
+
+          const routeOptions: Parameters<typeof routeHouseholdCapture>[1] = {
+            aiEnabled: isAiEnabled(context.env),
+          };
+          if (classifyWithAi) {
+            routeOptions.classifyWithAi = classifyWithAi;
+          }
+
+          const routeResult = await routeHouseholdCapture(capture, routeOptions);
+
+          if (routeResult.status === 'unresolved') {
+            const failure = resolveCaptureFailure(capture, routeResult);
+            const span = emitAutomationFailureSpan(observabilityClient, 'household.capture.route', {
+              householdId: capture.householdId,
+              actorId: capture.actorUserId,
+              actionType: 'household.capture.route',
+              errorCode: failure.errorCode,
+              fixSuggestion: failure.fixSuggestion,
+              objectId: capture.captureId,
+              objectRef: `capture:${capture.captureId}`,
+              details: {
+                transcript: capture.text,
+                reason: routeResult.reason,
+              },
+            });
+            await publishAutomationFailure(
+              context.eventBus,
+              HouseholdAutomationFailedSchema.parse({
+                household_id: capture.householdId,
+                actor_id: capture.actorUserId,
+                action_type: 'household.capture.route',
+                error_code: failure.errorCode,
+                fix_suggestion: failure.fixSuggestion,
+                span_id: span.spanId,
+                trace_id: span.traceId,
+                object_id: capture.captureId,
+                object_ref: `capture:${capture.captureId}`,
+                details: {
+                  transcript: capture.text,
+                  reason: routeResult.reason,
+                },
+              }),
+            );
+            const unresolved = HouseholdCaptureUnresolvedSchema.parse({
+              captureId: capture.captureId,
+              householdId: capture.householdId,
+              text: capture.text,
+              reason: routeResult.detail,
+            });
+            await context.publish(
+              Topics.lifeos.householdCaptureUnresolved,
+              unresolved,
+              ROUTER_SOURCE,
+            );
+            seenCaptureIds.add(capture.captureId);
+            return;
+          }
+
+          if (routeResult.route.kind === 'shopping') {
+            const payload = HouseholdShoppingItemAddRequestedSchema.parse(
+              routeResult.route.payload,
+            );
+            await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
+            seenCaptureIds.add(capture.captureId);
+            return;
+          }
+
+          if (routeResult.route.kind === 'chore') {
+            const payload = HouseholdChoreCreateRequestedSchema.parse(routeResult.route.payload);
+            await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
+            seenCaptureIds.add(capture.captureId);
+            return;
+          }
+
+          if (routeResult.route.kind === 'reminder') {
+            const payload = HouseholdReminderCreateRequestedSchema.parse(routeResult.route.payload);
+            await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
+            seenCaptureIds.add(capture.captureId);
+            return;
+          }
+
+          const payload = HouseholdNoteCreateRequestedSchema.parse(routeResult.route.payload);
           await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
           seenCaptureIds.add(capture.captureId);
-          return;
-        }
+        },
+      );
 
-        if (routeResult.route.kind === 'chore') {
-          const payload = HouseholdChoreCreateRequestedSchema.parse(routeResult.route.payload);
-          await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
-          seenCaptureIds.add(capture.captureId);
-          return;
-        }
+      context.log('[household-capture-router] initialized');
+    },
+  };
+}
 
-        if (routeResult.route.kind === 'reminder') {
-          const payload = HouseholdReminderCreateRequestedSchema.parse(routeResult.route.payload);
-          await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
-          seenCaptureIds.add(capture.captureId);
-          return;
-        }
-
-        const payload = HouseholdNoteCreateRequestedSchema.parse(routeResult.route.payload);
-        await context.publish(routeResult.route.topic, payload, ROUTER_SOURCE);
-        seenCaptureIds.add(capture.captureId);
-      },
-    );
-
-    context.log('[household-capture-router] initialized');
-  },
-};
+export const householdCaptureRouterModule: LifeOSModule = createHouseholdCaptureRouterModule();
 
 export default householdCaptureRouterModule;

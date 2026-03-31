@@ -9,6 +9,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 ### Added
 
+- Phase 5 household coordination rollout baseline across household identity, chores, shopping, calendar, capture-router, and home-state packages.
 - Mesh protocol and marketplace trust contracts for Phase 3 foundation.
 - `lifeos mesh debug --bundle` command for reproducible mesh diagnostics.
 - Works with LifeOS checklist, external module CI example, and dedicated workflow profile.

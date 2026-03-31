@@ -5,6 +5,16 @@
     "exactOptionalPropertyTypes": true,
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "baseUrl": ".",
+    "paths": {
+      "@lifeos/*": ["packages/*/src/index.ts"],
+      "@lifeos/*-module": ["modules/*/src/index.ts"],
+      "@lifeos/home-state-module": ["modules/home-state/src/index.ts"],
+      "@lifeos/household-calendar-module": ["modules/household-calendar/src/index.ts"],
+      "@lifeos/household-chores-module": ["modules/household-chores/src/index.ts"],
+      "@lifeos/household-identity-module": ["modules/household-identity/src/index.ts"],
+      "@lifeos/household-shopping-module": ["modules/household-shopping/src/index.ts"]
+    },
     "composite": true
   },
   "references": [],

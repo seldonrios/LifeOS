@@ -12,11 +12,11 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts src/audit-interceptor.test.ts"
+    "test": "tsx --test src/index.test.ts src/audit-interceptor.test.ts",
+    "test:tracing": "tsx --test src/index.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
-    "@lifeos/household-chores-module": "workspace:*",
     "@lifeos/module-sdk": "workspace:*",
     "better-sqlite3": "^12.8.0"
   }

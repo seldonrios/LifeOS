@@ -1,16 +1,24 @@
 import { randomUUID } from 'node:crypto';
 
 import type {
+  HouseholdAutomationFailed,
   HouseholdChoreCreateRequested,
   HouseholdChoreAssigned,
   HouseholdChoreCompleted,
 } from '@lifeos/contracts';
+import type { BaseEvent } from '@lifeos/event-bus';
 import {
+  HouseholdAutomationFailedSchema,
   HouseholdChoreCreateRequestedSchema,
   Topics,
   type LifeOSModule,
   type ModuleRuntimeContext,
 } from '@lifeos/module-sdk';
+import {
+  createObservabilityClient,
+  emitAutomationFailureSpan,
+  type ObservabilityClient,
+} from '@lifeos/observability';
 
 export { calculateStreak } from './streak';
 export { getNextDueDate, isOverdue } from './recurrence';
@@ -19,6 +27,11 @@ export type ChorePublishContext = Pick<ModuleRuntimeContext, 'publish'>;
 
 export interface ChoreIntentStore {
   createRequestedChore(payload: HouseholdChoreCreateRequested): HouseholdChoreAssigned | null;
+}
+
+export interface ChoreAutomationFailure {
+  errorCode: 'CHORE_NO_ASSIGNEE' | 'CHORE_RRULE_INVALID';
+  fixSuggestion: string;
 }
 
 interface ChoreDatabase {
@@ -108,6 +121,61 @@ export async function createChoreIntentStore(dbPath: string): Promise<ChoreInten
 
 interface HouseholdChoresModuleOptions {
   createIntentStore?: (dbPath: string) => Promise<ChoreIntentStore>;
+  observabilityClient?: ObservabilityClient;
+}
+
+function createModuleObservabilityClient(context: ModuleRuntimeContext): ObservabilityClient {
+  return createObservabilityClient({
+    serviceName: 'household-chores',
+    environment: context.env.LIFEOS_PROFILE?.trim() || process.env.NODE_ENV || 'development',
+  });
+}
+
+export function resolveChoreAutomationFailure(
+  error: unknown,
+  input: { choreTitle: string; recurrenceRule?: string | null },
+): ChoreAutomationFailure | null {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/assignee not found|invalid assignee status/i.test(message)) {
+    return {
+      errorCode: 'CHORE_NO_ASSIGNEE',
+      fixSuggestion: `Assign a member to chore '${input.choreTitle}' before enabling recurrence`,
+    };
+  }
+
+  if (
+    /unsupported recurrence frequency|unable to compute next allowed byday occurrence|recurrence/i.test(
+      message,
+    )
+  ) {
+    return {
+      errorCode: 'CHORE_RRULE_INVALID',
+      fixSuggestion: `Invalid recurrence rule: ${input.recurrenceRule ?? message}`,
+    };
+  }
+
+  return null;
+}
+
+async function publishAutomationFailure(
+  eventBus: ModuleRuntimeContext['eventBus'],
+  payload: HouseholdAutomationFailed,
+): Promise<void> {
+  const event: BaseEvent<HouseholdAutomationFailed> = {
+    id: randomUUID(),
+    type: Topics.lifeos.householdAutomationFailed,
+    timestamp: new Date().toISOString(),
+    source: 'household-chores',
+    version: '1',
+    data: payload,
+    metadata: {
+      household_id: payload.household_id,
+      actor_id: payload.actor_id,
+      trace_id: payload.trace_id,
+    },
+  };
+
+  await eventBus.publish(Topics.lifeos.householdAutomationFailed, event);
 }
 
 export function createHouseholdChoresModule(
@@ -127,12 +195,53 @@ export function createHouseholdChoresModule(
       }
 
       const store = await createIntentStore(dbPath);
+      const observabilityClient =
+        options.observabilityClient ?? createModuleObservabilityClient(context);
 
       await context.subscribe<HouseholdChoreCreateRequested>(
         Topics.lifeos.householdChoreCreateRequested,
         async (event) => {
           const payload = HouseholdChoreCreateRequestedSchema.parse(event.data);
-          const assigned = store.createRequestedChore(payload);
+          let assigned: HouseholdChoreAssigned | null;
+          try {
+            assigned = store.createRequestedChore(payload);
+          } catch (error) {
+            const failure = resolveChoreAutomationFailure(error, {
+              choreTitle: payload.choreTitle,
+            });
+            if (failure) {
+              const span = emitAutomationFailureSpan(observabilityClient, 'household.chore.run', {
+                householdId: payload.householdId,
+                actorId: payload.actorUserId,
+                actionType: 'household.chore.run',
+                errorCode: failure.errorCode,
+                fixSuggestion: failure.fixSuggestion,
+                objectId: payload.originalCaptureId,
+                objectRef: `capture:${payload.originalCaptureId}`,
+                details: {
+                  chore_title: payload.choreTitle,
+                },
+              });
+              await publishAutomationFailure(
+                context.eventBus,
+                HouseholdAutomationFailedSchema.parse({
+                  household_id: payload.householdId,
+                  actor_id: payload.actorUserId,
+                  action_type: 'household.chore.run',
+                  error_code: failure.errorCode,
+                  fix_suggestion: failure.fixSuggestion,
+                  span_id: span.spanId,
+                  trace_id: span.traceId,
+                  object_id: payload.originalCaptureId,
+                  object_ref: `capture:${payload.originalCaptureId}`,
+                  details: {
+                    chore_title: payload.choreTitle,
+                  },
+                }),
+              );
+            }
+            throw error;
+          }
           if (!assigned) {
             return;
           }

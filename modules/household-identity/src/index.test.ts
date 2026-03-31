@@ -188,3 +188,205 @@ test('clearPurchasedItems archives purchased rows and leaves active rows untouch
     cleanup();
   }
 });
+
+test('getHouseholdContextSummary only marks activity-like device states as active', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold('Context Home');
+
+    client.appendHomeStateLog({
+      householdId: household.id,
+      deviceId: 'front-door',
+      stateKey: 'presence.sam',
+      previousValue: 'away',
+      newValue: 'home',
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+    client.appendHomeStateLog({
+      householdId: household.id,
+      deviceId: 'hall-motion',
+      stateKey: 'sensor.hall.motion',
+      previousValue: false,
+      newValue: true,
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+    client.appendHomeStateLog({
+      householdId: household.id,
+      deviceId: 'weather-station',
+      stateKey: 'sensor.weather.temperature',
+      previousValue: 20,
+      newValue: 23,
+      source: 'ha_bridge',
+      consentVerified: true,
+    });
+
+    const summary = client.getHouseholdContextSummary(household.id);
+
+    assert.equal(summary.membersHome.includes('sam'), true);
+    assert.equal(summary.activeDevices.includes('front-door'), true);
+    assert.equal(summary.activeDevices.includes('hall-motion'), true);
+    assert.equal(summary.activeDevices.includes('weather-station'), false);
+    assert.equal(summary.recentStateChanges.length, 3);
+  } finally {
+    cleanup();
+  }
+});
+
+test('evaluateReminderAutomationFailures returns no-token fix suggestion', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'Reminder Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'adult-1': {
+              pushToken: '',
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'adult-1', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'adult-1',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    const failures = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['adult-1'],
+      '2026-03-31T12:00:00.000Z',
+    );
+
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.errorCode, 'REMINDER_NO_TOKEN');
+    assert.match(failures[0]?.fixSuggestion ?? '', /notification settings/i);
+  } finally {
+    cleanup();
+  }
+});
+
+test('evaluateReminderAutomationFailures returns no-token failure when member profile is missing', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'Missing Profile Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {},
+        },
+      }),
+    );
+    client.addMember(household.id, 'adult-2', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'adult-2',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    const failures = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['adult-2'],
+      '2026-03-31T12:00:00.000Z',
+    );
+
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.errorCode, 'REMINDER_NO_TOKEN');
+    assert.ok((failures[0]?.fixSuggestion ?? '').trim().length > 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('evaluateReminderAutomationFailures returns quiet-hours suppression', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'Quiet Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'adult-1': {
+              pushToken: 'expo-token-1',
+              quietHours: {
+                start: '22:00',
+                end: '07:00',
+              },
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'adult-1', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'adult-1',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    const failures = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['adult-1'],
+      '2026-03-31T23:30:00.000Z',
+    );
+
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.errorCode, 'REMINDER_QUIET_HOURS');
+    assert.equal(failures[0]?.deliveryStatus, 'quiet_hours_suppressed');
+  } finally {
+    cleanup();
+  }
+});
+
+test('evaluateReminderAutomationFailures returns inactive-device failure', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'Inactive Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'adult-1': {
+              pushToken: 'expo-token-1',
+              deviceActive: false,
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'adult-1', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'adult-1',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    const failures = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['adult-1'],
+      '2026-03-31T12:00:00.000Z',
+    );
+
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.errorCode, 'REMINDER_MEMBER_INACTIVE');
+    assert.match(failures[0]?.fixSuggestion ?? '', /active device/i);
+  } finally {
+    cleanup();
+  }
+});

@@ -13,7 +13,7 @@ import type {
 } from '@lifeos/contracts';
 import { HouseholdRoleSchema } from '@lifeos/module-sdk';
 
-import { calculateStreak, getNextDueDate, isOverdue } from '../../household-chores/src/index';
+import { calculateStreak, getNextDueDate, isOverdue } from './chore-logic';
 
 import { canPerform } from './roles';
 
@@ -172,6 +172,18 @@ export interface ReminderRow {
   target_user_ids_json: string;
   remind_at: string;
   created_at: string;
+}
+
+export type ReminderAutomationErrorCode =
+  | 'REMINDER_NO_TOKEN'
+  | 'REMINDER_QUIET_HOURS'
+  | 'REMINDER_MEMBER_INACTIVE';
+
+export interface ReminderAutomationFailure {
+  targetUserId: string;
+  errorCode: ReminderAutomationErrorCode;
+  fixSuggestion: string;
+  deliveryStatus: 'failed' | 'quiet_hours_suppressed';
 }
 
 export interface NoteRow {
@@ -424,6 +436,50 @@ export class HouseholdGraphClient {
     } catch {
       return {};
     }
+  }
+
+  evaluateReminderAutomationFailures(
+    householdId: string,
+    targetUserIds: string[],
+    remindAt: string,
+  ): ReminderAutomationFailure[] {
+    const remindAtDate = new Date(remindAt);
+    const config = this.getHouseholdConfig(householdId);
+    const notificationMembers = this.getNotificationRoutingMembers(config);
+
+    return targetUserIds.flatMap((targetUserId) => {
+      const member = this.getMember(householdId, targetUserId);
+      const profile = notificationMembers[targetUserId] ?? null;
+
+      if (!member || member.status !== 'active' || profile?.deviceActive === false) {
+        return {
+          targetUserId,
+          errorCode: 'REMINDER_MEMBER_INACTIVE' as const,
+          fixSuggestion: `Member ${targetUserId} has no active device`,
+          deliveryStatus: 'failed' as const,
+        };
+      }
+
+      if (profile?.quietHours && this.isWithinQuietHours(remindAtDate, profile.quietHours)) {
+        return {
+          targetUserId,
+          errorCode: 'REMINDER_QUIET_HOURS' as const,
+          fixSuggestion: `Reminder suppressed by quiet hours (${profile.quietHours.start}-${profile.quietHours.end})`,
+          deliveryStatus: 'quiet_hours_suppressed' as const,
+        };
+      }
+
+      if (!profile?.pushToken || profile.pushToken.trim().length === 0) {
+        return {
+          targetUserId,
+          errorCode: 'REMINDER_NO_TOKEN' as const,
+          fixSuggestion: `Check notification settings for ${targetUserId}`,
+          deliveryStatus: 'failed' as const,
+        };
+      }
+
+      return [];
+    });
   }
 
   updateHouseholdConfig(householdId: string, patch: HouseholdUpdateConfigRequest): HouseholdRow {
@@ -1182,7 +1238,14 @@ export class HouseholdGraphClient {
           const currentIndex = Math.max(assignees.indexOf(currentAssignee), 0);
           const nextAssignee = assignees[(currentIndex + 1) % assignees.length];
 
-          this.createChoreAssignmentRecord(householdId, chore, nextAssignee, new Date(completedAt));
+          if (nextAssignee) {
+            this.createChoreAssignmentRecord(
+              householdId,
+              chore,
+              nextAssignee,
+              new Date(completedAt),
+            );
+          }
         }
       }
 
@@ -1481,7 +1544,8 @@ export class HouseholdGraphClient {
     const seenPresenceKeys = new Set<string>();
     const membersHome: string[] = [];
 
-    const latestActivityStateByDevice = new Map<string, boolean>();
+    const seenDevices = new Set<string>();
+    const activeDevices: string[] = [];
 
     for (const row of rows) {
       if (row.state_key.startsWith('presence.') && !seenPresenceKeys.has(row.state_key)) {
@@ -1493,19 +1557,12 @@ export class HouseholdGraphClient {
         }
       }
 
-      if (
-        this.isActivityStateKey(row.state_key) &&
-        !latestActivityStateByDevice.has(row.device_id)
-      ) {
+      if (this.isActivityStateKey(row.state_key) && !seenDevices.has(row.device_id)) {
+        seenDevices.add(row.device_id);
         const currentValue = JSON.parse(row.new_value) as unknown;
-        latestActivityStateByDevice.set(row.device_id, this.toBooleanHomeState(currentValue));
-      }
-    }
-
-    const activeDevices: string[] = [];
-    for (const [deviceId, isActive] of latestActivityStateByDevice.entries()) {
-      if (isActive) {
-        activeDevices.push(deviceId);
+        if (this.toBooleanHomeState(currentValue)) {
+          activeDevices.push(row.device_id);
+        }
       }
     }
 
@@ -1558,6 +1615,67 @@ export class HouseholdGraphClient {
       normalized.endsWith('.occupancy') ||
       normalized.endsWith('.motion')
     );
+  }
+
+  private getNotificationRoutingMembers(config: Record<string, unknown>): Record<
+    string,
+    {
+      pushToken?: string;
+      deviceActive?: boolean;
+      quietHours?: { start: string; end: string };
+    }
+  > {
+    const routing = config.notificationRouting;
+    if (!routing || typeof routing !== 'object' || Array.isArray(routing)) {
+      return {};
+    }
+
+    const members = (routing as { members?: unknown }).members;
+    if (!members || typeof members !== 'object' || Array.isArray(members)) {
+      return {};
+    }
+
+    return members as Record<
+      string,
+      { pushToken?: string; deviceActive?: boolean; quietHours?: { start: string; end: string } }
+    >;
+  }
+
+  private isWithinQuietHours(value: Date, quietHours: { start: string; end: string }): boolean {
+    const start = this.parseClockMinutes(quietHours.start);
+    const end = this.parseClockMinutes(quietHours.end);
+    if (start === null || end === null || Number.isNaN(value.getTime())) {
+      return false;
+    }
+
+    const minutes = value.getUTCHours() * 60 + value.getUTCMinutes();
+    if (start === end) {
+      return false;
+    }
+
+    if (start < end) {
+      return minutes >= start && minutes < end;
+    }
+
+    return minutes >= start || minutes < end;
+  }
+
+  private parseClockMinutes(value: string): number | null {
+    const match = value.match(/^(\d{2}):(\d{2})$/);
+    if (!match) {
+      return null;
+    }
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    if (!Number.isInteger(hours) || !Number.isInteger(minutes)) {
+      return null;
+    }
+    if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+      return null;
+    }
+
+    return hours * 60 + minutes;
   }
 
   getCaptureStatus(householdId: string, captureId: string): HouseholdCaptureStatusResponse {

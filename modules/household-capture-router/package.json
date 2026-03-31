@@ -12,11 +12,13 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/router.test.ts src/index.test.ts src/integration.test.ts"
+    "test": "tsx --test src/router.test.ts src/index.test.ts src/integration.test.ts src/tracing.test.ts",
+    "test:tracing": "tsx --test src/tracing.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
-    "@lifeos/module-sdk": "workspace:*"
+    "@lifeos/module-sdk": "workspace:*",
+    "@lifeos/observability": "workspace:*"
   }
 }

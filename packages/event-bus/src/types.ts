@@ -151,5 +151,6 @@ export const Topics = {
     householdReminderCreateRequested: 'lifeos.household.reminder.create.requested',
     householdNoteCreateRequested: 'lifeos.household.note.create.requested',
     householdCaptureUnresolved: 'lifeos.household.capture.unresolved',
+    householdAutomationFailed: 'lifeos.household.automation.failed',
   },
 } as const;

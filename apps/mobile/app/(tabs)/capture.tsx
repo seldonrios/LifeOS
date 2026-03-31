@@ -167,7 +167,7 @@ export default function CaptureScreen() {
 
     try {
       audioBase64 = await FileSystem.readAsStringAsync(recording.uri, {
-        encoding: FileSystem.EncodingType.Base64,
+        encoding: 'base64',
       });
 
       const result = await sdk.capture.create({

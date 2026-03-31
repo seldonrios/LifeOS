@@ -1658,6 +1658,185 @@ test('POST /api/households/:id/reminders invalid datetime payload returns 400', 
   }
 });
 
+test('POST /api/households/:id/reminders publishes automation failure and audit span id for missing token', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  try {
+    await registerAuditInterceptor(eventBus, db);
+    const published: Array<BaseEvent<Record<string, unknown>>> = [];
+    await eventBus.subscribe(Topics.lifeos.householdAutomationFailed, async (event) => {
+      published.push(event as BaseEvent<Record<string, unknown>>);
+    });
+
+    const household = db.createHousehold(
+      'Reminder Failure Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'admin-1': {
+              pushToken: '',
+            },
+          },
+        },
+      }),
+    );
+    activateMember(db, household.id, 'admin-1', 'Admin', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/reminders`,
+      headers: { authorization: await bearerFor('admin-1') },
+      payload: {
+        objectType: 'chore',
+        objectId: 'chore-1',
+        targetUserIds: ['admin-1'],
+        remindAt: '2026-03-31T12:00:00.000Z',
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    await waitFor(() => published.length === 1);
+    assert.equal(published[0]?.data.error_code, 'REMINDER_NO_TOKEN');
+
+    const rawDb = db as unknown as {
+      db: {
+        prepare: (sql: string) => {
+          all: (...args: unknown[]) => Array<{ payload_json: string }>;
+        };
+      };
+    };
+    const rows = rawDb.db
+      .prepare('SELECT payload_json FROM audit_log WHERE household_id = ? AND action_type = ?')
+      .all(household.id, Topics.lifeos.householdAutomationFailed) as Array<{ payload_json: string }>;
+    assert.equal(rows.length, 1);
+    const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
+    assert.ok(payload.span_id);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/reminders traces automation failure for quiet hours', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  try {
+    await registerAuditInterceptor(eventBus, db);
+    const published: Array<BaseEvent<Record<string, unknown>>> = [];
+    await eventBus.subscribe(Topics.lifeos.householdAutomationFailed, async (event) => {
+      published.push(event as BaseEvent<Record<string, unknown>>);
+    });
+
+    const household = db.createHousehold(
+      'Reminder Quiet Hours Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'admin-1': {
+              pushToken: 'expo-token-quiet',
+              quietHours: {
+                start: '22:00',
+                end: '07:00',
+              },
+            },
+          },
+        },
+      }),
+    );
+    activateMember(db, household.id, 'admin-1', 'Admin', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/reminders`,
+      headers: { authorization: await bearerFor('admin-1') },
+      payload: {
+        objectType: 'chore',
+        objectId: 'chore-1',
+        targetUserIds: ['admin-1'],
+        remindAt: '2026-03-31T23:30:00.000Z',
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    await waitFor(() => published.length === 1);
+    assert.equal(published[0]?.data.error_code, 'REMINDER_QUIET_HOURS');
+
+    const rawDb = db as unknown as {
+      db: {
+        prepare: (sql: string) => {
+          all: (...args: unknown[]) => Array<{ payload_json: string }>;
+        };
+      };
+    };
+    const rows = rawDb.db
+      .prepare('SELECT payload_json FROM audit_log WHERE household_id = ? AND action_type = ?')
+      .all(household.id, Topics.lifeos.householdAutomationFailed) as Array<{ payload_json: string }>;
+    assert.equal(rows.length, 1);
+    const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
+    assert.ok(payload.span_id);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('POST /api/households/:id/reminders traces automation failure for inactive member', async () => {
+  const { db, app, eventBus, cleanup } = createHarness();
+  try {
+    await registerAuditInterceptor(eventBus, db);
+    const published: Array<BaseEvent<Record<string, unknown>>> = [];
+    await eventBus.subscribe(Topics.lifeos.householdAutomationFailed, async (event) => {
+      published.push(event as BaseEvent<Record<string, unknown>>);
+    });
+
+    const household = db.createHousehold(
+      'Reminder Inactive Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'admin-1': {
+              pushToken: 'expo-token-inactive',
+              deviceActive: false,
+            },
+          },
+        },
+      }),
+    );
+    activateMember(db, household.id, 'admin-1', 'Admin', 'admin-1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/reminders`,
+      headers: { authorization: await bearerFor('admin-1') },
+      payload: {
+        objectType: 'chore',
+        objectId: 'chore-1',
+        targetUserIds: ['admin-1'],
+        remindAt: '2026-03-31T12:00:00.000Z',
+      },
+    });
+
+    assert.equal(response.statusCode, 201);
+    await waitFor(() => published.length === 1);
+    assert.equal(published[0]?.data.error_code, 'REMINDER_MEMBER_INACTIVE');
+
+    const rawDb = db as unknown as {
+      db: {
+        prepare: (sql: string) => {
+          all: (...args: unknown[]) => Array<{ payload_json: string }>;
+        };
+      };
+    };
+    const rows = rawDb.db
+      .prepare('SELECT payload_json FROM audit_log WHERE household_id = ? AND action_type = ?')
+      .all(household.id, Topics.lifeos.householdAutomationFailed) as Array<{ payload_json: string }>;
+    assert.equal(rows.length, 1);
+    const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
+    assert.ok(payload.span_id);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('POST /api/households/:id/notes happy path returns 201', async () => {
   const { db, app, cleanup } = createHarness();
   try {

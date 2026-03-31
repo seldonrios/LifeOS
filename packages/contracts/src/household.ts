@@ -211,6 +211,20 @@ export const HouseholdCaptureUnresolvedSchema = z.object({
 });
 export type HouseholdCaptureUnresolved = z.infer<typeof HouseholdCaptureUnresolvedSchema>;
 
+export const HouseholdAutomationFailedSchema = z.object({
+  household_id: z.string().min(1),
+  actor_id: z.string().min(1),
+  action_type: z.string().min(1),
+  error_code: z.string().min(1),
+  fix_suggestion: z.string().min(1),
+  span_id: z.string().min(1),
+  trace_id: z.string().min(1).optional(),
+  object_id: z.string().min(1).optional(),
+  object_ref: z.string().min(1).optional(),
+  details: z.record(z.string(), z.unknown()).optional(),
+});
+export type HouseholdAutomationFailed = z.infer<typeof HouseholdAutomationFailedSchema>;
+
 export const HouseholdCaptureStatusSchema = z.enum(['pending', 'resolved', 'unresolved']);
 export type HouseholdCaptureStatus = z.infer<typeof HouseholdCaptureStatusSchema>;
 

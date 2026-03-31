@@ -175,7 +175,7 @@ function loadQueueStore() {
 }
 
 export const sdk = new LifeOSClient({
-  baseUrl: extra?.apiUrl ?? 'http://localhost:3005',
+  baseUrl: extra?.apiUrl ?? 'http://localhost:3000',
   getAccessToken: () => loadSessionStore().useSessionStore.getState().accessToken,
   onAuthExpired: () => {
     void loadSessionStore().useSessionStore.getState().signOut();

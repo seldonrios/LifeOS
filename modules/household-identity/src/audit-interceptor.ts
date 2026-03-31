@@ -13,6 +13,11 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function asCaptureRef(value: unknown): string | null {
+  const captureId = asNonEmptyString(value);
+  return captureId ? `capture:${captureId}` : null;
+}
+
 function deriveObjectRef(type: string, data: Record<string, unknown>): string {
   switch (type) {
     case 'lifeos.household.member.invited':
@@ -33,10 +38,19 @@ function deriveObjectRef(type: string, data: Record<string, unknown>): string {
       return `calendar_event:${String(data.eventId ?? '')}`;
     case 'lifeos.household.reminder.fired':
       return `reminder:${String(data.reminderId ?? '')}`;
+    case 'lifeos.household.automation.failed':
+      return String(data.object_ref ?? `automation:${String(data.error_code ?? '')}`);
     case 'lifeos.household.homestate.changed':
       return `device:${String(data.deviceId ?? '')}`;
     case 'lifeos.household.voice.capture.created':
       return `capture:${String(data.captureId ?? '')}`;
+    case 'lifeos.household.shopping.item.add.requested':
+    case 'lifeos.household.chore.create.requested':
+    case 'lifeos.household.reminder.create.requested':
+    case 'lifeos.household.note.create.requested':
+      return asCaptureRef(data.originalCaptureId) ?? type;
+    case 'lifeos.household.capture.unresolved':
+      return asCaptureRef(data.captureId) ?? type;
     default:
       return type;
   }

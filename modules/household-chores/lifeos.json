@@ -11,7 +11,8 @@
       "subscribe:lifeos.household.chore.create.requested",
       "publish:lifeos.household.chore.assigned",
       "publish:lifeos.household.chore.completed",
-      "publish:lifeos.household.reminder.fired"
+      "publish:lifeos.household.reminder.fired",
+      "publish:lifeos.household.automation.failed"
     ]
   },
   "resources": {
