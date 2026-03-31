@@ -163,6 +163,46 @@ export const HouseholdVoiceCaptureCreatedSchema = z.object({
 });
 export type HouseholdVoiceCaptureCreated = z.infer<typeof HouseholdVoiceCaptureCreatedSchema>;
 
+export const HouseholdShoppingItemAddRequestedSchema = z.object({
+  householdId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  originalCaptureId: z.string().min(1),
+  text: z.string().min(1),
+  itemTitle: z.string().min(1),
+});
+export type HouseholdShoppingItemAddRequested = z.infer<
+  typeof HouseholdShoppingItemAddRequestedSchema
+>;
+
+export const HouseholdChoreCreateRequestedSchema = z.object({
+  householdId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  originalCaptureId: z.string().min(1),
+  text: z.string().min(1),
+  choreTitle: z.string().min(1),
+});
+export type HouseholdChoreCreateRequested = z.infer<typeof HouseholdChoreCreateRequestedSchema>;
+
+export const HouseholdReminderCreateRequestedSchema = z.object({
+  householdId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  originalCaptureId: z.string().min(1),
+  text: z.string().min(1),
+  reminderText: z.string().min(1),
+});
+export type HouseholdReminderCreateRequested = z.infer<
+  typeof HouseholdReminderCreateRequestedSchema
+>;
+
+export const HouseholdNoteCreateRequestedSchema = z.object({
+  householdId: z.string().min(1),
+  actorUserId: z.string().min(1),
+  originalCaptureId: z.string().min(1),
+  text: z.string().min(1),
+  noteBody: z.string().min(1),
+});
+export type HouseholdNoteCreateRequested = z.infer<typeof HouseholdNoteCreateRequestedSchema>;
+
 export const HouseholdCaptureUnresolvedSchema = z.object({
   captureId: z.string().min(1),
   householdId: z.string().min(1),

@@ -1,0 +1,26 @@
+{
+  "name": "household-capture-router",
+  "version": "0.1.0",
+  "author": "lifeos-community",
+  "description": "Routes household voice captures to typed domain intent events with deterministic-first logic.",
+  "permissions": {
+    "graph": ["read"],
+    "network": ["outbound"],
+    "voice": [],
+    "events": [
+      "subscribe:lifeos.household.voice.capture.created",
+      "publish:lifeos.household.shopping.item.add.requested",
+      "publish:lifeos.household.chore.create.requested",
+      "publish:lifeos.household.reminder.create.requested",
+      "publish:lifeos.household.note.create.requested",
+      "publish:lifeos.household.capture.unresolved"
+    ]
+  },
+  "resources": {
+    "cpu": "low",
+    "memory": "low"
+  },
+  "requires": ["@lifeos/cli@>=0.1.0 <0.2.0", "@lifeos/module-sdk@>=0.1.0 <0.2.0"],
+  "category": "household",
+  "tags": ["household", "capture", "router", "voice"]
+}

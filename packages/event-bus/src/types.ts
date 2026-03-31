@@ -146,5 +146,10 @@ export const Topics = {
     householdReminderFired: 'lifeos.household.reminder.fired',
     householdHomeStateChanged: 'lifeos.household.homestate.changed',
     householdVoiceCaptureCreated: 'lifeos.household.voice.capture.created',
+    householdShoppingItemAddRequested: 'lifeos.household.shopping.item.add.requested',
+    householdChoreCreateRequested: 'lifeos.household.chore.create.requested',
+    householdReminderCreateRequested: 'lifeos.household.reminder.create.requested',
+    householdNoteCreateRequested: 'lifeos.household.note.create.requested',
+    householdCaptureUnresolved: 'lifeos.household.capture.unresolved',
   },
 } as const;
