@@ -8,6 +8,7 @@
     "network": [],
     "voice": [],
     "events": [
+      "subscribe:lifeos.household.chore.create.requested",
       "publish:lifeos.household.chore.assigned",
       "publish:lifeos.household.chore.completed",
       "publish:lifeos.household.reminder.fired"
@@ -17,10 +18,7 @@
     "cpu": "low",
     "memory": "low"
   },
-  "requires": [
-    "@lifeos/cli@>=0.1.0 <0.2.0",
-    "@lifeos/module-sdk@>=0.1.0 <0.2.0"
-  ],
+  "requires": ["@lifeos/cli@>=0.1.0 <0.2.0", "@lifeos/module-sdk@>=0.1.0 <0.2.0"],
   "category": "household",
   "tags": ["household", "chores", "recurrence", "streaks"]
 }

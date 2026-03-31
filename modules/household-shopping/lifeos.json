@@ -8,6 +8,7 @@
     "network": [],
     "voice": [],
     "events": [
+      "subscribe:lifeos.household.shopping.item.add.requested",
       "publish:lifeos.household.shopping.item.added",
       "publish:lifeos.household.shopping.item.purchased"
     ]

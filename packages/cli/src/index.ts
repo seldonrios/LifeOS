@@ -68,6 +68,8 @@ import {
   type ImapCredentials,
 } from '@lifeos/email-summarizer-module';
 import { habitStreakModule } from '@lifeos/habit-streak-module';
+import { householdCaptureRouterModule } from '@lifeos/household-capture-router-module';
+import { householdChoresModule } from '@lifeos/household-chores-module';
 import { householdShoppingModule } from '@lifeos/household-shopping-module';
 import {
   MeshCoordinator,
@@ -170,7 +172,13 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   'google-bridge': googleBridgeModule,
 };
 
-const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [reminderModule, syncModule];
+const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [
+  reminderModule,
+  syncModule,
+  householdCaptureRouterModule,
+  householdChoresModule,
+  householdShoppingModule,
+];
 
 const MODULARITY_RISKS: Array<{ id: number; name: string }> = [
   { id: 1, name: 'Life Graph Schema Evolution' },
@@ -1320,6 +1328,8 @@ function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[]
       weatherModule,
       newsModule,
       googleBridgeModule,
+      householdCaptureRouterModule,
+      householdChoresModule,
       householdShoppingModule,
       syncModule,
       orchestratorModule,
