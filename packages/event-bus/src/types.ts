@@ -152,5 +152,10 @@ export const Topics = {
     householdNoteCreateRequested: 'lifeos.household.note.create.requested',
     householdCaptureUnresolved: 'lifeos.household.capture.unresolved',
     householdAutomationFailed: 'lifeos.household.automation.failed',
+      homeNodeSurfaceRegistered: 'lifeos.homenode.surface.registered',
+      homeNodeSurfaceDeregistered: 'lifeos.homenode.surface.deregistered',
+      homeNodeStateSnapshotUpdated: 'lifeos.homenode.state.snapshot.updated',
+      homeNodeDisplayFeedUpdated: 'lifeos.homenode.display.feed.updated',
+      homeNodeHealthChanged: 'lifeos.homenode.health.changed',
   },
 } as const;
