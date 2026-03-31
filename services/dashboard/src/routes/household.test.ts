@@ -30,6 +30,16 @@ async function waitFor(condition: () => boolean, timeoutMs = 500): Promise<void>
   assert.ok(condition());
 }
 
+async function assertStableCount(
+  getCount: () => number,
+  expected: number,
+  settleMs = 75,
+): Promise<void> {
+  await waitFor(() => getCount() === expected);
+  await new Promise((resolve) => setTimeout(resolve, settleMs));
+  assert.equal(getCount(), expected);
+}
+
 const jwtService = new JwtService();
 
 async function bearerFor(userId: string): Promise<string> {
@@ -1695,8 +1705,12 @@ test('POST /api/households/:id/reminders publishes automation failure and audit 
     });
 
     assert.equal(response.statusCode, 201);
-    await waitFor(() => published.length === 1);
+    await assertStableCount(() => published.length, 1);
     assert.equal(published[0]?.data.error_code, 'REMINDER_NO_TOKEN');
+    assert.equal(typeof published[0]?.data.span_id, 'string');
+
+    const publishedSpanId = String(published[0]?.data.span_id ?? '');
+    assert.ok(publishedSpanId.length > 0);
 
     const rawDb = db as unknown as {
       db: {
@@ -1711,6 +1725,7 @@ test('POST /api/households/:id/reminders publishes automation failure and audit 
     assert.equal(rows.length, 1);
     const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
     assert.ok(payload.span_id);
+    assert.equal(payload.span_id, publishedSpanId);
   } finally {
     await cleanup();
   }
@@ -1757,8 +1772,12 @@ test('POST /api/households/:id/reminders traces automation failure for quiet hou
     });
 
     assert.equal(response.statusCode, 201);
-    await waitFor(() => published.length === 1);
+    await assertStableCount(() => published.length, 1);
     assert.equal(published[0]?.data.error_code, 'REMINDER_QUIET_HOURS');
+    assert.equal(typeof published[0]?.data.span_id, 'string');
+
+    const publishedSpanId = String(published[0]?.data.span_id ?? '');
+    assert.ok(publishedSpanId.length > 0);
 
     const rawDb = db as unknown as {
       db: {
@@ -1773,6 +1792,7 @@ test('POST /api/households/:id/reminders traces automation failure for quiet hou
     assert.equal(rows.length, 1);
     const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
     assert.ok(payload.span_id);
+    assert.equal(payload.span_id, publishedSpanId);
   } finally {
     await cleanup();
   }
@@ -1816,8 +1836,12 @@ test('POST /api/households/:id/reminders traces automation failure for inactive 
     });
 
     assert.equal(response.statusCode, 201);
-    await waitFor(() => published.length === 1);
+    await assertStableCount(() => published.length, 1);
     assert.equal(published[0]?.data.error_code, 'REMINDER_MEMBER_INACTIVE');
+    assert.equal(typeof published[0]?.data.span_id, 'string');
+
+    const publishedSpanId = String(published[0]?.data.span_id ?? '');
+    assert.ok(publishedSpanId.length > 0);
 
     const rawDb = db as unknown as {
       db: {
@@ -1832,6 +1856,7 @@ test('POST /api/households/:id/reminders traces automation failure for inactive 
     assert.equal(rows.length, 1);
     const payload = JSON.parse(rows[0]!.payload_json) as { span_id?: string };
     assert.ok(payload.span_id);
+    assert.equal(payload.span_id, publishedSpanId);
   } finally {
     await cleanup();
   }

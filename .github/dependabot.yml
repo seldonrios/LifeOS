@@ -14,12 +14,9 @@ updates:
     groups:
       household-modules:
         patterns:
-          - '@lifeos/household-identity-module'
-          - '@lifeos/household-chores-module'
-          - '@lifeos/household-shopping-module'
-          - '@lifeos/household-calendar-module'
-          - '@lifeos/household-capture-router-module'
-          - '@lifeos/home-state-module'
+          - 'better-sqlite3'
+          - 'node-ical'
+          - 'expo-speech-recognition'
       dev-dependencies:
         dependency-type: development
       production-dependencies:

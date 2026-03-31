@@ -222,6 +222,8 @@ async function publishReminderFailureEvents(
     remindAt: string;
   },
 ): Promise<void> {
+  // Ownership boundary: dashboard route orchestration emits reminder failure
+  // spans/events while household-identity owns failure evaluation logic.
   const failures = db.evaluateReminderAutomationFailures(
     input.householdId,
     input.targetUserIds,

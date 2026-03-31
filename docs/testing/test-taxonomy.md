@@ -39,5 +39,5 @@ When opening a PR, explicitly note:
 ## Household-specific test requirements
 
 - Any change touching `modules/household-*` requires a multi-user integration test.
-- Voice capture changes require running `test:voice-capture`.
-- Any PR touching more than one household module must pass `test:household-mvp`.
+- Voice capture changes require running `pnpm test:voice-capture`.
+- Any PR touching more than one household module must pass `pnpm test:household-mvp`.

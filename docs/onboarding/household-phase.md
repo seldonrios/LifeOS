@@ -19,9 +19,16 @@ Use this checklist when contributing to shared household workflows and modules.
 
 ```bash
 pnpm test:household-identity
+pnpm test:voice-capture
 pnpm test:household-mvp
 ```
 
 ## Reference Implementation
 
 Use `modules/household-identity` as the canonical reference implementation when scaffolding new household modules.
+
+## Reminder Automation Traceability Ownership
+
+- Dashboard route orchestration (`services/dashboard/src/routes/household.ts`) owns emission of reminder automation failure spans and `lifeos.household.automation.failed` events.
+- `modules/household-identity` owns reminder failure evaluation (`REMINDER_NO_TOKEN`, `REMINDER_QUIET_HOURS`, `REMINDER_MEMBER_INACTIVE`) and audit persistence via the registered interceptor.
+- Do not add a second emission path for reminder automation failures inside household-identity; this prevents duplicate `householdAutomationFailed` events.
