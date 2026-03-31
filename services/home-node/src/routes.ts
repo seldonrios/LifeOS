@@ -8,8 +8,11 @@ import {
   SurfaceKindSchema,
   SurfaceTrustLevelSchema,
   type HomeNodeSurfaceRegistered,
+  type HomeStateSnapshot,
 } from '@lifeos/contracts';
 import type { HomeNodeGraphClient } from '@lifeos/home-node-core';
+
+import { DisplayFeedAggregator } from './feed';
 
 const RegisterSurfaceRequestSchema = z
   .object({
@@ -46,6 +49,18 @@ const CreateZoneRequestSchema = z
   .strict();
 
 const SURFACE_SECRET_HEADER = 'x-lifeos-surface-secret';
+
+const displayFeedAggregator = new DisplayFeedAggregator();
+
+function defaultSnapshot(now: string): HomeStateSnapshot {
+  return {
+    home_mode: 'home',
+    occupancy_summary: 'unknown',
+    active_routines: [],
+    adapter_health: 'healthy',
+    snapshot_at: now,
+  };
+}
 
 export interface HomeNodeRouteHooks {
   onSurfaceRegistered?: (surface: HomeNodeSurfaceRegistered) => Promise<void>;
@@ -175,6 +190,49 @@ export function registerHomeNodeRoutes(
 
     return reply.code(200).send(snapshot);
   });
+
+  const getFeedHandler = async (
+    request: Parameters<FastifyInstance['get']>[1] extends (...args: infer A) => unknown ? A[0] : never,
+    reply: Parameters<FastifyInstance['get']>[1] extends (...args: infer A) => unknown ? A[1] : never,
+  ) => {
+    try {
+      if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+      }
+
+      const surfaceId = String((request.params as { surfaceId?: string }).surfaceId ?? '').trim();
+      if (surfaceId.length === 0) {
+        return reply.code(400).send({ error: 'surfaceId is required' });
+      }
+
+      const registeredSurface = graphClient.getRegisteredSurface(surfaceId);
+      const surfaceState = graphClient.getSurface(surfaceId);
+      if (!registeredSurface || !surfaceState || !surfaceState.active) {
+        return reply.code(404).send({ error: 'Surface not found' });
+      }
+
+      const home = graphClient.getHomeById(registeredSurface.home_id);
+      if (!home) {
+        return reply.code(404).send({ error: 'Home not found' });
+      }
+
+      const snapshot =
+        graphClient.getHomeStateSnapshot(registeredSurface.household_id) ??
+        defaultSnapshot(new Date().toISOString());
+
+      const { feed } = await displayFeedAggregator.getDisplayFeed({
+        surface: registeredSurface,
+        home,
+        snapshot,
+      });
+
+      return reply.code(200).send(feed);
+    } catch {
+      return reply.code(500).send({ error: 'Failed to build display feed' });
+    }
+  };
+
+  app.get('/api/home-node/display-feed/:surfaceId', getFeedHandler);
 
   const registerSurfaceHandler = async (
     request: Parameters<FastifyInstance['post']>[1] extends (...args: infer A) => unknown ? A[0] : never,

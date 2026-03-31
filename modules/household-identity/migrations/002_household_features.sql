@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   object_id TEXT NOT NULL,
   target_user_ids_json TEXT NOT NULL,
   remind_at TEXT NOT NULL,
+  sensitive INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE
 );
