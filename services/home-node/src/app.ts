@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 
 import {
+  HomeNodeDisplayFeedEventSchema,
   HomeNodeStateSnapshotUpdatedSchema,
   HouseholdHomeStateChangedSchema,
   HouseholdVoiceCaptureCreatedSchema,
@@ -64,6 +65,24 @@ export async function publishSnapshotUpdatedEvent(
   await activeEventBus.publish(
     Topics.lifeos.homeNodeStateSnapshotUpdated,
     createEvent(Topics.lifeos.homeNodeStateSnapshotUpdated, data, householdId),
+  );
+}
+
+export async function publishDisplayFeedUpdatedEvent(
+  activeEventBus: ManagedEventBus,
+  householdId: string,
+  homeMode: HomeStateSnapshot['home_mode'],
+): Promise<void> {
+  const data = HomeNodeDisplayFeedEventSchema.parse({
+    household_id: householdId,
+    home_id: DEFAULT_HOME_ID,
+    home_mode: homeMode,
+    updated_at: new Date().toISOString(),
+  });
+
+  await activeEventBus.publish(
+    Topics.lifeos.homeNodeDisplayFeedUpdated,
+    createEvent(Topics.lifeos.homeNodeDisplayFeedUpdated, data, householdId),
   );
 }
 
@@ -131,6 +150,10 @@ export async function handleHomeStateChangedEvent(
   });
 
   await publishSnapshotUpdatedEvent(activeEventBus, payload.householdId, persisted);
+
+  if (current.home_mode !== persisted.home_mode) {
+    await publishDisplayFeedUpdatedEvent(activeEventBus, payload.householdId, persisted.home_mode);
+  }
 }
 
 export function handleVoiceCaptureEvent(

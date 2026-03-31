@@ -20,6 +20,7 @@ import {
   publishSurfaceRegisteredEvent,
   runSurfaceHealthWatchdog,
 } from './app';
+import { DISPLAY_FEED_CACHE_TTL_MS, DisplayFeedAggregator, applyContentFilter } from './feed';
 import { registerHomeNodeRoutes } from './routes';
 
 const TEST_SURFACE_SECRET = 'test-surface-secret';
@@ -172,6 +173,262 @@ test('GET /api/home-node/snapshot/:householdId returns 404 when absent', async (
   }
 });
 
+test('GET /api/home-node/display-feed/:surfaceId returns 401 for missing or invalid secret', async () => {
+  const { client, cleanup } = createClientHarness();
+  const { app, handlers } = createRouteHarness();
+
+  try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+
+    client.upsertHome({
+      homeId: 'home-default',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+    client.upsertZone({
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      name: 'Kitchen',
+      type: 'kitchen',
+    });
+    client.registerSurface({
+      surfaceId: 'surface-feed-1',
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    registerHomeNodeRoutes(app as unknown as Parameters<typeof registerHomeNodeRoutes>[0], client);
+    const feedHandler = handlers.get('GET /api/home-node/display-feed/:surfaceId');
+    if (!feedHandler) {
+      throw new Error('display feed route was not registered');
+    }
+
+    const missingSecret = await feedHandler(
+      {
+        params: { surfaceId: 'surface-feed-1' },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        code: (statusCode: number) => ({
+          send: (payload: unknown) => ({ statusCode, payload }),
+        }),
+      },
+    );
+
+    const invalidSecret = await feedHandler(
+      {
+        params: { surfaceId: 'surface-feed-1' },
+        headers: {
+          'x-lifeos-surface-secret': 'wrong-secret',
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        code: (statusCode: number) => ({
+          send: (payload: unknown) => ({ statusCode, payload }),
+        }),
+      },
+    );
+
+    assert.equal(missingSecret.statusCode, 401);
+    assert.equal(invalidSecret.statusCode, 401);
+  } finally {
+    cleanup();
+  }
+});
+
+test('GET /api/home-node/display-feed/:surfaceId returns ticket contract payload', async () => {
+  const { client, cleanup } = createClientHarness();
+  const { app, handlers } = createRouteHarness();
+
+  try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+
+    client.upsertHome({
+      homeId: 'home-default',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+    client.upsertZone({
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      name: 'Kitchen',
+      type: 'kitchen',
+    });
+    client.registerSurface({
+      surfaceId: 'surface-feed-1',
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+    client.upsertHomeStateSnapshot({
+      householdId: 'household-1',
+      homeMode: 'home',
+      occupancySummary: 'occupied',
+      activeRoutines: ['morning'],
+      adapterHealth: 'healthy',
+      snapshotAt: '2026-03-31T00:00:00.000Z',
+    });
+
+    registerHomeNodeRoutes(app as unknown as Parameters<typeof registerHomeNodeRoutes>[0], client);
+    const feedHandler = handlers.get('GET /api/home-node/display-feed/:surfaceId');
+    if (!feedHandler) {
+      throw new Error('display feed route was not registered');
+    }
+
+    const response = await feedHandler(
+      {
+        params: { surfaceId: 'surface-feed-1' },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        code: (statusCode: number) => ({
+          send: (payload: unknown) => ({ statusCode, payload }),
+        }),
+      },
+    );
+
+    const payload = response.payload as {
+      todayEvents: unknown[];
+      choresDueToday: unknown[];
+      shoppingItems: unknown[];
+      topReminders: unknown[];
+      householdNotices: unknown[];
+      stale: boolean;
+      generatedAt: string;
+    };
+
+    assert.equal(response.statusCode, 200);
+    assert.ok(Array.isArray(payload.todayEvents));
+    assert.ok(Array.isArray(payload.choresDueToday));
+    assert.ok(Array.isArray(payload.shoppingItems));
+    assert.ok(Array.isArray(payload.topReminders));
+    assert.ok(Array.isArray(payload.householdNotices));
+    assert.equal(typeof payload.stale, 'boolean');
+    assert.match(payload.generatedAt, /T/);
+  } finally {
+    cleanup();
+  }
+});
+
+test('applyContentFilter enforces trust-level visibility and sensitive reminder filtering', () => {
+  const baseFeed = {
+    todayEvents: [{ id: 'event-1', title: 'Family dinner' }],
+    choresDueToday: [{ id: 'chore-1', title: 'Take out trash' }],
+    shoppingItems: [{ id: 'shop-1', title: 'Milk', status: 'added' }],
+    topReminders: [
+      { id: 'reminder-1', title: 'Call pharmacy', sensitive: true },
+      { id: 'reminder-2', title: 'Water plants', sensitive: false },
+    ],
+    householdNotices: [
+      { id: 'notice-1', title: 'Heads up', severity: 'warning' as const },
+      { id: 'notice-2', title: 'Info notice', severity: 'info' as const },
+    ],
+    stale: false,
+    generatedAt: '2026-03-31T09:00:00.000Z',
+  };
+
+  const personal = applyContentFilter(baseFeed, 'personal');
+  const household = applyContentFilter(baseFeed, 'household');
+  const guest = applyContentFilter(baseFeed, 'guest');
+
+  assert.equal(personal.topReminders.length, 2);
+  assert.equal(household.topReminders.length, 1);
+  assert.equal(household.topReminders[0]?.id, 'reminder-2');
+  assert.equal(guest.todayEvents.length, 0);
+  assert.equal(guest.choresDueToday.length, 0);
+  assert.equal(guest.topReminders.length, 0);
+  assert.equal(guest.shoppingItems.length, 1);
+  assert.equal(guest.householdNotices.length, 1);
+  assert.equal(guest.householdNotices[0]?.id, 'notice-2');
+});
+
+test('DisplayFeedAggregator supports cache hit, expiry, and stale fallback behavior', async () => {
+  let nowMs = 0;
+  let fetchCount = 0;
+  let failFetch = false;
+  const aggregator = new DisplayFeedAggregator(
+    async () => {
+      fetchCount += 1;
+      if (failFetch) {
+        throw new Error('dashboard unavailable');
+      }
+
+      return {
+        todayEvents: [{ id: 'event-1', title: 'Family dinner' }],
+        choresDueToday: [{ id: 'chore-1', title: 'Take out trash' }],
+        shoppingItems: [{ id: 'shop-1', title: 'Milk' }],
+        topReminders: [{ id: 'reminder-1', title: 'Water plants', sensitive: false }],
+        householdNotices: [{ id: 'notice-1', title: 'Welcome', severity: 'info' }],
+      };
+    },
+    () => nowMs,
+  );
+
+  const input = {
+    surface: {
+      surface_id: 'surface-cache-1',
+      zone_id: 'zone-kitchen',
+      home_id: 'home-default',
+      household_id: 'household-1',
+      kind: 'kitchen_display' as const,
+      trust_level: 'household' as const,
+      capabilities: ['read' as const],
+      registered_at: '2026-03-31T09:00:00.000Z',
+    },
+    home: {
+      home_id: 'home-default',
+      household_id: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    },
+    snapshot: {
+      home_mode: 'home' as const,
+      occupancy_summary: 'occupied',
+      active_routines: [],
+      adapter_health: 'healthy' as const,
+      snapshot_at: '2026-03-31T09:00:00.000Z',
+    },
+  };
+
+  const first = await aggregator.getDisplayFeed(input);
+  assert.equal(first.feed.stale, false);
+  assert.equal(first.fromCache, false);
+  assert.equal(fetchCount, 1);
+
+  nowMs += 1_000;
+  const cacheHit = await aggregator.getDisplayFeed(input);
+  assert.equal(cacheHit.feed.stale, false);
+  assert.equal(cacheHit.fromCache, true);
+  assert.equal(fetchCount, 1);
+
+  nowMs += DISPLAY_FEED_CACHE_TTL_MS + 1;
+  failFetch = true;
+  const staleFromCache = await aggregator.getDisplayFeed(input);
+  assert.equal(staleFromCache.feed.stale, true);
+  assert.equal(staleFromCache.fromCache, true);
+
+  const coldFailureAggregator = new DisplayFeedAggregator(
+    async () => {
+      throw new Error('dashboard unavailable');
+    },
+    () => nowMs,
+  );
+  const staleSnapshotOnly = await coldFailureAggregator.getDisplayFeed(input);
+  assert.equal(staleSnapshotOnly.feed.stale, true);
+  assert.equal(staleSnapshotOnly.feed.todayEvents.length, 0);
+  assert.equal(staleSnapshotOnly.feed.choresDueToday.length, 0);
+  assert.equal(staleSnapshotOnly.feed.shoppingItems.length, 0);
+  assert.equal(staleSnapshotOnly.feed.topReminders.length, 0);
+});
+
 test('handleHomeStateChangedEvent upserts snapshot and publishes update event', async () => {
   const { client, cleanup } = createClientHarness();
   const eventBus = new FakeEventBus();
@@ -199,6 +456,47 @@ test('handleHomeStateChangedEvent upserts snapshot and publishes update event', 
     const snapshot = client.getHomeStateSnapshot('household-1');
     assert.ok(snapshot);
     assert.equal(snapshot?.home_mode, 'away');
+    assert.equal(eventBus.published.length, 2);
+    assert.equal(eventBus.published[0]?.topic, Topics.lifeos.homeNodeStateSnapshotUpdated);
+    assert.equal(eventBus.published[1]?.topic, Topics.lifeos.homeNodeDisplayFeedUpdated);
+  } finally {
+    cleanup();
+  }
+});
+
+test('handleHomeStateChangedEvent does not publish display feed update when mode is unchanged', async () => {
+  const { client, cleanup } = createClientHarness();
+  const eventBus = new FakeEventBus();
+
+  try {
+    client.upsertHomeStateSnapshot({
+      householdId: 'household-1',
+      homeMode: 'home',
+      occupancySummary: 'occupied',
+      activeRoutines: [],
+      adapterHealth: 'healthy',
+      snapshotAt: '2026-03-31T00:00:00.000Z',
+    });
+
+    const event: BaseEvent<unknown> = {
+      id: 'event-unchanged-mode',
+      type: Topics.lifeos.householdHomeStateChanged,
+      timestamp: new Date().toISOString(),
+      source: 'test-suite',
+      version: '1',
+      data: {
+        householdId: 'household-1',
+        deviceId: 'sensor-2',
+        stateKey: 'presence.kitchen',
+        previousValue: 'idle',
+        newValue: 'occupied',
+        source: 'ha_bridge',
+        consentVerified: true,
+      },
+    };
+
+    await handleHomeStateChangedEvent(client, eventBus, event);
+
     assert.equal(eventBus.published.length, 1);
     assert.equal(eventBus.published[0]?.topic, Topics.lifeos.homeNodeStateSnapshotUpdated);
   } finally {

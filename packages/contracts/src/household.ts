@@ -450,3 +450,81 @@ export const HomeNodeStateSnapshotUpdatedSchema = z
   })
   .strict();
 export type HomeNodeStateSnapshotUpdated = z.infer<typeof HomeNodeStateSnapshotUpdatedSchema>;
+
+export const HomeNodeDisplayFeedEventSchema = z
+  .object({
+    household_id: z.string().min(1),
+    home_id: z.string().min(1),
+    home_mode: HomeModeSchema,
+    updated_at: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeNodeDisplayFeedEvent = z.infer<typeof HomeNodeDisplayFeedEventSchema>;
+
+export const HomeNodeDisplayFeedRequestSchema = z
+  .object({
+    surfaceId: z.string().min(1),
+  })
+  .strict();
+export type HomeNodeDisplayFeedRequest = z.infer<typeof HomeNodeDisplayFeedRequestSchema>;
+
+export const HomeNodeDisplayEventItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    startsAt: IsoDateTimeSchema.optional(),
+  })
+  .strict();
+export type HomeNodeDisplayEventItem = z.infer<typeof HomeNodeDisplayEventItemSchema>;
+
+export const HomeNodeDisplayChoreItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    dueAt: IsoDateTimeSchema.optional(),
+    assignedToUserId: z.string().min(1).optional(),
+  })
+  .strict();
+export type HomeNodeDisplayChoreItem = z.infer<typeof HomeNodeDisplayChoreItemSchema>;
+
+export const HomeNodeDisplayShoppingItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    status: z.string().min(1).optional(),
+  })
+  .strict();
+export type HomeNodeDisplayShoppingItem = z.infer<typeof HomeNodeDisplayShoppingItemSchema>;
+
+export const HomeNodeDisplayReminderItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    remindAt: IsoDateTimeSchema.optional(),
+    sensitive: z.boolean().default(false),
+  })
+  .strict();
+export type HomeNodeDisplayReminderItem = z.infer<typeof HomeNodeDisplayReminderItemSchema>;
+
+export const HomeNodeDisplayNoticeItemSchema = z
+  .object({
+    id: z.string().min(1),
+    title: z.string().min(1),
+    message: z.string().min(1).optional(),
+    severity: z.enum(['info', 'warning']).default('info'),
+  })
+  .strict();
+export type HomeNodeDisplayNoticeItem = z.infer<typeof HomeNodeDisplayNoticeItemSchema>;
+
+export const HomeNodeDisplayFeedSchema = z
+  .object({
+    todayEvents: z.array(HomeNodeDisplayEventItemSchema),
+    choresDueToday: z.array(HomeNodeDisplayChoreItemSchema),
+    shoppingItems: z.array(HomeNodeDisplayShoppingItemSchema),
+    topReminders: z.array(HomeNodeDisplayReminderItemSchema),
+    householdNotices: z.array(HomeNodeDisplayNoticeItemSchema),
+    stale: z.boolean(),
+    generatedAt: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeNodeDisplayFeed = z.infer<typeof HomeNodeDisplayFeedSchema>;
