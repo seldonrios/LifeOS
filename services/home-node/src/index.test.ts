@@ -19,6 +19,7 @@ import {
   publishSurfaceDeregisteredEvent,
   publishSurfaceRegisteredEvent,
   runSurfaceHealthWatchdog,
+  runVoiceRuntimeHealthWatchdog,
 } from './app';
 import { DISPLAY_FEED_CACHE_TTL_MS, DisplayFeedAggregator, applyContentFilter } from './feed';
 import { registerHomeNodeRoutes } from './routes';
@@ -1146,4 +1147,45 @@ test('runSurfaceHealthWatchdog marks stale surfaces inactive and publishes batch
   } finally {
     cleanup();
   }
+});
+
+test('runVoiceRuntimeHealthWatchdog publishes transitions once runtime status changes', async () => {
+  const eventBus = new FakeEventBus();
+  const runtimeClient = {
+    isConfigured: () => true,
+    checkHealth: async () => ({
+      status: 'degraded' as const,
+      configured: true,
+      checkedAt: '2026-03-31T10:00:00.000Z',
+      reason: 'runtime timeout',
+      latencyMs: 1200,
+    }),
+  };
+
+  const firstStatus = await runVoiceRuntimeHealthWatchdog(runtimeClient, eventBus, null);
+  const secondStatus = await runVoiceRuntimeHealthWatchdog(runtimeClient, eventBus, 'healthy');
+
+  assert.equal(firstStatus, 'degraded');
+  assert.equal(secondStatus, 'degraded');
+  assert.equal(eventBus.published.length, 1);
+  assert.equal(eventBus.published[0]?.topic, Topics.lifeos.homeNodeHealthChanged);
+  assert.equal((eventBus.published[0]?.event.data as { reason?: string }).reason, 'runtime timeout');
+});
+
+test('runVoiceRuntimeHealthWatchdog skips publishing when runtime is not configured', async () => {
+  const eventBus = new FakeEventBus();
+  const runtimeClient = {
+    isConfigured: () => false,
+    checkHealth: async () => ({
+      status: 'unavailable' as const,
+      configured: false,
+      checkedAt: '2026-03-31T10:00:00.000Z',
+      reason: 'voice runtime is not configured',
+    }),
+  };
+
+  const status = await runVoiceRuntimeHealthWatchdog(runtimeClient, eventBus, null);
+
+  assert.equal(status, null);
+  assert.equal(eventBus.published.length, 0);
 });

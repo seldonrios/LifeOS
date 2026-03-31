@@ -8,14 +8,14 @@ Define the canonical set of surface kinds, trust levels, and capability matrix f
 
 A **surface** is any physical or virtual display or voice endpoint registered with the home-node. Each surface has a kind that describes its physical role in the home.
 
-| Surface kind          | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| `kitchen_display`     | Wall-mounted or countertop screen in a kitchen; always-visible, interaction at a glance |
-| `hallway_display`     | Entry or corridor screen; brief contextual info (who's home, weather, next reminder)    |
-| `living_room_display` | Shared living space screen; ambient / passive information only, no actions              |
-| `desk_display`        | Personal workspace screen; owner's own content plus household context                   |
-| `voice_endpoint`      | Microphone + speaker device in a room; capture and confirm interactions only            |
-| `mobile_app`          | LifeOS mobile companion app; full personal + household access                           |
+| Surface kind | Description |
+| --- | --- |
+| `kitchen_display` | Wall-mounted or countertop screen in a kitchen; always-visible, interaction at a glance |
+| `hallway_display` | Entry or corridor screen; brief contextual info (who's home, weather, next reminder) |
+| `living_room_display` | Shared living space screen; ambient / passive information only, no actions |
+| `desk_display` | Personal workspace screen; owner's own content plus household context |
+| `voice_endpoint` | Microphone + speaker device in a room; capture and confirm interactions only |
+| `mobile_app` | LifeOS mobile companion app; full personal + household access |
 
 Adding a new surface kind requires an additive update to `SurfaceKindSchema`. No existing kind is removed or renamed once it has been registered in production.
 
@@ -23,24 +23,24 @@ Adding a new surface kind requires an additive update to `SurfaceKindSchema`. No
 
 Every registered surface is assigned exactly one trust level. Trust level is set at registration and can be updated by a household Admin.
 
-| Trust level | Who holds it                                                                                | Summary                                                               |
-| ----------- | ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `personal`  | The authenticated user's own device (e.g., `mobile_app`, `desk_display`)                    | Full content access — personal data, household data, sensitive fields |
-| `household` | Any shared household surface (e.g., `kitchen_display`, `hallway_display`, `voice_endpoint`) | Household-shared content only; sensitive content is filtered out      |
-| `guest`     | A temporary visitor surface                                                                 | Read-only, no sensitive content, no mutations                         |
+| Trust level | Who holds it | Summary |
+| --- | --- | --- |
+| `personal` | The authenticated user's own device (e.g., `mobile_app`, `desk_display`) | Full content access — personal data, household data, sensitive fields |
+| `household` | Any shared household surface (e.g., `kitchen_display`, `hallway_display`, `voice_endpoint`) | Household-shared content only; sensitive content is filtered out |
+| `guest` | A temporary visitor surface | Read-only, no sensitive content, no mutations |
 
 ## Capability Matrix
 
 Each surface kind declares a fixed capability set. A surface instance can have fewer capabilities than its kind allows (e.g., a display-only voice endpoint that has had listening disabled), but may never have more.
 
-| Surface kind          | read | quick-action | full-action | voice-capture | voice-confirm | Trust level |
-| --------------------- | ---- | ------------ | ----------- | ------------- | ------------- | ----------- |
-| `kitchen_display`     | ✓    | ✓            | —           | —             | —             | `household` |
-| `hallway_display`     | ✓    | ✓            | —           | —             | —             | `household` |
-| `living_room_display` | ✓    | —            | —           | —             | —             | `household` |
-| `desk_display`        | ✓    | ✓            | ✓           | —             | —             | `personal`  |
-| `voice_endpoint`      | —    | —            | —           | ✓             | ✓             | `household` |
-| `mobile_app`          | ✓    | ✓            | ✓           | ✓             | ✓             | `personal`  |
+| Surface kind | read | quick-action | full-action | voice-capture | voice-confirm | Trust level |
+| --- | --- | --- | --- | --- | --- | --- |
+| `kitchen_display` | ✓ | ✓ | — | — | — | `household` |
+| `hallway_display` | ✓ | ✓ | — | — | — | `household` |
+| `living_room_display` | ✓ | — | — | — | — | `household` |
+| `desk_display` | ✓ | ✓ | ✓ | — | — | `personal` |
+| `voice_endpoint` | — | — | — | ✓ | ✓ | `household` |
+| `mobile_app` | ✓ | ✓ | ✓ | ✓ | ✓ | `personal` |
 
 **Capability definitions:**
 

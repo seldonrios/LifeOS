@@ -156,6 +156,9 @@ export const Topics = {
     homeNodeSurfaceDeregistered: 'lifeos.homenode.surface.deregistered',
     homeNodeStateSnapshotUpdated: 'lifeos.homenode.state.snapshot.updated',
     homeNodeDisplayFeedUpdated: 'lifeos.homenode.display.feed.updated',
+    homeNodeVoiceSessionStarted: 'lifeos.homenode.voice.session.started',
+    homeNodeVoiceSessionCompleted: 'lifeos.homenode.voice.session.completed',
+    homeNodeVoiceSessionFailed: 'lifeos.homenode.voice.session.failed',
     homeNodeHealthChanged: 'lifeos.homenode.health.changed',
   },
 } as const;

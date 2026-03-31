@@ -12,10 +12,13 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/client.test.ts"
+    "test": "tsx --test src/client.test.ts src/voice-session.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
+    "@lifeos/event-bus": "workspace:*",
+    "@lifeos/household-capture-router-module": "workspace:*",
+    "@lifeos/voice-core": "workspace:*",
     "better-sqlite3": "^12.8.0"
   }
 }

@@ -5,6 +5,7 @@ import type { ForceGraphMethods } from 'react-force-graph-2d';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 import { useGraph } from '../hooks/useGraph';
+import { isMockRuntime } from '../ipc';
 import type { GraphSummary } from '../ipc';
 
 interface GoalNode {
@@ -227,6 +228,7 @@ function getRelationshipLinks(summary: GraphSummary | undefined, nodeIds: Set<st
 
 export function LifeGraph(): JSX.Element {
   const graphQuery = useGraph();
+  const usingMockRuntime = isMockRuntime();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const forceGraphRef = useRef<ForceGraphMethods<GoalNode, GoalLink> | undefined>(undefined);
   const [canvasContainer, setCanvasContainer] = useState<HTMLDivElement | null>(null);
@@ -351,6 +353,10 @@ export function LifeGraph(): JSX.Element {
           Links reflect goal relationships when available. If relationship data is missing, a simple
           starter layout is shown.
         </p>
+
+        {usingMockRuntime ? (
+          <ErrorBanner message="Mock data mode is active. This view is not reading your live Traycer graph. Start the desktop app in Tauri runtime to see real progress." />
+        ) : null}
 
         {graphQuery.isLoading ? <Spinner label="Rendering graph..." /> : null}
         {!graphQuery.isLoading && graphQuery.error ? <ErrorBanner message="Unable to load graph summary." /> : null}

@@ -10,3 +10,13 @@ export {
   type SurfaceListFilter,
   type SurfaceRegistrationWrite,
 } from './client';
+
+export {
+  VoiceSessionManager,
+  type StartVoiceSessionInput,
+  type StartVoiceSessionResult,
+  type VoiceSessionFailureReason,
+  type VoiceSessionManagerOptions,
+  type VoiceSessionRecord,
+  type VoiceSessionStatus,
+} from './voice-session';

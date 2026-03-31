@@ -14,16 +14,16 @@ Shared surfaces are **household-scoped by design**. They exist in physical space
 
 The following content categories are **never shown** on `household`-trust or `guest`-trust surfaces, regardless of the requesting user's role:
 
-| Category             | Examples                                                                                                        |
-| -------------------- | --------------------------------------------------------------------------------------------------------------- |
-| Private notes        | Notes tagged `private`, notes in personal namespaces, diary-style entries                                       |
-| Sensitive reminders  | Reminders containing health, finance, relationship, or medical keywords; reminders explicitly marked `personal` |
-| Health data          | Any `HealthMetricEntry`, medication logs, biometric readings, mental-health journal entries                     |
-| Finance data         | Account balances, transaction details, budget summaries, income or salary fields                                |
-| Identity credentials | Passwords, tokens, API keys, account numbers, PINs                                                              |
-| Adult-only content   | Content tagged `adult` or requiring age verification                                                            |
-| Personal messages    | Direct messages, SMS, email body content                                                                        |
-| Location history     | Past or real-time location trails for any individual household member                                           |
+| Category | Examples |
+| --- | --- |
+| Private notes | Notes tagged `private`, notes in personal namespaces, diary-style entries |
+| Sensitive reminders | Reminders containing health, finance, relationship, or medical keywords; reminders explicitly marked `personal` |
+| Health data | Any `HealthMetricEntry`, medication logs, biometric readings, mental-health journal entries |
+| Finance data | Account balances, transaction details, budget summaries, income or salary fields |
+| Identity credentials | Passwords, tokens, API keys, account numbers, PINs |
+| Adult-only content | Content tagged `adult` or requiring age verification |
+| Personal messages | Direct messages, SMS, email body content |
+| Location history | Past or real-time location trails for any individual household member |
 
 This blocklist is the minimum. Individual households may extend it via the home-state consent configuration.
 
@@ -31,15 +31,15 @@ This blocklist is the minimum. Individual households may extend it via the home-
 
 The household role hierarchy (from `HouseholdRoleSchema`) governs what content a surface can display when a household member is designated as the active context.
 
-| Content class                         | Admin | Adult | Teen | Child | Guest         |
-| ------------------------------------- | ----- | ----- | ---- | ----- | ------------- |
-| Shared household reminders            | ✓     | ✓     | ✓    | ✓     | —             |
-| Household chore status                | ✓     | ✓     | ✓    | ✓     | —             |
-| Shared shopping list                  | ✓     | ✓     | ✓    | ✓     | ✓ (read-only) |
-| Shared household calendar events      | ✓     | ✓     | ✓    | ✓     | —             |
-| Home state summary (who's home, mode) | ✓     | ✓     | ✓    | —     | —             |
-| Household announcements               | ✓     | ✓     | ✓    | ✓     | ✓             |
-| Sensitive content (see blocklist)     | —     | —     | —    | —     | —             |
+| Content class | Admin | Adult | Teen | Child | Guest |
+| --- | --- | --- | --- | --- | --- |
+| Shared household reminders | ✓ | ✓ | ✓ | ✓ | — |
+| Household chore status | ✓ | ✓ | ✓ | ✓ | — |
+| Shared shopping list | ✓ | ✓ | ✓ | ✓ | ✓ (read-only) |
+| Shared household calendar events | ✓ | ✓ | ✓ | ✓ | — |
+| Home state summary (who's home, mode) | ✓ | ✓ | ✓ | — | — |
+| Household announcements | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Sensitive content (see blocklist) | — | — | — | — | — |
 
 The `Guest` role gains no persistent identity. Guest surfaces (`guest`-trust) see only household announcements and the shared shopping list (read-only). Guest-trust surfaces cannot initiate actions.
 

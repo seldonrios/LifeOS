@@ -2,6 +2,7 @@ export * from './consent-manager';
 export * from './audio-recorder';
 export * from './intent-router';
 export * from './stt';
+export * from './whisper-adapter';
 export * from './tts';
 export * from './wake-word';
 

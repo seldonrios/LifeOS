@@ -10,8 +10,9 @@ import {
   type HomeNodeStateSnapshotUpdated,
 } from '@lifeos/contracts';
 import { createEventBusClient, Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
-import { HomeNodeGraphClient, buildNextSnapshot } from '@lifeos/home-node-core';
+import { HomeNodeGraphClient, VoiceSessionManager, buildNextSnapshot } from '@lifeos/home-node-core';
 import { createEnvSecretStore, startService } from '@lifeos/service-runtime';
+import { WhisperSttAdapter, type WhisperHealthSnapshot, type WhisperHealthStatus } from '@lifeos/voice-core';
 
 import { registerHomeNodeRoutes } from './routes';
 
@@ -29,8 +30,14 @@ type DisplayFeedSignalWaiter = {
 let graphClient: HomeNodeGraphClient | null = null;
 let eventBus: ManagedEventBus | null = null;
 let watchdogInterval: NodeJS.Timeout | null = null;
+let voiceRuntimeClient: WhisperSttAdapter | null = null;
+let voiceSessionManager: VoiceSessionManager | null = null;
 const displayFeedSignalVersions = new Map<string, number>();
 const displayFeedSignalWaiters = new Map<string, Set<DisplayFeedSignalWaiter>>();
+
+export function getHomeNodeVoiceSessionManager(): VoiceSessionManager | null {
+  return voiceSessionManager;
+}
 
 function getDisplayFeedSignalVersion(householdId: string): number {
   return displayFeedSignalVersions.get(householdId) ?? 0;
@@ -227,6 +234,65 @@ export function handleVoiceCaptureEvent(
   });
 }
 
+function createHealthChangedPayload(
+  status: 'healthy' | 'degraded',
+  reason: string,
+  checkedAt: string,
+  details: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    status,
+    reason,
+    checked_at: checkedAt,
+    ...details,
+  };
+}
+
+export async function runVoiceRuntimeHealthWatchdog(
+  activeVoiceRuntimeClient: Pick<WhisperSttAdapter, 'isConfigured' | 'checkHealth'>,
+  activeEventBus: ManagedEventBus,
+  previousStatus: WhisperHealthStatus | null,
+): Promise<WhisperHealthStatus | null> {
+  if (!activeVoiceRuntimeClient.isConfigured()) {
+    return previousStatus;
+  }
+
+  const snapshot = await activeVoiceRuntimeClient.checkHealth();
+  if (previousStatus !== null && snapshot.status !== previousStatus) {
+    await activeEventBus.publish(
+      Topics.lifeos.homeNodeHealthChanged,
+      createEvent(
+        Topics.lifeos.homeNodeHealthChanged,
+        createHealthChangedPayload(
+          snapshot.status === 'healthy' ? 'healthy' : 'degraded',
+          snapshot.reason ??
+            (snapshot.status === 'healthy'
+              ? 'voice runtime recovered'
+              : 'voice runtime health degraded'),
+          snapshot.checkedAt,
+          buildVoiceHealthDetails(snapshot),
+        ),
+        'system',
+      ),
+    );
+  }
+
+  return snapshot.status;
+}
+
+function buildVoiceHealthDetails(snapshot: WhisperHealthSnapshot): Record<string, unknown> {
+  const details: Record<string, unknown> = {
+    component: 'voice_runtime',
+    runtime_status: snapshot.status,
+  };
+
+  if (snapshot.latencyMs !== undefined) {
+    details.latency_ms = snapshot.latencyMs;
+  }
+
+  return details;
+}
+
 export async function runSurfaceHealthWatchdog(
   activeGraphClient: HomeNodeGraphClient,
   activeEventBus: ManagedEventBus,
@@ -310,6 +376,31 @@ export async function startHomeNodeService(): Promise<void> {
           return { status: 'unhealthy' as const, reason: 'event bus is disconnected' };
         },
       },
+      {
+        name: 'home-node-voice-runtime',
+        check: async () => {
+          if (!voiceRuntimeClient?.isConfigured()) {
+            return { status: 'healthy' as const };
+          }
+
+          const snapshot = await voiceRuntimeClient.checkHealth();
+          if (snapshot.status === 'healthy') {
+            return { status: 'healthy' as const };
+          }
+
+          if (snapshot.status === 'degraded') {
+            return {
+              status: 'degraded' as const,
+              reason: snapshot.reason ?? 'voice runtime health degraded',
+            };
+          }
+
+          return {
+            status: 'unhealthy' as const,
+            reason: snapshot.reason ?? 'voice runtime unavailable',
+          };
+        },
+      },
     ],
     registerRoutes: async (app) => {
       graphClient = new HomeNodeGraphClient(
@@ -319,6 +410,16 @@ export async function startHomeNodeService(): Promise<void> {
 
       eventBus = createEventBusClient({
         env: process.env,
+      });
+      voiceRuntimeClient = new WhisperSttAdapter();
+      voiceSessionManager = new VoiceSessionManager({
+        eventBus,
+        transcriptionAdapter: voiceRuntimeClient,
+        sessionTtlMs: process.env.LIFEOS_HOME_NODE_VOICE_SESSION_TTL_MS
+          ? Number(process.env.LIFEOS_HOME_NODE_VOICE_SESSION_TTL_MS)
+          : undefined,
+        retainAudio:
+          process.env.LIFEOS_HOME_NODE_VOICE_RETAIN_AUDIO?.trim().toLowerCase() === 'true',
       });
 
       await eventBus.subscribe(Topics.lifeos.householdHomeStateChanged, async (event) => {
@@ -346,6 +447,7 @@ export async function startHomeNodeService(): Promise<void> {
       });
 
       let lastStatus: WatchdogStatus = 'healthy';
+      let lastVoiceRuntimeStatus: WhisperHealthStatus | null = null;
       watchdogInterval = setInterval(async () => {
         if (!eventBus || !graphClient) {
           return;
@@ -368,6 +470,14 @@ export async function startHomeNodeService(): Promise<void> {
           }
 
           await runSurfaceHealthWatchdog(graphClient, eventBus);
+          await voiceSessionManager?.expireSessions();
+          if (voiceRuntimeClient) {
+            lastVoiceRuntimeStatus = await runVoiceRuntimeHealthWatchdog(
+              voiceRuntimeClient,
+              eventBus,
+              lastVoiceRuntimeStatus,
+            );
+          }
           lastStatus = currentStatus;
         } catch (error) {
           console.error(
@@ -386,6 +496,8 @@ export async function startHomeNodeService(): Promise<void> {
         }
 
         await eventBus?.close();
+        voiceSessionManager = null;
+        voiceRuntimeClient = null;
         for (const waiters of displayFeedSignalWaiters.values()) {
           for (const waiter of waiters) {
             clearTimeout(waiter.timeout);

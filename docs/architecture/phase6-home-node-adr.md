@@ -24,9 +24,9 @@ The home-node owns its own SQLite database (`home-node.db`) at a path configurab
 
 ### Service boundaries
 
-| Service     | Owns                                                            | Port |
-| ----------- | --------------------------------------------------------------- | ---- |
-| `dashboard` | household CRUD, capture routing, life-graph API                 | 3000 |
+| Service | Owns | Port |
+| --- | --- | --- |
+| `dashboard` | household CRUD, capture routing, life-graph API | 3000 |
 | `home-node` | surface registry, zone/room model, state snapshot, display feed | 3010 |
 
 The home-node subscribes to household events from the event bus but does not call `dashboard` internal APIs directly.
@@ -35,13 +35,13 @@ The home-node subscribes to household events from the event bus but does not cal
 
 The home-node publishes and subscribes via the shared event bus (`@lifeos/event-bus`). The five Phase 6 ambient topics are:
 
-| Topic key                      | Purpose                                                                       |
-| ------------------------------ | ----------------------------------------------------------------------------- |
-| `homeNodeSurfaceRegistered`    | A surface device has registered with the home-node                            |
-| `homeNodeSurfaceDeregistered`  | A surface device has left the home-node registry                              |
-| `homeNodeStateSnapshotUpdated` | The aggregated ambient state snapshot has been refreshed                      |
-| `homeNodeDisplayFeedUpdated`   | The display feed content has changed (triggers polling clients to re-fetch)   |
-| `homeNodeHealthChanged`        | The health status of the home-node or a connected surface adapter has changed |
+| Topic key | Purpose |
+| --- | --- |
+| `homeNodeSurfaceRegistered` | A surface device has registered with the home-node |
+| `homeNodeSurfaceDeregistered` | A surface device has left the home-node registry |
+| `homeNodeStateSnapshotUpdated` | The aggregated ambient state snapshot has been refreshed |
+| `homeNodeDisplayFeedUpdated` | The display feed content has changed (triggers polling clients to re-fetch) |
+| `homeNodeHealthChanged` | The health status of the home-node or a connected surface adapter has changed |
 
 All five topics are additive to the existing `Topics.lifeos` namespace. No existing topic keys are renamed or removed.
 
@@ -64,11 +64,11 @@ The home-node does not introduce a third tier. All voice data handling must pass
 
 Surfaces are assigned one of three trust levels at registration time. The full taxonomy is in [phase6-surface-taxonomy.md](./phase6-surface-taxonomy.md).
 
-| Trust level | Description                                                               |
-| ----------- | ------------------------------------------------------------------------- |
-| `personal`  | Authenticated user's own device; full content access                      |
+| Trust level | Description |
+| --- | --- |
+| `personal` | Authenticated user's own device; full content access |
 | `household` | Shared household surface; content filtered by role and sensitivity policy |
-| `guest`     | Temporary access; read-only, no sensitive content, no mutations           |
+| `guest` | Temporary access; read-only, no sensitive content, no mutations |
 
 ### Zone and room model
 

@@ -1,3 +1,5 @@
+export { deterministicCandidates } from './router';
+
 import { randomUUID } from 'node:crypto';
 
 import {

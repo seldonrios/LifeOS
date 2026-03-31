@@ -14,7 +14,7 @@
   "scripts": {
     "build": "tsc -b",
     "dev": "tsc -b --watch",
-    "test": "tsx --test src/index.test.ts src/intent-router.test.ts src/consent-manager.test.ts"
+    "test": "tsx --test src/index.test.ts src/intent-router.test.ts src/consent-manager.test.ts src/whisper-adapter.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",

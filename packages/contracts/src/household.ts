@@ -163,6 +163,35 @@ export const HouseholdVoiceCaptureCreatedSchema = z.object({
 });
 export type HouseholdVoiceCaptureCreated = z.infer<typeof HouseholdVoiceCaptureCreatedSchema>;
 
+export const HomeNodeVoiceSessionStartedSchema = z.object({
+  session_id: z.string().min(1),
+  household_id: z.string().min(1),
+  surface_id: z.string().min(1),
+  started_at: IsoDateTimeSchema,
+});
+export type HomeNodeVoiceSessionStarted = z.infer<typeof HomeNodeVoiceSessionStartedSchema>;
+
+export const HomeNodeVoiceSessionCompletedSchema = z.object({
+  session_id: z.string().min(1),
+  household_id: z.string().min(1),
+  surface_id: z.string().min(1),
+  capture_id: z.string().min(1),
+  transcript: z.string().min(1),
+  target_hint: z.enum(['shopping', 'chore', 'reminder', 'note', 'unknown']).optional(),
+  completed_at: IsoDateTimeSchema,
+});
+export type HomeNodeVoiceSessionCompleted = z.infer<typeof HomeNodeVoiceSessionCompletedSchema>;
+
+export const HomeNodeVoiceSessionFailedSchema = z.object({
+  session_id: z.string().min(1),
+  household_id: z.string().min(1),
+  surface_id: z.string().min(1),
+  reason: z.string().min(1),
+  detail: z.string().min(1).optional(),
+  failed_at: IsoDateTimeSchema,
+});
+export type HomeNodeVoiceSessionFailed = z.infer<typeof HomeNodeVoiceSessionFailedSchema>;
+
 export const HouseholdShoppingItemAddRequestedSchema = z.object({
   householdId: z.string().min(1),
   actorUserId: z.string().min(1),

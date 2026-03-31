@@ -34,7 +34,7 @@ function toPowerShellLiteral(value: string): string {
   return value.replace(/'/g, "''");
 }
 
-function pcm16ToWav(audioBuffer: Buffer, sampleRate: number, channels: number): Buffer {
+export function pcm16ToWav(audioBuffer: Buffer, sampleRate: number, channels: number): Buffer {
   const header = Buffer.alloc(44);
   const byteRate = sampleRate * channels * 2;
   const blockAlign = channels * 2;

@@ -125,8 +125,12 @@ interface SidecarResponse<T> {
   error?: string;
 }
 
-function isTauriRuntime(): boolean {
+export function isTauriRuntime(): boolean {
   return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+}
+
+export function isMockRuntime(): boolean {
+  return !isTauriRuntime();
 }
 
 async function invokeOrMock<T>(command: string, payload?: Record<string, unknown>): Promise<T> {
