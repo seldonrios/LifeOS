@@ -21,9 +21,65 @@ const SURFACE_INACTIVITY_THRESHOLD_MS = 300_000;
 
 type WatchdogStatus = 'healthy' | 'degraded';
 
+type DisplayFeedSignalWaiter = {
+  resolve: (signalVersion: number) => void;
+  timeout: NodeJS.Timeout;
+};
+
 let graphClient: HomeNodeGraphClient | null = null;
 let eventBus: ManagedEventBus | null = null;
 let watchdogInterval: NodeJS.Timeout | null = null;
+const displayFeedSignalVersions = new Map<string, number>();
+const displayFeedSignalWaiters = new Map<string, Set<DisplayFeedSignalWaiter>>();
+
+function getDisplayFeedSignalVersion(householdId: string): number {
+  return displayFeedSignalVersions.get(householdId) ?? 0;
+}
+
+function signalDisplayFeedUpdated(householdId: string): number {
+  const next = getDisplayFeedSignalVersion(householdId) + 1;
+  displayFeedSignalVersions.set(householdId, next);
+
+  const waiters = displayFeedSignalWaiters.get(householdId);
+  if (waiters) {
+    for (const waiter of waiters) {
+      clearTimeout(waiter.timeout);
+      waiter.resolve(next);
+    }
+    displayFeedSignalWaiters.delete(householdId);
+  }
+
+  return next;
+}
+
+function waitForDisplayFeedSignal(
+  householdId: string,
+  since: number,
+  timeoutMs: number,
+): Promise<number> {
+  const current = getDisplayFeedSignalVersion(householdId);
+  if (current > since) {
+    return Promise.resolve(current);
+  }
+
+  return new Promise((resolve) => {
+    const waiters = displayFeedSignalWaiters.get(householdId) ?? new Set<DisplayFeedSignalWaiter>();
+    const waiter: DisplayFeedSignalWaiter = {
+      resolve,
+      timeout: setTimeout(() => {
+        waiters.delete(waiter);
+        if (waiters.size === 0) {
+          displayFeedSignalWaiters.delete(householdId);
+        }
+
+        resolve(getDisplayFeedSignalVersion(householdId));
+      }, timeoutMs),
+    };
+
+    waiters.add(waiter);
+    displayFeedSignalWaiters.set(householdId, waiters);
+  });
+}
 
 function defaultSnapshot(now: string): HomeStateSnapshot {
   return {
@@ -280,6 +336,13 @@ export async function startHomeNodeService(): Promise<void> {
         onSurfaceDeregistered: async (surface) => {
           await publishSurfaceDeregisteredEvent(eventBus as ManagedEventBus, surface);
         },
+        getDisplayFeedSignalVersion,
+        waitForDisplayFeedSignal,
+      });
+
+      await eventBus.subscribe(Topics.lifeos.homeNodeDisplayFeedUpdated, async (event) => {
+        const payload = HomeNodeDisplayFeedEventSchema.parse(event.data);
+        signalDisplayFeedUpdated(payload.household_id);
       });
 
       let lastStatus: WatchdogStatus = 'healthy';
@@ -323,6 +386,13 @@ export async function startHomeNodeService(): Promise<void> {
         }
 
         await eventBus?.close();
+        for (const waiters of displayFeedSignalWaiters.values()) {
+          for (const waiter of waiters) {
+            clearTimeout(waiter.timeout);
+          }
+        }
+        displayFeedSignalWaiters.clear();
+        displayFeedSignalVersions.clear();
         graphClient?.close();
       });
     },

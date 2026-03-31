@@ -175,6 +175,12 @@ export interface ReminderRow {
   created_at: string;
 }
 
+export interface ReminderListOptions {
+  from?: string;
+  to?: string;
+  limit?: number;
+}
+
 export type ReminderAutomationErrorCode =
   | 'REMINDER_NO_TOKEN'
   | 'REMINDER_QUIET_HOURS'
@@ -1440,6 +1446,37 @@ export class HouseholdGraphClient {
          WHERE id = ?`,
       )
       .get(id) as ReminderRow;
+  }
+
+  listReminders(householdId: string, options: ReminderListOptions = {}): ReminderRow[] {
+    const filters: string[] = ['household_id = ?'];
+    const args: Array<string | number> = [householdId];
+
+    if (options.from) {
+      filters.push('remind_at >= ?');
+      args.push(options.from);
+    }
+
+    if (options.to) {
+      filters.push('remind_at <= ?');
+      args.push(options.to);
+    }
+
+    const limit =
+      typeof options.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0
+        ? Math.floor(options.limit)
+        : undefined;
+
+    const query = `SELECT id, household_id, object_type, object_id, target_user_ids_json, remind_at, sensitive, created_at
+         FROM reminders
+         WHERE ${filters.join(' AND ')}
+         ORDER BY remind_at ASC${limit !== undefined ? '\n         LIMIT ?' : ''}`;
+
+    if (limit !== undefined) {
+      args.push(limit);
+    }
+
+    return this.db.prepare(query).all(...args) as ReminderRow[];
   }
 
   createNote(householdId: string, authorUserId: string, body: string): NoteRow {

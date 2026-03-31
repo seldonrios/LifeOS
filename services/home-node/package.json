@@ -10,6 +10,7 @@
     "@lifeos/contracts": "workspace:*",
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/home-node-core": "workspace:*",
+    "@lifeos/security": "workspace:*",
     "@lifeos/service-runtime": "workspace:*"
   },
   "devDependencies": {

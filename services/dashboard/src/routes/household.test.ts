@@ -51,6 +51,18 @@ async function bearerFor(userId: string): Promise<string> {
   return `Bearer ${token.token}`;
 }
 
+async function serviceBearerFor(
+  serviceId: string,
+  scopes: string[] = ['service.read'],
+): Promise<string> {
+  const token = await jwtService.issue({
+    sub: `service:${serviceId}`,
+    service_id: serviceId,
+    scopes,
+  });
+  return `Bearer ${token.token}`;
+}
+
 function createHarness(): {
   db: HouseholdGraphClient;
   app: FastifyInstance;
@@ -1858,6 +1870,227 @@ test('POST /api/households/:id/reminders traces automation failure for inactive 
     assert.ok(payload.span_id);
     assert.equal(payload.span_id, publishedSpanId);
   } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/display-feed rejects non-home-node callers', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const missingAuthResponse = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/display-feed`,
+    });
+
+    const userAuthResponse = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/display-feed`,
+      headers: { authorization: adminAuth },
+    });
+
+    const wrongServiceResponse = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/display-feed`,
+      headers: { authorization: await serviceBearerFor('dashboard-service') },
+    });
+
+    assert.equal(missingAuthResponse.statusCode, 401);
+    assert.equal(userAuthResponse.statusCode, 401);
+    assert.equal(wrongServiceResponse.statusCode, 401);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/display-feed returns aggregated display payload for home-node', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const household = db.createHousehold('Display Feed Home');
+    activateMember(db, household.id, 'admin-1', 'Admin', 'admin-1');
+    activateMember(db, household.id, 'adult-1', 'Adult', 'admin-1');
+
+    const calendar = db.createCalendar(household.id, 'Family', '#22aa88');
+    db.createEvent(
+      calendar.id,
+      household.id,
+      'Morning standup',
+      '2026-03-31T09:00:00.000Z',
+      '2026-03-31T09:30:00.000Z',
+      'confirmed',
+      null,
+      null,
+      ['admin-1'],
+    );
+    db.createEvent(
+      calendar.id,
+      household.id,
+      'Tomorrow event',
+      '2026-04-01T09:00:00.000Z',
+      '2026-04-01T09:30:00.000Z',
+      'confirmed',
+      null,
+      null,
+      ['admin-1'],
+    );
+
+    const chore = db.createChore(
+      household.id,
+      'Take out trash',
+      'adult-1',
+      '2026-03-31T18:00:00.000Z',
+    );
+    db.createChore(
+      household.id,
+      'Tomorrow chore',
+      'adult-1',
+      '2026-04-01T18:00:00.000Z',
+    );
+
+    const milk = db.addShoppingItem(household.id, 'Milk', 'admin-1', 'manual');
+    const purchased = db.addShoppingItem(household.id, 'Bread', 'admin-1', 'manual', milk.list_id);
+    db.updateShoppingItemStatus(household.id, purchased.id, 'purchased');
+
+    db.createReminder(
+      household.id,
+      'chore',
+      chore.id,
+      ['adult-1'],
+      '2026-03-31T17:00:00.000Z',
+      true,
+    );
+
+    await app.ready();
+
+    const OriginalDate = Date;
+    const fixedNow = new OriginalDate('2026-03-31T12:00:00.000Z');
+    class MockDate extends OriginalDate {
+      constructor(value?: string | number | Date) {
+        if (value === undefined) {
+          super(fixedNow.toISOString());
+          return;
+        }
+
+        super(value);
+      }
+
+      static now(): number {
+        return fixedNow.getTime();
+      }
+    }
+
+    (globalThis as { Date: DateConstructor }).Date = MockDate as unknown as DateConstructor;
+    try {
+      const response = await app.inject({
+        method: 'GET',
+        url: `/api/households/${household.id}/display-feed`,
+        headers: { authorization: await serviceBearerFor('home-node') },
+      });
+
+      assert.equal(response.statusCode, 200, response.body);
+      const body = response.json() as {
+        todayEvents: Array<{ title: string }>;
+        choresDueToday: Array<{ title: string; assignedToUserId: string }>;
+        shoppingItems: Array<{ title: string }>;
+        topReminders: Array<{ sensitive: boolean }>;
+      };
+
+      assert.equal(body.todayEvents.length, 1);
+      assert.equal(body.todayEvents[0]?.title, 'Morning standup');
+      assert.equal(body.choresDueToday.length, 1);
+      assert.equal(body.choresDueToday[0]?.title, 'Take out trash');
+      assert.equal(body.choresDueToday[0]?.assignedToUserId, 'adult-1');
+      assert.equal(body.shoppingItems.length, 1);
+      assert.equal(body.shoppingItems[0]?.title, 'Milk');
+      assert.equal(body.topReminders.length, 1);
+      assert.equal(body.topReminders[0]?.sensitive, true);
+    } finally {
+      (globalThis as { Date: DateConstructor }).Date = OriginalDate;
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
+test('display quick-action routes reject missing surface token', async () => {
+  const { db, app, cleanup } = createHarness();
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  try {
+    const household = db.createHousehold('Surface Actions Home');
+    activateMember(db, household.id, 'adult-1', 'Adult', 'admin-1');
+    const chore = db.createChore(
+      household.id,
+      'Take out trash',
+      'adult-1',
+      '2026-03-31T18:00:00.000Z',
+    );
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = 'surface-secret';
+
+    await app.ready();
+
+    const completeResponse = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/display-actions/chores/${chore.id}/complete`,
+      payload: { surfaceId: 'surface-kitchen-1' },
+    });
+
+    const shoppingResponse = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/display-actions/shopping/items`,
+      payload: { surfaceId: 'surface-kitchen-1', title: 'Milk' },
+    });
+
+    assert.equal(completeResponse.statusCode, 401);
+    assert.equal(shoppingResponse.statusCode, 401);
+  } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
+    await cleanup();
+  }
+});
+
+test('display quick-action routes accept valid surface token', async () => {
+  const { db, app, cleanup } = createHarness();
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  try {
+    const household = db.createHousehold('Surface Actions Home');
+    activateMember(db, household.id, 'adult-1', 'Adult', 'admin-1');
+    const chore = db.createChore(
+      household.id,
+      'Take out trash',
+      'adult-1',
+      '2026-03-31T18:00:00.000Z',
+    );
+
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = 'surface-secret';
+    await app.ready();
+
+    const completeResponse = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/display-actions/chores/${chore.id}/complete`,
+      headers: { 'x-lifeos-surface-token': 'surface-secret' },
+      payload: { surfaceId: 'surface-kitchen-1' },
+    });
+    assert.equal(completeResponse.statusCode, 200, completeResponse.body);
+
+    const updatedChore = db.getChore(household.id, chore.id);
+    assert.equal(updatedChore?.status, 'completed');
+
+    const shoppingResponse = await app.inject({
+      method: 'POST',
+      url: `/api/households/${household.id}/display-actions/shopping/items`,
+      headers: { 'x-lifeos-surface-token': 'surface-secret' },
+      payload: { surfaceId: 'surface-kitchen-1', title: 'Milk' },
+    });
+    assert.equal(shoppingResponse.statusCode, 201, shoppingResponse.body);
+
+    const shoppingLists = db.listShoppingLists(household.id);
+    const items = db.listShoppingItems(household.id, shoppingLists[0]?.id ?? '');
+    assert.equal(items.length, 1);
+    assert.equal(items[0]?.title, 'Milk');
+  } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
     await cleanup();
   }
 });

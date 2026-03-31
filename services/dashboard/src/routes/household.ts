@@ -1,8 +1,12 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import {
+  HomeNodeDisplayChoreItemSchema,
+  HomeNodeDisplayEventItemSchema,
+  HomeNodeDisplayReminderItemSchema,
+  HomeNodeDisplayShoppingItemSchema,
   HouseholdAutomationFailedSchema,
   HouseholdCalendarEventCreatedSchema,
   HouseholdCaptureStatusResponseSchema,
@@ -64,7 +68,7 @@ import {
 import { createObservabilityClient, emitAutomationFailureSpan } from '@lifeos/observability';
 import { z } from 'zod';
 
-import { extractCallerUserId } from '../auth';
+import { extractAuthContext, extractCallerUserId } from '../auth';
 
 type StatusSentinel = {
   status: number;
@@ -72,6 +76,28 @@ type StatusSentinel = {
 };
 
 const ReminderObjectTypeSchema = z.enum(['chore', 'event', 'shopping', 'routine', 'custom']);
+
+const DashboardDisplayFeedResponseSchema = z
+  .object({
+    todayEvents: z.array(HomeNodeDisplayEventItemSchema),
+    choresDueToday: z.array(HomeNodeDisplayChoreItemSchema),
+    shoppingItems: z.array(HomeNodeDisplayShoppingItemSchema),
+    topReminders: z.array(HomeNodeDisplayReminderItemSchema),
+  })
+  .strict();
+
+const DisplayActionCompleteChoreRequestSchema = z
+  .object({
+    surfaceId: z.string().min(1),
+  })
+  .strict();
+
+const DisplayActionAddShoppingItemRequestSchema = z
+  .object({
+    surfaceId: z.string().min(1),
+    title: z.string().min(1),
+  })
+  .strict();
 
 function makeStatusError(status: number, message?: string): StatusSentinel {
   return message === undefined ? { status } : { status, message };
@@ -109,6 +135,76 @@ function normalizeCalendarRangeFilter(value: string, boundary: 'start' | 'end'):
   }
 
   return parsed.toISOString();
+}
+
+function isWithinUtcDay(timestamp: string, dayStart: number, dayEnd: number): boolean {
+  const parsed = new Date(timestamp).getTime();
+  if (!Number.isFinite(parsed)) {
+    return false;
+  }
+
+  return parsed >= dayStart && parsed <= dayEnd;
+}
+
+function toUtcDayWindow(now: Date): { fromIso: string; toIso: string; fromMs: number; toMs: number } {
+  const from = new Date(now);
+  from.setUTCHours(0, 0, 0, 0);
+  const to = new Date(now);
+  to.setUTCHours(23, 59, 59, 999);
+
+  return {
+    fromIso: from.toISOString(),
+    toIso: to.toISOString(),
+    fromMs: from.getTime(),
+    toMs: to.getTime(),
+  };
+}
+
+function normalizeChoreDueAt(chore: { dueAt: string }): string | undefined {
+  const dueAtMs = new Date(chore.dueAt).getTime();
+  if (!Number.isFinite(dueAtMs)) {
+    return undefined;
+  }
+
+  return new Date(dueAtMs).toISOString();
+}
+
+async function requireHomeNodeServiceRead(
+  request: FastifyRequest,
+): Promise<boolean> {
+  const authContext = await extractAuthContext(request);
+  if (!authContext) {
+    return false;
+  }
+
+  const hasServiceReadScope = authContext.scopes.includes('service.read');
+  return authContext.service === 'home-node' && hasServiceReadScope;
+}
+
+function extractSurfaceToken(request: FastifyRequest): string | null {
+  const header = request.headers['x-lifeos-surface-token'];
+  const value = Array.isArray(header) ? header[0] : header;
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const token = value.trim();
+  return token.length > 0 ? token : null;
+}
+
+function isValidSurfaceToken(token: string | null): boolean {
+  const expected = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET?.trim() ?? '';
+  if (!token || expected.length === 0) {
+    return false;
+  }
+
+  const expectedBuffer = Buffer.from(expected, 'utf8');
+  const tokenBuffer = Buffer.from(token, 'utf8');
+  if (expectedBuffer.length === 0 || expectedBuffer.length !== tokenBuffer.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuffer, tokenBuffer);
 }
 
 async function requireMember(
@@ -1363,6 +1459,186 @@ export function registerHouseholdRoutes(
         remindAt: body.remindAt,
       });
       reply.status(201).send(reminder);
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/display-feed', async (request, reply) => {
+    try {
+      const serviceAuthorized = await requireHomeNodeServiceRead(request);
+      if (!serviceAuthorized) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const household = db.getHousehold(params.id);
+      if (!household) {
+        reply.status(404).send({ error: 'Household not found' });
+        return;
+      }
+
+      const now = new Date();
+      const dayWindow = toUtcDayWindow(now);
+
+      const todayEvents = db
+        .listCalendars(params.id)
+        .flatMap((calendar) => db.listEvents(params.id, calendar.id, dayWindow.fromIso, dayWindow.toIso))
+        .sort((left, right) => left.start_at.localeCompare(right.start_at))
+        .slice(0, 12)
+        .map((event) => ({
+          id: event.id,
+          title: event.title,
+          startsAt: event.start_at,
+        }));
+
+      const choresDueToday = db
+        .listChores(params.id)
+        .filter((chore) => {
+          const dueAtIso = normalizeChoreDueAt(chore);
+          return dueAtIso !== undefined && isWithinUtcDay(dueAtIso, dayWindow.fromMs, dayWindow.toMs);
+        })
+        .sort((left, right) => left.dueAt.localeCompare(right.dueAt))
+        .slice(0, 16)
+        .map((chore) => ({
+          id: chore.id,
+          title: chore.title,
+          dueAt: chore.dueAt,
+          assignedToUserId: chore.assignedTo.userId,
+        }));
+
+      const shoppingItems = db
+        .listShoppingLists(params.id)
+        .flatMap((list) => db.listShoppingItems(params.id, list.id))
+        .filter((item) => item.status !== 'purchased')
+        .slice(0, 20)
+        .map((item) => ({
+          id: item.id,
+          title: item.title,
+          status: item.status,
+        }));
+
+      const topReminders = db
+        .listReminders(params.id, { from: now.toISOString(), limit: 12 })
+        .map((reminder) => ({
+          id: reminder.id,
+          title: `${reminder.object_type}: ${reminder.object_id}`,
+          remindAt: reminder.remind_at,
+          sensitive: reminder.sensitive === 1,
+        }));
+
+      reply.status(200).send(
+        DashboardDisplayFeedResponseSchema.parse({
+          todayEvents,
+          choresDueToday,
+          shoppingItems,
+          topReminders,
+        }),
+      );
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/display-actions/chores/:choreId/complete', async (request, reply) => {
+    try {
+      if (!isValidSurfaceToken(extractSurfaceToken(request))) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          choreId: z.string().min(1),
+        })
+        .parse(request.params);
+      const body = DisplayActionCompleteChoreRequestSchema.parse(request.body);
+
+      const household = db.getHousehold(params.id);
+      if (!household) {
+        reply.status(404).send({ error: 'Household not found' });
+        return;
+      }
+
+      const chore = db.listChores(params.id).find((candidate) => candidate.id === params.choreId);
+      if (!chore) {
+        reply.status(404).send({ error: 'Chore not found' });
+        return;
+      }
+
+      const completedByUserId = chore.assignedTo.userId;
+      if (!completedByUserId) {
+        reply.status(409).send({ error: 'Chore has no assignee' });
+        return;
+      }
+
+      const completed = db.completeChore(params.id, params.choreId, completedByUserId);
+
+      const eventData = HouseholdChoreCompletedSchema.parse({
+        householdId: params.id,
+        choreId: completed.id,
+        choreTitle: completed.title,
+        completedByUserId,
+        completedAt: completed.completed_at ?? new Date().toISOString(),
+        streakCount: completed.streakCount,
+      });
+
+      await publishChoreCompleted(
+        createChorePublishContext(eventBus, params.id, completedByUserId, request.id),
+        eventData,
+      );
+
+      reply.status(200).send({
+        status: 'completed',
+        choreId: params.choreId,
+        surfaceId: body.surfaceId,
+      });
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.post('/api/households/:id/display-actions/shopping/items', async (request, reply) => {
+    try {
+      if (!isValidSurfaceToken(extractSurfaceToken(request))) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z.object({ id: z.string().min(1) }).parse(request.params);
+      const body = DisplayActionAddShoppingItemRequestSchema.parse(request.body);
+
+      const household = db.getHousehold(params.id);
+      if (!household) {
+        reply.status(404).send({ error: 'Household not found' });
+        return;
+      }
+
+      const actorId = `surface:${body.surfaceId}`;
+      const item = db.addShoppingItem(params.id, body.title, actorId, 'manual');
+
+      const eventData = HouseholdShoppingItemAddedSchema.parse({
+        householdId: params.id,
+        listId: item.list_id,
+        itemId: item.id,
+        title: item.title,
+        addedByUserId: actorId,
+        source: item.source,
+      });
+
+      await publishShoppingItemAdded(
+        createShoppingPublishContext(eventBus, params.id, actorId, request.id),
+        eventData,
+      );
+
+      reply.status(201).send({
+        id: item.id,
+        title: item.title,
+        status: item.status,
+        surfaceId: body.surfaceId,
+      });
     } catch (error) {
       replyError(reply, error);
     }
