@@ -326,3 +326,127 @@ export const AuditLogEntrySchema = z.object({
   createdAt: IsoDateTimeSchema,
 });
 export type AuditLogEntry = z.infer<typeof AuditLogEntrySchema>;
+
+// ─── Phase 6 ambient schemas ──────────────────────────────────────────────────
+
+export const SurfaceKindSchema = z.enum([
+  'kitchen_display',
+  'hallway_display',
+  'living_room_display',
+  'desk_display',
+  'voice_endpoint',
+  'mobile_app',
+]);
+export type SurfaceKind = z.infer<typeof SurfaceKindSchema>;
+
+export const SurfaceTrustLevelSchema = z.enum(['personal', 'household', 'guest']);
+export type SurfaceTrustLevel = z.infer<typeof SurfaceTrustLevelSchema>;
+
+export const SurfaceCapabilitySchema = z.enum([
+  'read',
+  'quick-action',
+  'full-action',
+  'voice-capture',
+  'voice-confirm',
+]);
+export type SurfaceCapability = z.infer<typeof SurfaceCapabilitySchema>;
+
+export const HomeNodeSurfaceSchema = z
+  .object({
+    surface_id: z.string().min(1),
+    zone_id: z.string().min(1),
+    kind: SurfaceKindSchema,
+    trust_level: SurfaceTrustLevelSchema,
+    capabilities: z.array(SurfaceCapabilitySchema),
+    active: z.boolean(),
+    registered_at: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeNodeSurface = z.infer<typeof HomeNodeSurfaceSchema>;
+
+export const HomeNodeZoneTypeSchema = z.enum([
+  'kitchen',
+  'hallway',
+  'bedroom',
+  'office',
+  'entryway',
+  'living_room',
+  'other',
+]);
+export type HomeNodeZoneType = z.infer<typeof HomeNodeZoneTypeSchema>;
+
+export const HomeNodeZoneSchema = z
+  .object({
+    zone_id: z.string().min(1),
+    home_id: z.string().min(1),
+    name: z.string().min(1),
+    type: HomeNodeZoneTypeSchema,
+  })
+  .strict();
+export type HomeNodeZone = z.infer<typeof HomeNodeZoneSchema>;
+
+export const HomeNodeHomeSchema = z
+  .object({
+    home_id: z.string().min(1),
+    household_id: z.string().min(1),
+    name: z.string().min(1),
+    timezone: z.string().min(1),
+    quiet_hours_start: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
+    quiet_hours_end: z
+      .string()
+      .regex(/^\d{2}:\d{2}$/)
+      .optional(),
+    routine_profile: z.string().optional(),
+  })
+  .strict();
+export type HomeNodeHome = z.infer<typeof HomeNodeHomeSchema>;
+
+export const HomeModeSchema = z.enum([
+  'home',
+  'away',
+  'sleep',
+  'quiet_hours',
+  'morning_routine',
+  'evening_routine',
+  'guest_mode',
+  'vacation_mode',
+]);
+export type HomeMode = z.infer<typeof HomeModeSchema>;
+
+export const HomeStateSnapshotSchema = z
+  .object({
+    home_mode: HomeModeSchema,
+    occupancy_summary: z.string().min(1),
+    active_routines: z.array(z.string().min(1)),
+    adapter_health: z.enum(['healthy', 'degraded', 'unavailable']),
+    snapshot_at: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeStateSnapshot = z.infer<typeof HomeStateSnapshotSchema>;
+
+export const HomeNodeSurfaceRegisteredSchema = z
+  .object({
+    surface_id: z.string().min(1),
+    zone_id: z.string().min(1),
+    home_id: z.string().min(1),
+    household_id: z.string().min(1),
+    kind: SurfaceKindSchema,
+    trust_level: SurfaceTrustLevelSchema,
+    capabilities: z.array(SurfaceCapabilitySchema),
+    registered_at: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeNodeSurfaceRegistered = z.infer<typeof HomeNodeSurfaceRegisteredSchema>;
+
+export const HomeNodeStateSnapshotUpdatedSchema = z
+  .object({
+    home_id: z.string().min(1),
+    household_id: z.string().min(1),
+    snapshot: HomeStateSnapshotSchema,
+    updated_at: IsoDateTimeSchema,
+  })
+  .strict();
+export type HomeNodeStateSnapshotUpdated = z.infer<typeof HomeNodeStateSnapshotUpdatedSchema>;

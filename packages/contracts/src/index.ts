@@ -100,6 +100,31 @@ export {
 } from './household';
 
 export {
+  SurfaceKindSchema,
+  SurfaceTrustLevelSchema,
+  SurfaceCapabilitySchema,
+  HomeNodeSurfaceSchema,
+  HomeNodeZoneTypeSchema,
+  HomeNodeZoneSchema,
+  HomeNodeHomeSchema,
+  HomeModeSchema,
+  HomeStateSnapshotSchema,
+  HomeNodeSurfaceRegisteredSchema,
+  HomeNodeStateSnapshotUpdatedSchema,
+  type SurfaceKind,
+  type SurfaceTrustLevel,
+  type SurfaceCapability,
+  type HomeNodeSurface,
+  type HomeNodeZoneType,
+  type HomeNodeZone,
+  type HomeNodeHome,
+  type HomeMode,
+  type HomeStateSnapshot,
+  type HomeNodeSurfaceRegistered,
+  type HomeNodeStateSnapshotUpdated,
+} from './household';
+
+export {
   ApprovalRequestSchema,
   ApprovalResultSchema,
   InboxItemTypeSchema,
