@@ -65,6 +65,12 @@ function defaultSnapshot(now: string): HomeStateSnapshot {
 export interface HomeNodeRouteHooks {
   onSurfaceRegistered?: (surface: HomeNodeSurfaceRegistered) => Promise<void>;
   onSurfaceDeregistered?: (surface: HomeNodeSurfaceRegistered) => Promise<void>;
+  getDisplayFeedSignalVersion?: (householdId: string) => number;
+  waitForDisplayFeedSignal?: (
+    householdId: string,
+    since: number,
+    timeoutMs: number,
+  ) => Promise<number>;
 }
 
 function parseBooleanFilter(value: unknown): boolean | undefined {
@@ -233,6 +239,51 @@ export function registerHomeNodeRoutes(
   };
 
   app.get('/api/home-node/display-feed/:surfaceId', getFeedHandler);
+
+  app.get('/api/home-node/display-feed-hints/:surfaceId', async (request, reply) => {
+    try {
+      if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+      }
+
+      const surfaceId = String((request.params as { surfaceId?: string }).surfaceId ?? '').trim();
+      if (surfaceId.length === 0) {
+        return reply.code(400).send({ error: 'surfaceId is required' });
+      }
+
+      const registeredSurface = graphClient.getRegisteredSurface(surfaceId);
+      const surfaceState = graphClient.getSurface(surfaceId);
+      if (!registeredSurface || !surfaceState || !surfaceState.active) {
+        return reply.code(404).send({ error: 'Surface not found' });
+      }
+
+      const query = request.query as {
+        householdId?: string;
+        since?: string;
+        timeoutMs?: string;
+      };
+      const householdId = query.householdId?.trim() || registeredSurface.household_id;
+      if (householdId !== registeredSurface.household_id) {
+        return reply.code(403).send({ error: 'Surface does not belong to household' });
+      }
+
+      const since = Number.parseInt(String(query.since ?? '0'), 10);
+      const timeoutMs = Math.min(
+        Math.max(Number.parseInt(String(query.timeoutMs ?? '30000'), 10), 0),
+        60_000,
+      );
+
+      const currentVersion = hooks.getDisplayFeedSignalVersion?.(householdId) ?? 0;
+      const signalVersion =
+        hooks.waitForDisplayFeedSignal && currentVersion <= since
+          ? await hooks.waitForDisplayFeedSignal(householdId, since, timeoutMs)
+          : currentVersion;
+
+      return reply.code(200).send({ signalVersion });
+    } catch {
+      return reply.code(500).send({ error: 'Failed to fetch display-feed hints' });
+    }
+  });
 
   const registerSurfaceHandler = async (
     request: Parameters<FastifyInstance['post']>[1] extends (...args: infer A) => unknown ? A[0] : never,

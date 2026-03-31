@@ -1,11 +1,10 @@
 import type { FastifyRequest } from 'fastify';
 
-import { JwtService } from '@lifeos/security';
+import { createSecurityClient, type AuthContext } from '@lifeos/security';
 
-const jwtService = new JwtService();
+const securityClient = createSecurityClient();
 
-export async function extractCallerUserId(request: FastifyRequest): Promise<string | null> {
-  const authorizationHeader = request.headers.authorization;
+function extractBearerToken(authorizationHeader: string | undefined): string | null {
   if (!authorizationHeader) {
     return null;
   }
@@ -14,14 +13,23 @@ export async function extractCallerUserId(request: FastifyRequest): Promise<stri
     ? authorizationHeader.slice('Bearer '.length).trim()
     : authorizationHeader.trim();
 
+  return token || null;
+}
+
+export async function extractAuthContext(request: FastifyRequest): Promise<AuthContext | null> {
+  const token = extractBearerToken(request.headers.authorization);
   if (!token) {
     return null;
   }
 
-  const payload = await jwtService.verify(token);
-  if (!payload || typeof payload.sub !== 'string' || payload.sub.trim().length === 0) {
+  return securityClient.getAuthContext(token);
+}
+
+export async function extractCallerUserId(request: FastifyRequest): Promise<string | null> {
+  const authContext = await extractAuthContext(request);
+  if (!authContext || !authContext.subject) {
     return null;
   }
 
-  return payload.sub;
+  return authContext.subject.trim() || null;
 }
