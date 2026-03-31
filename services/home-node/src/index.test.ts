@@ -318,6 +318,76 @@ test('GET /api/home-node/display-feed/:surfaceId returns ticket contract payload
   }
 });
 
+test('GET /api/home-node/display-feed-hints/:surfaceId returns signal version for authorized surfaces', async () => {
+  const { client, cleanup } = createClientHarness();
+  const { app, handlers } = createRouteHarness();
+
+  try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+
+    client.upsertHome({
+      homeId: 'home-default',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+    client.upsertZone({
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      name: 'Kitchen',
+      type: 'kitchen',
+    });
+    client.registerSurface({
+      surfaceId: 'surface-feed-1',
+      zoneId: 'zone-kitchen',
+      homeId: 'home-default',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    registerHomeNodeRoutes(app as unknown as Parameters<typeof registerHomeNodeRoutes>[0], client, {
+      getDisplayFeedSignalVersion: () => 3,
+    });
+    const hintHandler = handlers.get('GET /api/home-node/display-feed-hints/:surfaceId');
+    if (!hintHandler) {
+      throw new Error('display-feed hints route was not registered');
+    }
+
+    const unauthorized = await hintHandler(
+      {
+        params: { surfaceId: 'surface-feed-1' },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        code: (statusCode: number) => ({
+          send: (payload: unknown) => ({ statusCode, payload }),
+        }),
+      },
+    );
+
+    const authorized = await hintHandler(
+      {
+        params: { surfaceId: 'surface-feed-1' },
+        query: { householdId: 'household-1', since: '1', timeoutMs: '1000' },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        code: (statusCode: number) => ({
+          send: (payload: unknown) => ({ statusCode, payload }),
+        }),
+      },
+    );
+
+    assert.equal(unauthorized.statusCode, 401);
+    assert.equal(authorized.statusCode, 200);
+    assert.equal((authorized.payload as { signalVersion?: number }).signalVersion, 3);
+  } finally {
+    cleanup();
+  }
+});
+
 test('applyContentFilter enforces trust-level visibility and sensitive reminder filtering', () => {
   const baseFeed = {
     todayEvents: [{ id: 'event-1', title: 'Family dinner' }],
@@ -427,6 +497,62 @@ test('DisplayFeedAggregator supports cache hit, expiry, and stale fallback behav
   assert.equal(staleSnapshotOnly.feed.choresDueToday.length, 0);
   assert.equal(staleSnapshotOnly.feed.shoppingItems.length, 0);
   assert.equal(staleSnapshotOnly.feed.topReminders.length, 0);
+});
+
+test('DisplayFeedAggregator uses configured dashboard URL and service token', async () => {
+  const captured: { url: string | null; authToken: string | null } = {
+    url: null,
+    authToken: null,
+  };
+  const aggregator = new DisplayFeedAggregator(
+    async (url, options) => {
+      captured.url = url;
+      captured.authToken = options?.authToken ?? null;
+      return {
+        todayEvents: [],
+        choresDueToday: [],
+        shoppingItems: [],
+        topReminders: [],
+      };
+    },
+    () => Date.now(),
+    {
+      dashboardBaseUrl: 'http://dashboard.internal:3100',
+      dashboardServiceTokenProvider: async () => 'test-service-token',
+    },
+  );
+
+  await aggregator.getDisplayFeed({
+    surface: {
+      surface_id: 'surface-config-1',
+      zone_id: 'zone-kitchen',
+      home_id: 'home-default',
+      household_id: 'household-1',
+      kind: 'kitchen_display',
+      trust_level: 'household',
+      capabilities: ['read'],
+      registered_at: '2026-03-31T09:00:00.000Z',
+    },
+    home: {
+      home_id: 'home-default',
+      household_id: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    },
+    snapshot: {
+      home_mode: 'home',
+      occupancy_summary: 'occupied',
+      active_routines: [],
+      adapter_health: 'healthy',
+      snapshot_at: '2026-03-31T09:00:00.000Z',
+    },
+  });
+
+  assert.equal(
+    captured.url,
+    'http://dashboard.internal:3100/api/households/household-1/display-feed',
+  );
+  assert.equal(captured.authToken, 'test-service-token');
 });
 
 test('handleHomeStateChangedEvent upserts snapshot and publishes update event', async () => {
