@@ -72,8 +72,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/cli
       '@tanstack/react-query':
-        specifier: ^5.95.2
-        version: 5.95.2(react@19.2.4)
+        specifier: ^5.96.0
+        version: 5.96.0(react@19.2.4)
       '@tauri-apps/api':
         specifier: ^2.10.1
         version: 2.10.1
@@ -127,8 +127,8 @@ importers:
         specifier: workspace:*
         version: link:../../packages/ui
       '@tanstack/react-query':
-        specifier: ^5.95.2
-        version: 5.95.2(react@19.2.4)
+        specifier: ^5.96.0
+        version: 5.96.0(react@19.2.4)
       react:
         specifier: ^19.2.4
         version: 19.2.4
@@ -185,8 +185,8 @@ importers:
         specifier: 3.0.2
         version: 3.0.2(react-native@0.76.9(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@18.3.1))(react@18.3.1)
       '@tanstack/react-query':
-        specifier: ^5.95.2
-        version: 5.95.2(react@18.3.1)
+        specifier: ^5.96.0
+        version: 5.96.0(react@18.3.1)
       expo:
         specifier: ~55.0.9
         version: 55.0.9(@babel/core@7.29.0)(@expo/dom-webview@55.0.3)(@expo/metro-runtime@4.0.1(react-native@0.76.9(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@18.3.1)))(expo-router@55.0.8)(react-dom@18.3.1(react@18.3.1))(react-native@0.76.9(@babel/core@7.29.0)(@babel/preset-env@7.29.2(@babel/core@7.29.0))(@types/react@19.2.14)(react@18.3.1))(react@18.3.1)(typescript@6.0.2)
@@ -605,8 +605,8 @@ importers:
   packages/life-graph:
     dependencies:
       '@lancedb/lancedb':
-        specifier: ^0.27.1
-        version: 0.27.1(apache-arrow@17.0.0)
+        specifier: ^0.27.2
+        version: 0.27.2(apache-arrow@17.0.0)
       '@lifeos/contracts':
         specifier: workspace:*
         version: link:../contracts
@@ -2450,51 +2450,52 @@ packages:
     resolution: {integrity: sha512-hloP58zRVCRSpgDxmqCWJNlizAlUgJFqG2ypq79DCvyv9tHjRYMDOcPFjzfl/A1/YxDvRCZz8wvZvmapQnKwFQ==}
     engines: {node: '>=12'}
 
-  '@lancedb/lancedb-darwin-arm64@0.27.1':
-    resolution: {integrity: sha512-yF9N0Kyq2uIlfaoAoxBrCJ5M3cLRB+Iwx/uvwtt99UMZ5ZbUFXgMzJb8FYJwj/5voteal+53jQcbIbAH41MwUw==}
+  '@lancedb/lancedb-darwin-arm64@0.27.2':
+    resolution: {integrity: sha512-+XM68V/Rou8kKWDnUeKvg9ChKS0zGeQC2sKAop+06Ty4LwIjEGkeYBYrK0vMhZkBN5EFaOjTOp8E8hGQxdFwXA==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [darwin]
 
-  '@lancedb/lancedb-linux-arm64-gnu@0.27.1':
-    resolution: {integrity: sha512-7P7TKxHjn7wfa7SQuDfxPU+DMt6thZJE0ccvc9RSifFVd8OxJdsWa2hvopsR3r985t68ggx8GjhW81ILr4iJ8w==}
+  '@lancedb/lancedb-linux-arm64-gnu@0.27.2':
+    resolution: {integrity: sha512-laiTTDeMUTzm7t+t6ME5nNQMDoERjmkeuWAFWekbXiFdmp62Dqu34Lvf2BvpWnKwxLMZ5JcBJFIw32WS8/8Jnw==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
 
-  '@lancedb/lancedb-linux-arm64-musl@0.27.1':
-    resolution: {integrity: sha512-qD/6iRwi18y3QgWlydZ3KwC5PNMkGuKP9UZI1NGt/37S9DdRDgPDoKD67ftdc4HOVeg4gffEsaxoV781Sfdc9Q==}
+  '@lancedb/lancedb-linux-arm64-musl@0.27.2':
+    resolution: {integrity: sha512-bK5Mc50EvwGZaaiym5CoPu8Y4GNSyEEvTQ0dTC2AUIm83qdQu1rGw6kkYtc/rTH/hbvAvPQot4agHDZfMVxfYw==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [linux]
 
-  '@lancedb/lancedb-linux-x64-gnu@0.27.1':
-    resolution: {integrity: sha512-5ciKVaUH/tuBR2hAeM/4se+C18YsbNjgUDq4kxGfMh+/YI2v4Gl7mniYKh9jx93S2lQJJsVowqWGnOdkNB0Zhw==}
+  '@lancedb/lancedb-linux-x64-gnu@0.27.2':
+    resolution: {integrity: sha512-qe+ML0YmPru0o84f33RBHqoNk6zsHBjiXTLKsEBDiiFYKks/XMsrkKy9NQYcTxShBrg/nx/MLzCzd7dihqgNYw==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
 
-  '@lancedb/lancedb-linux-x64-musl@0.27.1':
-    resolution: {integrity: sha512-eeXZsryHux4bg03nPAkNzgL9Zp6cXMvizYxQ0N6mdcpumnkoRoJC3VqwUzaeplMzqMhjATmoaes4GkTRzHsVwA==}
+  '@lancedb/lancedb-linux-x64-musl@0.27.2':
+    resolution: {integrity: sha512-ZpX6Oxn06qvzAdm+D/gNb3SRp/A9lgRAPvPg6nnMmSQk5XamC/hbGO07uK1wwop7nlqXUH/thk4is2y2ieWdTw==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [linux]
 
-  '@lancedb/lancedb-win32-arm64-msvc@0.27.1':
-    resolution: {integrity: sha512-xSUNYZQwgDI782lb8XHFvM57QEDHnIS4n+SYBLHH428urdEoJdA4tVrwOJZoIBayKHdv7sPFPIumP40U56FDIg==}
+  '@lancedb/lancedb-win32-arm64-msvc@0.27.2':
+    resolution: {integrity: sha512-4ffpFvh49MiUtkdFJOmBytXEbgUPXORphTOuExnJAgT1VAKwQcu4ZzdsgNoK6mumKBaU+pYQU/MedNkgTzx/Lw==}
     engines: {node: '>= 18'}
     cpu: [arm64]
     os: [win32]
 
-  '@lancedb/lancedb-win32-x64-msvc@0.27.1':
-    resolution: {integrity: sha512-pPR0wHhxtXp57R69g40P2Qs3iNyM4mZqCB/bOyRFhIVreaGooSDtEQREZzALoO/xpP7pj/MeFJpsM8LGyfz1bw==}
+  '@lancedb/lancedb-win32-x64-msvc@0.27.2':
+    resolution: {integrity: sha512-XlwiI6CK2Gkqq+FFVAStHojao/XjIJpDPTm7Tb9SpLL64IlwGw3yaT2hnWKTm90W4KlSrpfSldPly+s+y4U7JQ==}
     engines: {node: '>= 18'}
     cpu: [x64]
     os: [win32]
 
-  '@lancedb/lancedb@0.27.1':
-    resolution: {integrity: sha512-LqXw19VYXaG1bV/03wN5JrYOSrRv38RPbKHW0hukbyfsNV4+VuZ3VpObk3gDeJGPkkJ56MS3lbbB2pqqg1DiNQ==}
+  '@lancedb/lancedb@0.27.2':
+    resolution: {integrity: sha512-JQpZHV5KzUzDI3flYCjtZcfHlEbL8lM54E0NT+jrRYe29aKYegfavvPsAsuZp0VdcMwFMZcpMkaBhjQMo/fwvg==}
     engines: {node: '>= 18'}
+    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'
@@ -3055,11 +3056,11 @@ packages:
   '@swc/helpers@0.5.20':
     resolution: {integrity: sha512-2egEBHUMasdypIzrprsu8g+OEVd7Vp2MM3a2eVlM/cyFYto0nGz5BX5BTgh/ShZZI9ed+ozEq+Ngt+rgmUs8tw==}
 
-  '@tanstack/query-core@5.95.2':
-    resolution: {integrity: sha512-o4T8vZHZET4Bib3jZ/tCW9/7080urD4c+0/AUaYVpIqOsr7y0reBc1oX3ttNaSW5mYyvZHctiQ/UOP2PfdmFEQ==}
+  '@tanstack/query-core@5.96.0':
+    resolution: {integrity: sha512-sfO3uQeol1BU7cRP6NYY7nAiX3GiNY20lI/dtSbKLwcIkYw/X+w/tEsQAkc544AfIhBX/IvH/QYtPHrPhyAKGw==}
 
-  '@tanstack/react-query@5.95.2':
-    resolution: {integrity: sha512-/wGkvLj/st5Ud1Q76KF1uFxScV7WeqN1slQx5280ycwAyYkIPGaRZAEgHxe3bjirSd5Zpwkj6zNcR4cqYni/ZA==}
+  '@tanstack/react-query@5.96.0':
+    resolution: {integrity: sha512-6qbjdm1K5kizVKv9TNqhIN3doq2anRhdF2XaFMFSn4m8L22S69RV+FilvlyVT4RoJyMxtPU5rs4RpdFa/PEC7A==}
     peerDependencies:
       react: ^18 || ^19
 
@@ -9169,39 +9170,39 @@ snapshots:
     dependencies:
       jsbi: 4.3.2
 
-  '@lancedb/lancedb-darwin-arm64@0.27.1':
+  '@lancedb/lancedb-darwin-arm64@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-linux-arm64-gnu@0.27.1':
+  '@lancedb/lancedb-linux-arm64-gnu@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-linux-arm64-musl@0.27.1':
+  '@lancedb/lancedb-linux-arm64-musl@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-linux-x64-gnu@0.27.1':
+  '@lancedb/lancedb-linux-x64-gnu@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-linux-x64-musl@0.27.1':
+  '@lancedb/lancedb-linux-x64-musl@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-win32-arm64-msvc@0.27.1':
+  '@lancedb/lancedb-win32-arm64-msvc@0.27.2':
     optional: true
 
-  '@lancedb/lancedb-win32-x64-msvc@0.27.1':
+  '@lancedb/lancedb-win32-x64-msvc@0.27.2':
     optional: true
 
-  '@lancedb/lancedb@0.27.1(apache-arrow@17.0.0)':
+  '@lancedb/lancedb@0.27.2(apache-arrow@17.0.0)':
     dependencies:
       apache-arrow: 17.0.0
       reflect-metadata: 0.2.2
     optionalDependencies:
-      '@lancedb/lancedb-darwin-arm64': 0.27.1
-      '@lancedb/lancedb-linux-arm64-gnu': 0.27.1
-      '@lancedb/lancedb-linux-arm64-musl': 0.27.1
-      '@lancedb/lancedb-linux-x64-gnu': 0.27.1
-      '@lancedb/lancedb-linux-x64-musl': 0.27.1
-      '@lancedb/lancedb-win32-arm64-msvc': 0.27.1
-      '@lancedb/lancedb-win32-x64-msvc': 0.27.1
+      '@lancedb/lancedb-darwin-arm64': 0.27.2
+      '@lancedb/lancedb-linux-arm64-gnu': 0.27.2
+      '@lancedb/lancedb-linux-arm64-musl': 0.27.2
+      '@lancedb/lancedb-linux-x64-gnu': 0.27.2
+      '@lancedb/lancedb-linux-x64-musl': 0.27.2
+      '@lancedb/lancedb-win32-arm64-msvc': 0.27.2
+      '@lancedb/lancedb-win32-x64-msvc': 0.27.2
 
   '@manypkg/find-root@1.1.0':
     dependencies:
@@ -9850,16 +9851,16 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@tanstack/query-core@5.95.2': {}
+  '@tanstack/query-core@5.96.0': {}
 
-  '@tanstack/react-query@5.95.2(react@18.3.1)':
+  '@tanstack/react-query@5.96.0(react@18.3.1)':
     dependencies:
-      '@tanstack/query-core': 5.95.2
+      '@tanstack/query-core': 5.96.0
       react: 18.3.1
 
-  '@tanstack/react-query@5.95.2(react@19.2.4)':
+  '@tanstack/react-query@5.96.0(react@19.2.4)':
     dependencies:
-      '@tanstack/query-core': 5.95.2
+      '@tanstack/query-core': 5.96.0
       react: 19.2.4
 
   '@tauri-apps/api@2.10.1': {}

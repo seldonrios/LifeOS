@@ -13,7 +13,7 @@
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
     "@lifeos/ui": "workspace:*",
-    "@tanstack/react-query": "^5.95.2",
+    "@tanstack/react-query": "^5.96.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4"
   },
