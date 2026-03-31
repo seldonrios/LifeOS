@@ -1,0 +1,239 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+:root {
+  color: #142022;
+  background: #f4f7ef;
+  font-family: 'Space Grotesk', 'Segoe UI', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 8% 8%, #e7f4c9 0%, transparent 37%),
+    radial-gradient(circle at 93% 0%, #cce9f0 0%, transparent 33%),
+    linear-gradient(140deg, #f6f8f1 0%, #edf2e8 100%);
+}
+
+code {
+  font-family: 'IBM Plex Mono', Consolas, monospace;
+}
+
+.shell {
+  min-height: 100vh;
+  padding: 1.2rem;
+  color: var(--ink-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.top-bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.top-bar h1 {
+  margin: 0;
+  font-size: clamp(1.5rem, 3vw, 2.6rem);
+  letter-spacing: 0.01em;
+}
+
+.top-bar p {
+  margin: 0;
+  color: var(--ink-secondary);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.95rem;
+}
+
+.status-banner {
+  border-radius: 14px;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid #b5d5c3;
+  background: #eaf7ee;
+  font-weight: 500;
+}
+
+.status-banner-warning {
+  border-color: #e2bc70;
+  background: #fff4de;
+}
+
+.status-banner-error {
+  border-color: #e2a3a3;
+  background: #ffe8e8;
+}
+
+.notice-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 0.7rem;
+}
+
+.notice-card {
+  border: 1px solid #d8e4d2;
+  border-radius: 14px;
+  background: #ffffffcc;
+  padding: 0.8rem;
+  backdrop-filter: blur(6px);
+}
+
+.notice-card h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.notice-card p {
+  margin: 0.35rem 0 0;
+  color: #455758;
+}
+
+.notice-warning {
+  border-color: #e0b268;
+  background: #fff3da;
+}
+
+.grid {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.kitchen-grid {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.hallway-grid {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+.panel {
+  border: 1px solid #dbe5d8;
+  border-radius: 16px;
+  background: #ffffffdc;
+  padding: 0.85rem;
+  box-shadow: 0 10px 26px rgba(20, 40, 29, 0.08);
+}
+
+.panel h2 {
+  margin: 0 0 0.7rem;
+  font-size: 1.1rem;
+}
+
+.panel ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.panel li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.8rem;
+  align-items: center;
+  font-size: 0.98rem;
+}
+
+.quick-action-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.quick-action-button {
+  border: 1px solid #2a8575;
+  background: #e0f7f1;
+  color: #11493f;
+  border-radius: 999px;
+  padding: 0.2rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.quick-action-button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.panel time {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.86rem;
+  color: #5f6f72;
+}
+
+.panel-hero {
+  background: linear-gradient(160deg, #18352f 0%, #0f5c53 100%);
+  color: #f2fff9;
+  border-color: #1f7065;
+}
+
+.panel-hero h2 {
+  color: #cdeee4;
+}
+
+.hero-line {
+  margin: 0;
+  font-size: clamp(1.2rem, 2.8vw, 2rem);
+  line-height: 1.1;
+}
+
+.hero-subtle {
+  margin: 0.55rem 0 0;
+  color: #d8efe8;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 0.9rem;
+}
+
+.pill {
+  border-radius: 999px;
+  border: 1px solid #b8d7ca;
+  background: #eefaf4;
+  color: #24554a;
+  padding: 0.1rem 0.5rem;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.empty-text {
+  margin: 0;
+  color: #637678;
+}
+
+.shell-setup {
+  justify-content: center;
+  align-items: center;
+}
+
+.setup-card {
+  max-width: 580px;
+  border: 1px solid #d7e4d3;
+  border-radius: 18px;
+  background: #ffffffee;
+  padding: 1rem;
+  box-shadow: 0 12px 30px rgba(20, 40, 29, 0.12);
+}
+
+.setup-card h1 {
+  margin-top: 0;
+}
+
+@media (max-width: 720px) {
+  .shell {
+    padding: 0.75rem;
+  }
+
+  .panel li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+}
