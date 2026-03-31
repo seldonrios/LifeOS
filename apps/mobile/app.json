@@ -13,7 +13,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "plugins": ["expo-router", "expo-notifications"],
+    "plugins": [
+      "expo-router",
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Allow LifeOS to use the microphone for voice capture.",
+          "speechRecognitionPermission": "Allow LifeOS to transcribe your voice captures.",
+          "androidSpeechServicePackages": ["com.google.android.googlequicksearchbox"]
+        }
+      ],
+      "expo-notifications"
+    ],
     "extra": {
       "apiUrl": "http://localhost:3005"
     },

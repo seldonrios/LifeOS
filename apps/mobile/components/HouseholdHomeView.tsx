@@ -1,10 +1,10 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { sdk } from '../lib/sdk';
 import { queryClient } from '../lib/query-client';
 import {
   ActivityIndicator,
-  Alert,
+  Animated,
   Pressable,
   ScrollView,
   Share,
@@ -16,6 +16,9 @@ import {
 } from 'react-native';
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
+import { getOrCreateDeviceId } from '../lib/notifications';
+import { useVoiceRecorder } from '../lib/voice-recorder';
+
 type HouseholdHomeViewProps = {
   householdId: string;
 };
@@ -23,11 +26,19 @@ type HouseholdHomeViewProps = {
 type HouseholdSection = 'today' | 'chores' | 'shopping' | 'calendar';
 type ShoppingStatus = 'added' | 'in_cart' | 'purchased';
 type HouseholdMemberStatus = 'active' | 'away' | 'pending';
+type HouseholdVoiceTargetHint = 'shopping' | 'chore' | 'unknown';
+type VoiceResolutionCard = {
+  tone: 'resolved' | 'unresolved';
+  message: string;
+};
 
 type ChoreDetail = Awaited<ReturnType<typeof sdk.household.chores.list>>[number];
 type ShoppingItem = Awaited<ReturnType<typeof sdk.household.shopping.items>>[number];
 type CalendarRow = Awaited<ReturnType<typeof sdk.household.calendar.list>>[number];
 type CalendarEvent = Awaited<ReturnType<typeof sdk.household.calendar.events>>[number];
+
+const VOICE_STATUS_TIMEOUT_MS = 10_000;
+const VOICE_STATUS_POLL_INTERVAL_MS = 500;
 
 function startOfDay(date: Date): Date {
   const next = new Date(date);
@@ -103,6 +114,343 @@ function nextShoppingStatus(status: ShoppingStatus): ShoppingStatus {
     return 'purchased';
   }
   return 'added';
+}
+
+function formatDuration(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.floor(durationMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
+function wait(durationMs: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, durationMs));
+}
+
+async function pollHouseholdCaptureStatus(householdId: string, captureId: string) {
+  const deadline = Date.now() + VOICE_STATUS_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    const status = await sdk.household.captures.status(householdId, captureId);
+    if (status.status !== 'pending') {
+      return status;
+    }
+
+    await wait(VOICE_STATUS_POLL_INTERVAL_MS);
+  }
+
+  return { status: 'unresolved' as const };
+}
+
+function HouseholdVoiceCaptureCard({
+  householdId,
+  targetHint,
+  onResolved,
+}: {
+  householdId: string;
+  targetHint: HouseholdVoiceTargetHint;
+  onResolved?: () => Promise<void> | void;
+}) {
+  const colorScheme = useColorScheme();
+  const palette = colorScheme === 'dark' ? darkColors : lightColors;
+  const pulseAnim = useRef(new Animated.Value(0)).current;
+  const recordingStartedAtRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [resolutionCard, setResolutionCard] = useState<VoiceResolutionCard | null>(null);
+  const {
+    recordingState,
+    error: voiceError,
+    startRecording,
+    stopRecording,
+    resetProcessing,
+    clearError,
+  } = useVoiceRecorder();
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recordingState !== 'recording') {
+      return;
+    }
+
+    if (recordingStartedAtRef.current === null) {
+      recordingStartedAtRef.current = Date.now();
+    }
+
+    const interval = setInterval(() => {
+      if (recordingStartedAtRef.current === null) {
+        return;
+      }
+
+      setElapsedMs(Date.now() - recordingStartedAtRef.current);
+    }, 250);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [recordingState]);
+
+  useEffect(() => {
+    if (recordingState !== 'recording') {
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(0);
+      return;
+    }
+
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    pulse.start();
+
+    return () => {
+      pulse.stop();
+      pulseAnim.stopAnimation();
+      pulseAnim.setValue(0);
+    };
+  }, [pulseAnim, recordingState]);
+
+  const pulseScale = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.45],
+  });
+
+  const pulseOpacity = pulseAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0.5, 0],
+  });
+
+  const dismissResolution = useCallback(() => {
+    setResolutionCard(null);
+  }, []);
+
+  const invalidateHouseholdQueries = useCallback(async () => {
+    await queryClient.invalidateQueries({ queryKey: ['household', householdId] });
+    await onResolved?.();
+  }, [householdId, onResolved]);
+
+  const handleStartRecording = useCallback(async () => {
+    clearError();
+    setSubmitError(null);
+    setResolutionCard(null);
+    setElapsedMs(0);
+    recordingStartedAtRef.current = null;
+
+    const started = await startRecording();
+    if (started) {
+      recordingStartedAtRef.current = Date.now();
+    }
+  }, [clearError, startRecording]);
+
+  const handleStopRecording = useCallback(async () => {
+    const recording = await stopRecording();
+    recordingStartedAtRef.current = null;
+
+    if (!recording) {
+      return;
+    }
+
+    setElapsedMs(recording.durationMs);
+
+    try {
+      const transcript = recording.transcript?.trim() ?? '';
+      if (transcript.length === 0) {
+        setResolutionCard({
+          tone: 'unresolved',
+          message: "Couldn't understand — check your inbox",
+        });
+        return;
+      }
+
+      const sourceDeviceId = await getOrCreateDeviceId();
+      const capture = await sdk.capture.create({
+        type: 'voice',
+        content: transcript,
+        metadata: {
+          scope: 'household',
+          householdId,
+          source: 'mobile',
+          sourceDeviceId,
+          targetHint,
+        },
+      });
+      const status = await pollHouseholdCaptureStatus(householdId, capture.id);
+
+      if (!mountedRef.current) {
+        return;
+      }
+
+      if (status.status === 'resolved') {
+        setResolutionCard({
+          tone: 'resolved',
+          message: status.resolvedAction ?? 'Capture resolved',
+        });
+        await invalidateHouseholdQueries();
+        return;
+      }
+
+      setResolutionCard({
+        tone: 'unresolved',
+        message: "Couldn't understand — check your inbox",
+      });
+    } catch (caught) {
+      if (!mountedRef.current) {
+        return;
+      }
+
+      const message = caught instanceof Error ? caught.message : 'Unable to process voice capture';
+      setSubmitError(message);
+    } finally {
+      resetProcessing();
+      setElapsedMs(0);
+    }
+  }, [householdId, invalidateHouseholdQueries, resetProcessing, stopRecording, targetHint]);
+
+  return (
+    <View
+      style={[
+        styles.voiceCaptureCard,
+        {
+          backgroundColor: palette.background.card,
+          borderColor: palette.border.default,
+        },
+      ]}
+    >
+      {recordingState === 'processing' ? (
+        <View style={styles.voiceProcessingState}>
+          <ActivityIndicator size="small" color={palette.accent.brand} />
+          <Text style={[styles.voiceStatusText, { color: palette.text.secondary }]}>
+            Processing…
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View style={styles.voiceButtonWrap}>
+            {recordingState === 'recording' ? (
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  styles.voicePulseRing,
+                  {
+                    borderColor: palette.accent.danger,
+                    opacity: pulseOpacity,
+                    transform: [{ scale: pulseScale }],
+                  },
+                ]}
+              />
+            ) : null}
+            <Pressable
+              style={[
+                styles.voiceCaptureButton,
+                {
+                  backgroundColor:
+                    recordingState === 'recording'
+                      ? palette.accent.danger
+                      : palette.accent.brand,
+                },
+              ]}
+              onPress={() => {
+                if (recordingState === 'recording') {
+                  void handleStopRecording();
+                  return;
+                }
+
+                void handleStartRecording();
+              }}
+            >
+              <Text
+                style={[styles.voiceCaptureButtonText, { color: palette.background.primary }]}
+              >
+                {recordingState === 'recording' ? '■' : '🎤'}
+              </Text>
+            </Pressable>
+          </View>
+
+          <Text style={[styles.voiceStatusText, { color: palette.text.secondary }]}>
+            {recordingState === 'recording' ? 'Listening…' : 'Tap to speak'}
+          </Text>
+
+          {recordingState === 'recording' ? (
+            <Text style={[styles.voiceDurationText, { color: palette.text.secondary }]}>
+              {formatDuration(elapsedMs)}
+            </Text>
+          ) : null}
+        </>
+      )}
+
+      {voiceError ? (
+        <Text style={[styles.errorText, { color: palette.accent.danger }]}>{voiceError}</Text>
+      ) : null}
+
+      {submitError ? (
+        <Text style={[styles.errorText, { color: palette.accent.danger }]}>{submitError}</Text>
+      ) : null}
+
+      {resolutionCard ? (
+        <View
+          style={[
+            styles.resolutionCard,
+            {
+              backgroundColor:
+                resolutionCard.tone === 'resolved'
+                  ? palette.background.secondary
+                  : palette.background.secondary,
+              borderColor:
+                resolutionCard.tone === 'resolved'
+                  ? palette.accent.success
+                  : palette.accent.warning,
+            },
+          ]}
+        >
+          <Text
+            style={[
+              styles.resolutionCardText,
+              {
+                color:
+                  resolutionCard.tone === 'resolved'
+                    ? palette.accent.success
+                    : palette.accent.warning,
+              },
+            ]}
+          >
+            {resolutionCard.message}
+          </Text>
+          <Pressable
+            style={[
+              styles.resolutionDismissButton,
+              {
+                borderColor: palette.border.default,
+              },
+            ]}
+            onPress={dismissResolution}
+          >
+            <Text style={[styles.resolutionDismissText, { color: palette.text.secondary }]}>
+              Dismiss
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 export function HouseholdHomeView({ householdId }: HouseholdHomeViewProps) {
@@ -199,6 +547,8 @@ function HouseholdTodaySection({ householdId }: { householdId: string }) {
 
   return (
     <View style={styles.sectionContent}>
+      <HouseholdVoiceCaptureCard householdId={householdId} targetHint="unknown" />
+
       <View
         style={[
           styles.card,
@@ -420,6 +770,8 @@ function HouseholdChoresSection({ householdId }: { householdId: string }) {
 
   return (
     <View style={styles.sectionContent}>
+      <HouseholdVoiceCaptureCard householdId={householdId} targetHint="chore" />
+
       {error ? <Text style={[styles.errorText, { color: palette.accent.danger }]}>{error}</Text> : null}
       {isLoading ? <ActivityIndicator size="small" color={palette.accent.brand} /> : null}
 
@@ -535,6 +887,8 @@ function HouseholdShoppingSection({ householdId }: { householdId: string }) {
 
   return (
     <View style={styles.sectionContent}>
+      <HouseholdVoiceCaptureCard householdId={householdId} targetHint="shopping" />
+
       {error ? <Text style={[styles.errorText, { color: palette.accent.danger }]}>{error}</Text> : null}
       <View style={styles.fastAddRow}>
         <TextInput
@@ -559,12 +913,6 @@ function HouseholdShoppingSection({ householdId }: { householdId: string }) {
           disabled={loading || !listId}
         >
           <Text style={[styles.addButtonText, { color: palette.background.primary }]}>Add</Text>
-        </Pressable>
-        <Pressable
-          style={[styles.voiceButton, { borderColor: palette.border.default }]}
-          onPress={() => Alert.alert('Coming soon', 'Voice add will be available in a future update.')}
-        >
-          <Text style={[styles.voiceText, { color: palette.text.secondary }]}>🎤</Text>
         </Pressable>
       </View>
 
@@ -914,6 +1262,52 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing[2],
   },
+  voiceCaptureCard: {
+    borderWidth: 1,
+    borderRadius: spacing[3],
+    paddingHorizontal: spacing[4],
+    paddingVertical: spacing[3],
+    alignItems: 'center',
+    gap: spacing[2],
+  },
+  voiceProcessingState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing[2],
+    minHeight: 108,
+  },
+  voiceButtonWrap: {
+    width: 112,
+    height: 112,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  voicePulseRing: {
+    position: 'absolute',
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 2,
+  },
+  voiceCaptureButton: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  voiceCaptureButtonText: {
+    fontSize: typography.fontSize.xl,
+    fontWeight: typography.fontWeight.bold,
+  },
+  voiceStatusText: {
+    fontSize: typography.fontSize.base,
+    fontWeight: typography.fontWeight.medium,
+  },
+  voiceDurationText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
   fastAddInput: {
     flex: 1,
     borderWidth: 1,
@@ -931,14 +1325,27 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.semibold,
   },
-  voiceButton: {
+  resolutionCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderRadius: spacing[3],
+    padding: spacing[3],
+    gap: spacing[2],
+  },
+  resolutionCardText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
+  },
+  resolutionDismissButton: {
+    alignSelf: 'flex-start',
     borderWidth: 1,
     borderRadius: spacing[2],
     paddingHorizontal: spacing[3],
     paddingVertical: spacing[2],
   },
-  voiceText: {
-    fontSize: typography.fontSize.base,
+  resolutionDismissText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.semibold,
   },
   shoppingItem: {
     borderWidth: 1,

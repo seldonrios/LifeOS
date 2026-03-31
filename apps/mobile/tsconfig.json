@@ -5,7 +5,9 @@
     "jsx": "react-native",
     "rootDir": ".",
     "baseUrl": ".",
-    "paths": {},
+    "paths": {
+      "@lifeos/*": ["../../packages/*/src/index.ts"]
+    },
     "types": ["react", "react-native"]
   },
   "include": ["app/**/*.tsx", "components/**/*.ts", "components/**/*.tsx", "lib/**/*.ts"],

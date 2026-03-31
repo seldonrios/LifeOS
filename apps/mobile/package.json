@@ -27,6 +27,7 @@
     "expo-notifications": "~0.29.14",
     "expo-router": "~4.0.22",
     "expo-secure-store": "~14.0.1",
+    "expo-speech-recognition": "3.1.2",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-hook-form": "^7.66.0",

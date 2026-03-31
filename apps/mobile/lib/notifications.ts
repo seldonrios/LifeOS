@@ -22,7 +22,7 @@ function resolvePlatform(): PushPlatform | null {
   return null;
 }
 
-async function getOrCreateDeviceId(): Promise<string> {
+export async function getOrCreateDeviceId(): Promise<string> {
   const existing = await SecureStore.getItemAsync(DEVICE_ID_KEY);
   if (existing) {
     return existing;

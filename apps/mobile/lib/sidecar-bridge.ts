@@ -5,13 +5,7 @@
  * Uses dynamic/runtime access to Tauri APIs to avoid TypeScript build errors in React Native context.
  */
 
-export interface ReviewLoopSummary {
-  pendingCaptures: number;
-  actionsDueToday: number;
-  unacknowledgedReminders: number;
-  completedActions: string[];
-  suggestedNextActions?: string[];
-}
+import type { ReviewLoopSummary } from '@lifeos/contracts';
 
 function isTauriRuntime(): boolean {
   // Runtime check using globalThis to avoid React Native type conflicts
