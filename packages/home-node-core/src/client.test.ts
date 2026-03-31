@@ -28,6 +28,22 @@ function createClientHarness(): { client: HomeNodeGraphClient; cleanup: () => vo
   };
 }
 
+function seedHomeAndZone(client: HomeNodeGraphClient): void {
+  client.upsertHome({
+    homeId: 'home-default',
+    householdId: 'household-1',
+    name: 'Family Home',
+    timezone: 'UTC',
+  });
+
+  client.upsertZone({
+    zoneId: 'zone-kitchen',
+    homeId: 'home-default',
+    name: 'Kitchen',
+    type: 'kitchen',
+  });
+}
+
 const baseSnapshot = HomeStateSnapshotSchema.parse({
   home_mode: 'home',
   occupancy_summary: 'occupied',
@@ -135,5 +151,149 @@ test('initializeSchema is idempotent across restarts', () => {
   } finally {
     clientB.close();
     rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
+test('registerSurface persists and returns active surface details', () => {
+  const { client, cleanup } = createClientHarness();
+  try {
+    seedHomeAndZone(client);
+
+    const registered = client.registerSurface({
+      surfaceId: 'surface-kitchen-1',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read', 'quick-action'],
+      registeredAt: '2026-03-31T10:00:00.000Z',
+    });
+
+    const surface = client.getSurface('surface-kitchen-1');
+    assert.equal(registered.household_id, 'household-1');
+    assert.ok(surface);
+    assert.equal(surface?.active, true);
+    assert.equal(surface?.kind, 'kitchen_display');
+  } finally {
+    cleanup();
+  }
+});
+
+test('deregisterSurface performs soft deactivation', () => {
+  const { client, cleanup } = createClientHarness();
+  try {
+    seedHomeAndZone(client);
+    client.registerSurface({
+      surfaceId: 'surface-kitchen-1',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    const deregistered = client.deregisterSurface('surface-kitchen-1');
+    const surface = client.getSurface('surface-kitchen-1');
+
+    assert.ok(deregistered);
+    assert.equal(surface?.active, false);
+  } finally {
+    cleanup();
+  }
+});
+
+test('listSurfaces applies active and zone filters', () => {
+  const { client, cleanup } = createClientHarness();
+  try {
+    seedHomeAndZone(client);
+    client.registerSurface({
+      surfaceId: 'surface-kitchen-1',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    client.registerSurface({
+      surfaceId: 'surface-kitchen-2',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'hallway_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+    client.deregisterSurface('surface-kitchen-2');
+
+    const active = client.listSurfaces({ active: true });
+    const inactive = client.listSurfaces({ active: false, zoneId: 'zone-kitchen' });
+
+    assert.equal(active.length, 1);
+    assert.equal(inactive.length, 1);
+    assert.equal(inactive[0]?.surface_id, 'surface-kitchen-2');
+  } finally {
+    cleanup();
+  }
+});
+
+test('watchdog helpers find stale surfaces and heartbeat reactivates them', () => {
+  const { client, cleanup } = createClientHarness();
+  try {
+    seedHomeAndZone(client);
+    client.registerSurface({
+      surfaceId: 'surface-kitchen-1',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+      lastSeenAt: '2026-03-31T08:00:00.000Z',
+    });
+
+    const stale = client.listStaleActiveSurfaces('2026-03-31T09:00:00.000Z');
+    assert.equal(stale.length, 1);
+    assert.equal(stale[0]?.surface_id, 'surface-kitchen-1');
+
+    assert.equal(client.markSurfaceInactive('surface-kitchen-1'), true);
+    assert.equal(client.getSurface('surface-kitchen-1')?.active, false);
+
+    const refreshed = client.recordSurfaceHeartbeat(
+      'surface-kitchen-1',
+      '2026-03-31T10:00:00.000Z',
+    );
+    assert.equal(refreshed?.active, true);
+  } finally {
+    cleanup();
+  }
+});
+
+test('registerSurface rejects trust-level changes for existing surface_id', () => {
+  const { client, cleanup } = createClientHarness();
+  try {
+    seedHomeAndZone(client);
+    client.registerSurface({
+      surfaceId: 'surface-kitchen-immutable',
+      homeId: 'home-default',
+      zoneId: 'zone-kitchen',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    assert.throws(() => {
+      client.registerSurface({
+        surfaceId: 'surface-kitchen-immutable',
+        homeId: 'home-default',
+        zoneId: 'zone-kitchen',
+        kind: 'kitchen_display',
+        trustLevel: 'personal',
+        capabilities: ['read'],
+      });
+    }, /trust level is immutable once registered/);
+
+    const surface = client.getSurface('surface-kitchen-immutable');
+    assert.equal(surface?.trust_level, 'household');
+  } finally {
+    cleanup();
   }
 });

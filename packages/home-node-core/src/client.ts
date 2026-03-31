@@ -4,7 +4,22 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { HomeStateSnapshotSchema, type HomeMode, type HomeStateSnapshot } from '@lifeos/contracts';
+import {
+  HomeNodeHomeSchema,
+  HomeNodeSurfaceRegisteredSchema,
+  HomeNodeSurfaceSchema,
+  HomeNodeZoneSchema,
+  HomeStateSnapshotSchema,
+  type HomeMode,
+  type HomeNodeHome,
+  type HomeNodeSurface,
+  type HomeNodeSurfaceRegistered,
+  type HomeNodeZone,
+  type HomeStateSnapshot,
+  type SurfaceCapability,
+  type SurfaceKind,
+  type SurfaceTrustLevel,
+} from '@lifeos/contracts';
 
 const migration001Path = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -44,6 +59,76 @@ export interface HomeStateSnapshotRow {
   adapter_health_json: string;
   snapshot_at: string;
   updated_at: string;
+}
+
+export interface HomeNodeHomeRow {
+  home_id: string;
+  household_id: string;
+  name: string;
+  timezone: string;
+  quiet_hours_start: string | null;
+  quiet_hours_end: string | null;
+  routine_profile: string | null;
+}
+
+export interface HomeNodeZoneRow {
+  zone_id: string;
+  home_id: string;
+  name: string;
+  type: HomeNodeZone['type'];
+}
+
+export interface HomeNodeSurfaceRow {
+  surface_id: string;
+  zone_id: string;
+  home_id: string;
+  kind: SurfaceKind;
+  trust_level: SurfaceTrustLevel;
+  capabilities_json: string;
+  active: number;
+  registered_at: string;
+  last_seen_at: string | null;
+}
+
+interface HomeNodeSurfaceWithHouseholdRow extends HomeNodeSurfaceRow {
+  household_id: string;
+}
+
+export interface HomeNodeHomeWrite {
+  homeId: string;
+  householdId: string;
+  name: string;
+  timezone: string;
+  quietHoursStart?: string;
+  quietHoursEnd?: string;
+  routineProfile?: string;
+  createdAt?: string;
+}
+
+export interface HomeNodeZoneWrite {
+  zoneId: string;
+  homeId: string;
+  name: string;
+  type: HomeNodeZone['type'];
+  createdAt?: string;
+}
+
+export interface SurfaceRegistrationWrite {
+  surfaceId: string;
+  zoneId: string;
+  homeId: string;
+  kind: SurfaceKind;
+  trustLevel: SurfaceTrustLevel;
+  capabilities: SurfaceCapability[];
+  registeredAt?: string;
+  lastSeenAt?: string;
+}
+
+export interface SurfaceListFilter {
+  householdId?: string;
+  homeId?: string;
+  zoneId?: string;
+  active?: boolean;
 }
 
 export interface AmbientActionWrite {
@@ -212,6 +297,54 @@ function ensureIsoDateTime(value: string): string {
   return parsed.toISOString();
 }
 
+function toHomeNodeHome(row: HomeNodeHomeRow): HomeNodeHome {
+  return HomeNodeHomeSchema.parse({
+    home_id: row.home_id,
+    household_id: row.household_id,
+    name: row.name,
+    timezone: row.timezone,
+    quiet_hours_start: row.quiet_hours_start ?? undefined,
+    quiet_hours_end: row.quiet_hours_end ?? undefined,
+    routine_profile: row.routine_profile ?? undefined,
+  });
+}
+
+function toHomeNodeZone(row: HomeNodeZoneRow): HomeNodeZone {
+  return HomeNodeZoneSchema.parse({
+    zone_id: row.zone_id,
+    home_id: row.home_id,
+    name: row.name,
+    type: row.type,
+  });
+}
+
+function toHomeNodeSurface(row: HomeNodeSurfaceRow): HomeNodeSurface {
+  return HomeNodeSurfaceSchema.parse({
+    surface_id: row.surface_id,
+    zone_id: row.zone_id,
+    kind: row.kind,
+    trust_level: row.trust_level,
+    capabilities: parseJson<SurfaceCapability[]>(row.capabilities_json, []),
+    active: row.active === 1,
+    registered_at: row.registered_at,
+  });
+}
+
+function toHomeNodeSurfaceRegistered(
+  row: HomeNodeSurfaceWithHouseholdRow,
+): HomeNodeSurfaceRegistered {
+  return HomeNodeSurfaceRegisteredSchema.parse({
+    surface_id: row.surface_id,
+    zone_id: row.zone_id,
+    home_id: row.home_id,
+    household_id: row.household_id,
+    kind: row.kind,
+    trust_level: row.trust_level,
+    capabilities: parseJson<SurfaceCapability[]>(row.capabilities_json, []),
+    registered_at: row.registered_at,
+  });
+}
+
 export class HomeNodeGraphClient {
   private readonly db: Database.Database;
 
@@ -250,6 +383,330 @@ export class HomeNodeGraphClient {
     }
 
     this.db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`);
+  }
+
+  upsertHome(input: HomeNodeHomeWrite): HomeNodeHome {
+    const createdAt = ensureIsoDateTime(input.createdAt ?? new Date().toISOString());
+
+    this.db
+      .prepare(
+        `INSERT INTO homes (
+          home_id,
+          household_id,
+          name,
+          timezone,
+          quiet_hours_start,
+          quiet_hours_end,
+          routine_profile,
+          created_at
+        ) VALUES (
+          @home_id,
+          @household_id,
+          @name,
+          @timezone,
+          @quiet_hours_start,
+          @quiet_hours_end,
+          @routine_profile,
+          @created_at
+        )
+        ON CONFLICT(home_id) DO UPDATE SET
+          household_id = excluded.household_id,
+          name = excluded.name,
+          timezone = excluded.timezone,
+          quiet_hours_start = excluded.quiet_hours_start,
+          quiet_hours_end = excluded.quiet_hours_end,
+          routine_profile = excluded.routine_profile`,
+      )
+      .run({
+        home_id: input.homeId,
+        household_id: input.householdId,
+        name: input.name,
+        timezone: input.timezone,
+        quiet_hours_start: input.quietHoursStart ?? null,
+        quiet_hours_end: input.quietHoursEnd ?? null,
+        routine_profile: input.routineProfile ?? null,
+        created_at: createdAt,
+      });
+
+    const home = this.getHomeById(input.homeId);
+    if (!home) {
+      throw new Error(`Failed to upsert home ${input.homeId}`);
+    }
+
+    return home;
+  }
+
+  getHomeById(homeId: string): HomeNodeHome | null {
+    const row = this.db.prepare('SELECT * FROM homes WHERE home_id = ? LIMIT 1').get(homeId) as
+      | HomeNodeHomeRow
+      | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return toHomeNodeHome(row);
+  }
+
+  upsertZone(input: HomeNodeZoneWrite): HomeNodeZone {
+    const createdAt = ensureIsoDateTime(input.createdAt ?? new Date().toISOString());
+
+    this.db
+      .prepare(
+        `INSERT INTO zones (
+          zone_id,
+          home_id,
+          name,
+          type,
+          created_at
+        ) VALUES (
+          @zone_id,
+          @home_id,
+          @name,
+          @type,
+          @created_at
+        )
+        ON CONFLICT(zone_id) DO UPDATE SET
+          home_id = excluded.home_id,
+          name = excluded.name,
+          type = excluded.type`,
+      )
+      .run({
+        zone_id: input.zoneId,
+        home_id: input.homeId,
+        name: input.name,
+        type: input.type,
+        created_at: createdAt,
+      });
+
+    const zone = this.getZoneById(input.zoneId);
+    if (!zone) {
+      throw new Error(`Failed to upsert zone ${input.zoneId}`);
+    }
+
+    return zone;
+  }
+
+  getZoneById(zoneId: string): HomeNodeZone | null {
+    const row = this.db
+      .prepare('SELECT zone_id, home_id, name, type FROM zones WHERE zone_id = ? LIMIT 1')
+      .get(zoneId) as HomeNodeZoneRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return toHomeNodeZone(row);
+  }
+
+  listZonesInHome(homeId: string): HomeNodeZone[] {
+    const rows = this.db
+      .prepare('SELECT zone_id, home_id, name, type FROM zones WHERE home_id = ? ORDER BY name ASC')
+      .all(homeId) as HomeNodeZoneRow[];
+
+    return rows.map((row) => toHomeNodeZone(row));
+  }
+
+  registerSurface(input: SurfaceRegistrationWrite): HomeNodeSurfaceRegistered {
+    const home = this.getHomeById(input.homeId);
+    if (!home) {
+      throw new Error(
+        `Cannot register surface ${input.surfaceId}: home ${input.homeId} was not found`,
+      );
+    }
+
+    const zone = this.getZoneById(input.zoneId);
+    if (!zone) {
+      throw new Error(
+        `Cannot register surface ${input.surfaceId}: zone ${input.zoneId} was not found`,
+      );
+    }
+
+    if (zone.home_id !== input.homeId) {
+      throw new Error(
+        `Cannot register surface ${input.surfaceId}: zone ${input.zoneId} does not belong to home ${input.homeId}`,
+      );
+    }
+
+    const existingSurface = this.db
+      .prepare('SELECT trust_level FROM surfaces WHERE surface_id = ? LIMIT 1')
+      .get(input.surfaceId) as { trust_level: SurfaceTrustLevel } | undefined;
+    if (existingSurface && existingSurface.trust_level !== input.trustLevel) {
+      throw new Error(
+        `Cannot register surface ${input.surfaceId}: trust level is immutable once registered`,
+      );
+    }
+
+    const registeredAt = ensureIsoDateTime(input.registeredAt ?? new Date().toISOString());
+    const lastSeenAt = ensureIsoDateTime(input.lastSeenAt ?? registeredAt);
+
+    this.db
+      .prepare(
+        `INSERT INTO surfaces (
+          surface_id,
+          zone_id,
+          home_id,
+          kind,
+          trust_level,
+          capabilities_json,
+          active,
+          registered_at,
+          last_seen_at
+        ) VALUES (
+          @surface_id,
+          @zone_id,
+          @home_id,
+          @kind,
+          @trust_level,
+          @capabilities_json,
+          1,
+          @registered_at,
+          @last_seen_at
+        )
+        ON CONFLICT(surface_id) DO UPDATE SET
+          zone_id = excluded.zone_id,
+          home_id = excluded.home_id,
+          kind = excluded.kind,
+          capabilities_json = excluded.capabilities_json,
+          active = 1,
+          registered_at = excluded.registered_at,
+          last_seen_at = excluded.last_seen_at`,
+      )
+      .run({
+        surface_id: input.surfaceId,
+        zone_id: input.zoneId,
+        home_id: input.homeId,
+        kind: input.kind,
+        trust_level: input.trustLevel,
+        capabilities_json: JSON.stringify(input.capabilities),
+        registered_at: registeredAt,
+        last_seen_at: lastSeenAt,
+      });
+
+    const row = this.getSurfaceRowWithHousehold(input.surfaceId);
+    if (!row) {
+      throw new Error(`Failed to register surface ${input.surfaceId}`);
+    }
+
+    return toHomeNodeSurfaceRegistered(row);
+  }
+
+  deregisterSurface(surfaceId: string): HomeNodeSurfaceRegistered | null {
+    const row = this.getSurfaceRowWithHousehold(surfaceId);
+    if (!row) {
+      return null;
+    }
+
+    this.db.prepare('UPDATE surfaces SET active = 0 WHERE surface_id = ?').run(surfaceId);
+    return toHomeNodeSurfaceRegistered(row);
+  }
+
+  getSurface(surfaceId: string): HomeNodeSurface | null {
+    const row = this.db
+      .prepare('SELECT * FROM surfaces WHERE surface_id = ? LIMIT 1')
+      .get(surfaceId) as HomeNodeSurfaceRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return toHomeNodeSurface(row);
+  }
+
+  listSurfaces(filter: SurfaceListFilter = {}): HomeNodeSurface[] {
+    const clauses: string[] = [];
+    const params: unknown[] = [];
+
+    if (filter.householdId) {
+      clauses.push('h.household_id = ?');
+      params.push(filter.householdId);
+    }
+
+    if (filter.homeId) {
+      clauses.push('s.home_id = ?');
+      params.push(filter.homeId);
+    }
+
+    if (filter.zoneId) {
+      clauses.push('s.zone_id = ?');
+      params.push(filter.zoneId);
+    }
+
+    if (filter.active !== undefined) {
+      clauses.push('s.active = ?');
+      params.push(filter.active ? 1 : 0);
+    }
+
+    const whereClause = clauses.length > 0 ? `WHERE ${clauses.join(' AND ')}` : '';
+    const rows = this.db
+      .prepare(
+        `SELECT s.*
+         FROM surfaces s
+         INNER JOIN homes h ON h.home_id = s.home_id
+         ${whereClause}
+         ORDER BY s.registered_at DESC`,
+      )
+      .all(...params) as HomeNodeSurfaceRow[];
+
+    return rows.map((row) => toHomeNodeSurface(row));
+  }
+
+  recordSurfaceHeartbeat(
+    surfaceId: string,
+    seenAt: string = new Date().toISOString(),
+  ): HomeNodeSurface | null {
+    const heartbeatAt = ensureIsoDateTime(seenAt);
+    const row = this.db
+      .prepare('SELECT 1 as present FROM surfaces WHERE surface_id = ? LIMIT 1')
+      .get(surfaceId) as { present: number } | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    this.db
+      .prepare('UPDATE surfaces SET active = 1, last_seen_at = ? WHERE surface_id = ?')
+      .run(heartbeatAt, surfaceId);
+
+    return this.getSurface(surfaceId);
+  }
+
+  listStaleActiveSurfaces(cutoff: string): HomeNodeSurfaceRegistered[] {
+    const cutoffIso = ensureIsoDateTime(cutoff);
+    const rows = this.db
+      .prepare(
+        `SELECT s.*, h.household_id
+         FROM surfaces s
+         INNER JOIN homes h ON h.home_id = s.home_id
+         WHERE s.active = 1
+           AND COALESCE(s.last_seen_at, s.registered_at) < ?
+         ORDER BY COALESCE(s.last_seen_at, s.registered_at) ASC`,
+      )
+      .all(cutoffIso) as HomeNodeSurfaceWithHouseholdRow[];
+
+    return rows.map((row) => toHomeNodeSurfaceRegistered(row));
+  }
+
+  markSurfaceInactive(surfaceId: string): boolean {
+    const result = this.db
+      .prepare('UPDATE surfaces SET active = 0 WHERE surface_id = ? AND active = 1')
+      .run(surfaceId);
+
+    return result.changes > 0;
+  }
+
+  private getSurfaceRowWithHousehold(surfaceId: string): HomeNodeSurfaceWithHouseholdRow | null {
+    const row = this.db
+      .prepare(
+        `SELECT s.*, h.household_id
+         FROM surfaces s
+         INNER JOIN homes h ON h.home_id = s.home_id
+         WHERE s.surface_id = ?
+         LIMIT 1`,
+      )
+      .get(surfaceId) as HomeNodeSurfaceWithHouseholdRow | undefined;
+
+    return row ?? null;
   }
 
   upsertHomeStateSnapshot(input: HomeStateSnapshotWrite): HomeStateSnapshot {

@@ -4,6 +4,7 @@ import {
   HomeNodeStateSnapshotUpdatedSchema,
   HouseholdHomeStateChangedSchema,
   HouseholdVoiceCaptureCreatedSchema,
+  type HomeNodeSurfaceRegistered,
   type HomeStateSnapshot,
   type HomeNodeStateSnapshotUpdated,
 } from '@lifeos/contracts';
@@ -15,6 +16,7 @@ import { registerHomeNodeRoutes } from './routes';
 
 const DEFAULT_HOME_ID = 'home-default';
 const WATCHDOG_INTERVAL_MS = 60_000;
+const SURFACE_INACTIVITY_THRESHOLD_MS = 300_000;
 
 type WatchdogStatus = 'healthy' | 'degraded';
 
@@ -62,6 +64,31 @@ export async function publishSnapshotUpdatedEvent(
   await activeEventBus.publish(
     Topics.lifeos.homeNodeStateSnapshotUpdated,
     createEvent(Topics.lifeos.homeNodeStateSnapshotUpdated, data, householdId),
+  );
+}
+
+export async function publishSurfaceRegisteredEvent(
+  activeEventBus: ManagedEventBus,
+  surface: HomeNodeSurfaceRegistered,
+): Promise<void> {
+  await activeEventBus.publish(
+    Topics.lifeos.homeNodeSurfaceRegistered,
+    createEvent(Topics.lifeos.homeNodeSurfaceRegistered, surface, surface.household_id),
+  );
+}
+
+export async function publishSurfaceDeregisteredEvent(
+  activeEventBus: ManagedEventBus,
+  surface: HomeNodeSurfaceRegistered,
+): Promise<void> {
+  const data = {
+    ...surface,
+    deregistered_at: new Date().toISOString(),
+  };
+
+  await activeEventBus.publish(
+    Topics.lifeos.homeNodeSurfaceDeregistered,
+    createEvent(Topics.lifeos.homeNodeSurfaceDeregistered, data, surface.household_id),
   );
 }
 
@@ -119,6 +146,48 @@ export function handleVoiceCaptureEvent(
     affectedUserIds: [payload.actorUserId],
     result: 'observed',
   });
+}
+
+export async function runSurfaceHealthWatchdog(
+  activeGraphClient: HomeNodeGraphClient,
+  activeEventBus: ManagedEventBus,
+  now: Date = new Date(),
+): Promise<string[]> {
+  const cutoff = new Date(now.getTime() - SURFACE_INACTIVITY_THRESHOLD_MS).toISOString();
+  const staleSurfaces = activeGraphClient.listStaleActiveSurfaces(cutoff);
+
+  const transitionedByHousehold = new Map<string, string[]>();
+  for (const surface of staleSurfaces) {
+    if (!activeGraphClient.markSurfaceInactive(surface.surface_id)) {
+      continue;
+    }
+
+    const current = transitionedByHousehold.get(surface.household_id) ?? [];
+    current.push(surface.surface_id);
+    transitionedByHousehold.set(surface.household_id, current);
+  }
+
+  if (transitionedByHousehold.size === 0) {
+    return [];
+  }
+
+  const transitionedSurfaceIds: string[] = [];
+  for (const [householdId, surfaceIds] of transitionedByHousehold.entries()) {
+    transitionedSurfaceIds.push(...surfaceIds);
+    const data = {
+      status: 'degraded',
+      reason: 'stale surface heartbeats',
+      checked_at: now.toISOString(),
+      affected_surface_ids: surfaceIds,
+    };
+
+    await activeEventBus.publish(
+      Topics.lifeos.homeNodeHealthChanged,
+      createEvent(Topics.lifeos.homeNodeHealthChanged, data, householdId),
+    );
+  }
+
+  return transitionedSurfaceIds;
 }
 
 export async function startHomeNodeService(): Promise<void> {
@@ -181,30 +250,47 @@ export async function startHomeNodeService(): Promise<void> {
         handleVoiceCaptureEvent(graphClient as HomeNodeGraphClient, event as BaseEvent<unknown>);
       });
 
-      registerHomeNodeRoutes(app, graphClient);
+      registerHomeNodeRoutes(app, graphClient, {
+        onSurfaceRegistered: async (surface) => {
+          await publishSurfaceRegisteredEvent(eventBus as ManagedEventBus, surface);
+        },
+        onSurfaceDeregistered: async (surface) => {
+          await publishSurfaceDeregisteredEvent(eventBus as ManagedEventBus, surface);
+        },
+      });
 
       let lastStatus: WatchdogStatus = 'healthy';
       watchdogInterval = setInterval(async () => {
-        if (!eventBus) {
+        if (!eventBus || !graphClient) {
           return;
         }
 
-        const health = eventBus.getConnectionHealth();
-        const currentStatus: WatchdogStatus = health === 'connected' ? 'healthy' : 'degraded';
-        if (currentStatus === 'degraded' && currentStatus !== lastStatus) {
-          const data = {
-            status: 'degraded',
-            reason: `event bus connection ${health}`,
-            checked_at: new Date().toISOString(),
-          };
+        try {
+          const health = eventBus.getConnectionHealth();
+          const currentStatus: WatchdogStatus = health === 'connected' ? 'healthy' : 'degraded';
+          if (currentStatus === 'degraded' && currentStatus !== lastStatus) {
+            const data = {
+              status: 'degraded',
+              reason: `event bus connection ${health}`,
+              checked_at: new Date().toISOString(),
+            };
 
-          await eventBus.publish(
-            Topics.lifeos.homeNodeHealthChanged,
-            createEvent(Topics.lifeos.homeNodeHealthChanged, data, 'system'),
+            await eventBus.publish(
+              Topics.lifeos.homeNodeHealthChanged,
+              createEvent(Topics.lifeos.homeNodeHealthChanged, data, 'system'),
+            );
+          }
+
+          await runSurfaceHealthWatchdog(graphClient, eventBus);
+          lastStatus = currentStatus;
+        } catch (error) {
+          console.error(
+            JSON.stringify({
+              message: 'home-node watchdog loop failed',
+              error: error instanceof Error ? error.message : 'unknown_error',
+            }),
           );
         }
-
-        lastStatus = currentStatus;
       }, WATCHDOG_INTERVAL_MS);
 
       app.addHook('onClose', async () => {
