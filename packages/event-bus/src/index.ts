@@ -3,7 +3,12 @@ export * from './types';
 import { setTimeout as delay } from 'node:timers/promises';
 import { connect, StringCodec, type NatsConnection, type Subscription } from 'nats';
 
-import type { BaseEvent, EventBusTransport, ManagedEventBus } from './types';
+import type {
+  BaseEvent,
+  EventBusConnectionHealth,
+  EventBusTransport,
+  ManagedEventBus,
+} from './types';
 
 const DEFAULT_NATS_URL = 'nats://127.0.0.1:4222';
 const HANDLER_TIMEOUT_MS = 30_000;
@@ -19,6 +24,7 @@ export interface CreateEventBusClientOptions {
   maxReconnectAttempts?: number;
   logger?: (message: string) => void;
   allowInMemoryFallback?: boolean;
+  connectFn?: typeof connect;
 }
 
 function normalizeServers(value: string | string[] | undefined, env?: NodeJS.ProcessEnv): string[] {
@@ -183,12 +189,14 @@ class LifeOSEventBus implements ManagedEventBus {
   private readonly maxReconnectAttempts: number;
   private readonly logger: ((message: string) => void) | undefined;
   private readonly allowInMemoryFallback: boolean;
+  private readonly connectFn: typeof connect;
   private connectionPromise: Promise<NatsConnection | null> | null = null;
   private connection: NatsConnection | null = null;
   private subscriptions = new Set<Subscription>();
   private readonly fallbackUnsubscribers = new Set<() => void>();
   private fallbackWarningShown = false;
   private transport: EventBusTransport = 'unknown';
+  private connectionHealth: EventBusConnectionHealth = 'disconnected';
 
   constructor(options: CreateEventBusClientOptions = {}) {
     this.servers = normalizeServers(options.servers, options.env);
@@ -197,6 +205,34 @@ class LifeOSEventBus implements ManagedEventBus {
     this.maxReconnectAttempts = options.maxReconnectAttempts ?? -1;
     this.logger = options.logger;
     this.allowInMemoryFallback = options.allowInMemoryFallback ?? true;
+    this.connectFn = options.connectFn ?? connect;
+  }
+
+  private setConnectionHealth(nextHealth: EventBusConnectionHealth): void {
+    this.connectionHealth = nextHealth;
+  }
+
+  private monitorConnection(connection: NatsConnection): void {
+    void (async () => {
+      try {
+        for await (const status of connection.status()) {
+          const statusType = (status as { type?: string }).type ?? 'unknown';
+
+          if (statusType === 'disconnect' || statusType === 'reconnecting') {
+            this.setConnectionHealth('degraded');
+            continue;
+          }
+
+          if (statusType === 'reconnect' || statusType === 'connect' || statusType === 'update') {
+            this.setConnectionHealth('connected');
+          }
+        }
+      } catch {
+        if (this.transport === 'nats') {
+          this.setConnectionHealth('degraded');
+        }
+      }
+    })();
   }
 
   private logFallback(reason: unknown): void {
@@ -205,6 +241,7 @@ class LifeOSEventBus implements ManagedEventBus {
     }
     this.fallbackWarningShown = true;
     this.transport = 'in-memory';
+    this.setConnectionHealth('degraded');
     this.logger?.(
       `[event-bus] NATS unavailable, using in-memory fallback (${toErrorMessage(reason)})`,
     );
@@ -219,7 +256,7 @@ class LifeOSEventBus implements ManagedEventBus {
       return this.connectionPromise;
     }
 
-    this.connectionPromise = connect({
+    this.connectionPromise = this.connectFn({
       servers: this.servers,
       name: this.name,
       timeout: this.timeoutMs,
@@ -230,12 +267,15 @@ class LifeOSEventBus implements ManagedEventBus {
       const connection = await this.connectionPromise;
       this.connection = connection;
       this.transport = 'nats';
+      this.setConnectionHealth('connected');
+      this.monitorConnection(connection);
       this.logger?.(`[event-bus] connected to ${this.servers.join(', ')}`);
       return connection;
     } catch (error: unknown) {
       if (!this.allowInMemoryFallback) {
         this.connectionPromise = null;
         this.transport = 'unknown';
+        this.setConnectionHealth('disconnected');
         throw new Error(
           `[event-bus] NATS unavailable and in-memory fallback is disabled (${toErrorMessage(error)})`,
         );
@@ -263,6 +303,7 @@ class LifeOSEventBus implements ManagedEventBus {
         const encoded = this.codec.encode(JSON.stringify(event));
         connection.publish(topic, encoded);
       } catch (error: unknown) {
+        this.setConnectionHealth('degraded');
         this.logger?.(`[event-bus] publish error: ${toErrorMessage(error)}`);
         throw error;
       }
@@ -276,6 +317,7 @@ class LifeOSEventBus implements ManagedEventBus {
 
     await sharedInMemoryBus.publish(topic, event as BaseEvent<unknown>);
     this.transport = 'in-memory';
+    this.setConnectionHealth('degraded');
   }
 
   async subscribe<T>(
@@ -318,6 +360,7 @@ class LifeOSEventBus implements ManagedEventBus {
       });
       this.fallbackUnsubscribers.add(unsubscribe);
       this.transport = 'in-memory';
+      this.setConnectionHealth('degraded');
       return;
     }
 
@@ -373,6 +416,7 @@ class LifeOSEventBus implements ManagedEventBus {
     this.subscriptions.clear();
 
     if (!this.connectionPromise || !this.connection) {
+      this.setConnectionHealth('disconnected');
       return;
     }
 
@@ -398,6 +442,7 @@ class LifeOSEventBus implements ManagedEventBus {
     } finally {
       this.connection = null;
       this.connectionPromise = null;
+      this.setConnectionHealth('disconnected');
       if (this.transport !== 'in-memory') {
         this.transport = 'unknown';
       }
@@ -406,6 +451,10 @@ class LifeOSEventBus implements ManagedEventBus {
 
   getTransport(): EventBusTransport {
     return this.transport;
+  }
+
+  getConnectionHealth(): EventBusConnectionHealth {
+    return this.connectionHealth;
   }
 }
 

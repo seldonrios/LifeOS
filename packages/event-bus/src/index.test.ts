@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
+import type { NatsConnection } from 'nats';
+
 import { createEventBusClient, type BaseEvent } from './index';
 
 function createEvent<T>(type: string, data: T): BaseEvent<T> {
@@ -55,5 +57,55 @@ test('in-memory fallback supports wildcard subscriptions', async () => {
   );
 
   assert.deepEqual(received, ['lifeos.tick.overdue', 'lifeos.reminder.followup.created']);
+  await bus.close();
+});
+
+test('connection health transitions to degraded after post-start disconnect', async () => {
+  let disconnected = false;
+
+  const fakeConnection = {
+    publish: () => {
+      return;
+    },
+    subscribe: () => ({
+      unsubscribe: () => {
+        return;
+      },
+      [Symbol.asyncIterator]: async function* () {
+        return;
+      },
+    }),
+    status: async function* () {
+      yield { type: 'connect' };
+
+      while (!disconnected) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+
+      yield { type: 'disconnect' };
+    },
+    drain: async () => {
+      return;
+    },
+    closed: async () => {
+      return;
+    },
+    close: () => {
+      disconnected = true;
+    },
+  } as unknown as NatsConnection;
+
+  const bus = createEventBusClient({
+    connectFn: async () => fakeConnection,
+    allowInMemoryFallback: false,
+  });
+
+  await bus.publish('lifeos.test.health', createEvent('lifeos.test.health', { ok: true }));
+  assert.equal(bus.getConnectionHealth(), 'connected');
+
+  disconnected = true;
+  await new Promise((resolve) => setTimeout(resolve, 25));
+
+  assert.equal(bus.getConnectionHealth(), 'degraded');
   await bus.close();
 });

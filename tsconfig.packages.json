@@ -80,6 +80,9 @@
       "path": "./packages/ui"
     },
     {
+      "path": "./packages/home-node-core"
+    },
+    {
       "path": "./apps/mobile"
     },
     {
