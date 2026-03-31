@@ -267,6 +267,91 @@ test('POST /api/households/:id/members/invite happy path returns 201', async () 
   }
 });
 
+test('GET /api/households/:id/captures/:captureId/status returns pending when routing is incomplete', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/captures/cap_pending/status`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), { status: 'pending' });
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/captures/:captureId/status returns resolved for shopping captures', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    db.addShoppingItem(householdId, 'oat milk', 'admin-1', 'voice', undefined, 'cap_shop_1');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/captures/cap_shop_1/status`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().status, 'resolved');
+    assert.equal(response.json().resolvedAction, 'Added: oat milk → Shopping list');
+    assert.ok(response.json().objectId);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/captures/:captureId/status returns unresolved when router marks capture unresolved', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    // Write routing log entry directly to mark capture as unresolved
+    db.writeRoutingLogEntry(householdId, 'cap_unresolved_1', 'unresolved');
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/captures/cap_unresolved_1/status`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.json(), { status: 'unresolved' });
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/households/:id/captures/:captureId/status returns resolved when router logs resolved chore', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    // Create a chore with originalCaptureId, which auto-writes routing log
+    const choreId = db.createChore(householdId, 'do the dishes', 'admin-1', '2025-12-31', undefined, 'cap_chore_1').id;
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: `/api/households/${householdId}/captures/cap_chore_1/status`,
+      headers: { authorization: adminAuth },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().status, 'resolved');
+    assert.equal(response.json().resolvedAction, 'Created chore: do the dishes');
+    assert.equal(response.json().objectId, choreId);
+  } finally {
+    await cleanup();
+  }
+});
+
 test('POST /api/households/:id/members/invite auth failure returns 401', async () => {
   const { db, app, cleanup } = createHarness();
   try {

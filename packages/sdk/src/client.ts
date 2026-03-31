@@ -20,6 +20,11 @@ import { sendHttpRequest } from './http';
 
 type HouseholdRole = 'Admin' | 'Adult' | 'Teen' | 'Child' | 'Guest';
 type ShoppingItemStatus = 'added' | 'in_cart' | 'purchased';
+type HouseholdCaptureStatusResponse = {
+  status: 'pending' | 'resolved' | 'unresolved';
+  resolvedAction?: string;
+  objectId?: string;
+};
 
 /**
  * Inbox namespace.
@@ -404,6 +409,24 @@ interface NoteRow {
 
 class HouseholdNamespace {
   constructor(private config: SDKConfig) {}
+
+  readonly captures = {
+    status: async (
+      householdId: string,
+      captureId: string,
+    ): Promise<HouseholdCaptureStatusResponse> => {
+      const response = await sendHttpRequest<HouseholdCaptureStatusResponse>(
+        {
+          url: `${this.config.baseUrl}/api/households/${householdId}/captures/${captureId}/status`,
+          method: 'GET',
+        },
+        this.config.getAccessToken,
+        this.config,
+      );
+
+      return response.data;
+    },
+  };
 
   readonly chores = {
     list: async (householdId: string): Promise<ChoreDetailRow[]> => {

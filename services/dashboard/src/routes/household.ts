@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 
 import {
   HouseholdCalendarEventCreatedSchema,
+  HouseholdCaptureStatusResponseSchema,
   HouseholdChoreAssignedSchema,
   HouseholdChoreCompletedSchema,
   HouseholdAddShoppingItemRequestSchema,
@@ -561,6 +562,29 @@ export function registerHouseholdRoutes(
       await requireMember(db, params.id, callerUserId, 'add_shopping_item');
       db.clearPurchasedItems(params.id, params.listId);
       reply.status(204).send();
+    } catch (error) {
+      replyError(reply, error);
+    }
+  });
+
+  app.get('/api/households/:id/captures/:captureId/status', async (request, reply) => {
+    try {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
+        reply.status(401).send({ error: 'Unauthorized' });
+        return;
+      }
+
+      const params = z
+        .object({
+          id: z.string().min(1),
+          captureId: z.string().min(1),
+        })
+        .parse(request.params);
+
+      await requireMember(db, params.id, callerUserId, 'view');
+      const status = db.getCaptureStatus(params.id, params.captureId);
+      reply.status(200).send(HouseholdCaptureStatusResponseSchema.parse(status));
     } catch (error) {
       replyError(reply, error);
     }

@@ -307,6 +307,15 @@ test('household object schemas parse valid payloads and reject missing required 
       missingField: 'reason',
     },
     {
+      schema: HouseholdCaptureStatusResponseSchema,
+      valid: {
+        status: 'resolved',
+        resolvedAction: 'Added: oat milk → Shopping list',
+        objectId: 'item_1',
+      },
+      missingField: 'status',
+    },
+    {
       schema: HouseholdHomeStateChangedSchema,
       valid: {
         householdId: 'house_1',

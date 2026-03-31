@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import type { AuditLogEntry } from '@lifeos/contracts';
+import type { AuditLogEntry, HouseholdCaptureStatusResponse } from '@lifeos/contracts';
 import { HouseholdRoleSchema } from '@lifeos/module-sdk';
 
 import { calculateStreak, getNextDueDate, isOverdue } from '../../household-chores/src/index';
@@ -222,6 +222,7 @@ export class HouseholdGraphClient {
     this.ensureColumn('shopping_items', 'created_at', "TEXT DEFAULT ''");
     this.ensureColumn('shopping_items', 'archived_at', 'TEXT');
     this.ensureColumn('shopping_items', 'purchased_at', 'TEXT');
+    this.ensureColumn('shopping_items', 'original_capture_id', 'TEXT');
 
     this.ensureColumn('chores', 'assigned_to_user_id', "TEXT DEFAULT ''");
     this.ensureColumn('chores', 'due_at', "TEXT DEFAULT ''");
@@ -229,10 +230,24 @@ export class HouseholdGraphClient {
     this.ensureColumn('chores', 'completed_by_user_id', 'TEXT');
     this.ensureColumn('chores', 'completed_at', 'TEXT');
     this.ensureColumn('chores', 'created_at', "TEXT DEFAULT ''");
+    this.ensureColumn('chores', 'original_capture_id', 'TEXT');
 
     this.ensureColumn('events', 'status', "TEXT NOT NULL DEFAULT 'confirmed'");
     this.ensureColumn('events', 'attendee_user_ids_json', "TEXT NOT NULL DEFAULT '[]'");
     this.ensureColumn('events', 'household_id', 'TEXT');
+
+    // Create capture_routing_log table if it doesn't exist
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS capture_routing_log (
+        id TEXT PRIMARY KEY,
+        household_id TEXT NOT NULL,
+        capture_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'resolved', 'unresolved')),
+        resolved_action TEXT,
+        object_id TEXT,
+        created_at TEXT NOT NULL
+      )
+    `);
 
     this.db.exec(
       'CREATE INDEX IF NOT EXISTS idx_shopping_items_household_id ON shopping_items(household_id)',
@@ -240,9 +255,18 @@ export class HouseholdGraphClient {
     this.db.exec(
       'CREATE INDEX IF NOT EXISTS idx_shopping_items_list_id ON shopping_items(list_id)',
     );
+    this.db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_shopping_items_original_capture_id ON shopping_items(original_capture_id) WHERE original_capture_id IS NOT NULL',
+    );
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_chores_household_id ON chores(household_id)');
+    this.db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_chores_original_capture_id ON chores(original_capture_id) WHERE original_capture_id IS NOT NULL',
+    );
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_events_start_at ON events(start_at)');
+    this.db.exec(
+      'CREATE UNIQUE INDEX IF NOT EXISTS idx_capture_routing_log_capture ON capture_routing_log(household_id, capture_id)',
+    );
   }
 
   private ensureColumn(tableName: string, columnName: string, columnDefinition: string): void {
@@ -753,6 +777,7 @@ export class HouseholdGraphClient {
     addedByUserId: string,
     source: 'manual' | 'voice' | 'routine',
     listId?: string,
+    originalCaptureId?: string,
   ): ShoppingItemRow {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
@@ -773,10 +798,31 @@ export class HouseholdGraphClient {
       this.db
         .prepare(
           `INSERT INTO shopping_items
-            (id, list_id, household_id, title, added_by, added_by_user_id, status, source, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, 'added', ?, ?)`,
+            (id, list_id, household_id, title, added_by, added_by_user_id, status, source, created_at, original_capture_id)
+           VALUES (?, ?, ?, ?, ?, ?, 'added', ?, ?, ?)`,
         )
-        .run(id, targetListId, householdId, title, addedByUserId, addedByUserId, source, createdAt);
+        .run(
+          id,
+          targetListId,
+          householdId,
+          title,
+          addedByUserId,
+          addedByUserId,
+          source,
+          createdAt,
+          originalCaptureId ?? null,
+        );
+
+      // Write routing log entry if this was created from a voice capture
+      if (originalCaptureId) {
+        this.writeRoutingLogEntry(
+          householdId,
+          originalCaptureId,
+          'resolved',
+          `Added: ${title} → Shopping list`,
+          id,
+        );
+      }
 
       return this.getShoppingItem(householdId, id) as ShoppingItemRow;
     });
@@ -863,6 +909,7 @@ export class HouseholdGraphClient {
     assignedToUserId: string,
     dueAt: string,
     recurrenceRule?: string,
+    originalCaptureId?: string,
   ): ChoreRow {
     const id = randomUUID();
     const createdAt = new Date().toISOString();
@@ -870,10 +917,30 @@ export class HouseholdGraphClient {
     this.db
       .prepare(
         `INSERT INTO chores
-          (id, household_id, title, assigned_to_user_id, due_at, status, recurrence_rule, created_at)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+          (id, household_id, title, assigned_to_user_id, due_at, status, recurrence_rule, created_at, original_capture_id)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`,
       )
-      .run(id, householdId, title, assignedToUserId, dueAt, recurrenceRule ?? null, createdAt);
+      .run(
+        id,
+        householdId,
+        title,
+        assignedToUserId,
+        dueAt,
+        recurrenceRule ?? null,
+        createdAt,
+        originalCaptureId ?? null,
+      );
+
+    // Write routing log entry if this was created from a voice capture
+    if (originalCaptureId) {
+      this.writeRoutingLogEntry(
+        householdId,
+        originalCaptureId,
+        'resolved',
+        `Created chore: ${title}`,
+        id,
+      );
+    }
 
     return this.getChore(householdId, id) as ChoreRow;
   }
@@ -1232,6 +1299,53 @@ export class HouseholdGraphClient {
          WHERE id = ?`,
       )
       .get(id) as NoteRow;
+  }
+
+  getCaptureStatus(householdId: string, captureId: string): HouseholdCaptureStatusResponse {
+    const routingEntry = this.db
+      .prepare(
+        `SELECT status, resolved_action, object_id
+         FROM capture_routing_log
+         WHERE household_id = ? AND capture_id = ?
+         LIMIT 1`,
+      )
+      .get(householdId, captureId) as
+      | { status: string; resolved_action?: string | null; object_id?: string | null }
+      | undefined;
+
+    if (routingEntry) {
+      const response: HouseholdCaptureStatusResponse = {
+        status: routingEntry.status as 'pending' | 'resolved' | 'unresolved',
+      };
+      if (routingEntry.resolved_action) {
+        response.resolvedAction = routingEntry.resolved_action;
+      }
+      if (routingEntry.object_id) {
+        response.objectId = routingEntry.object_id;
+      }
+      return response;
+    }
+
+    return { status: 'pending' };
+  }
+
+  writeRoutingLogEntry(
+    householdId: string,
+    captureId: string,
+    status: 'pending' | 'resolved' | 'unresolved',
+    resolvedAction?: string,
+    objectId?: string,
+  ): void {
+    const id = randomUUID();
+    const createdAt = new Date().toISOString();
+
+    this.db
+      .prepare(
+        `INSERT INTO capture_routing_log
+          (id, household_id, capture_id, status, resolved_action, object_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, householdId, captureId, status, resolvedAction ?? null, objectId ?? null, createdAt);
   }
 
   writeAuditEntry(entry: AuditLogEntry): void {

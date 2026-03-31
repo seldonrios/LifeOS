@@ -208,6 +208,7 @@ test('POST /api/capture household capture returns 201 and publishes household ev
     assert.equal(payload.householdId, household.id);
     assert.equal(payload.actorUserId, 'user-2');
     assert.equal(payload.text, 'buy apples and dish soap');
+    assert.equal(payload.audioRef, null);
     assert.equal(payload.source, 'ha_bridge');
     assert.equal(payload.sourceDeviceId, 'kitchen-speaker');
     assert.equal(payload.targetHint, 'shopping');
