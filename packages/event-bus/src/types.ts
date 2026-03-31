@@ -25,12 +25,10 @@ export interface EventBus {
 }
 
 export type EventBusTransport = 'nats' | 'in-memory' | 'unknown';
-export type EventBusConnectionHealth = 'connected' | 'degraded' | 'disconnected';
 
 export interface ManagedEventBus extends EventBus {
   close(): Promise<void>;
   getTransport(): EventBusTransport;
-  getConnectionHealth(): EventBusConnectionHealth;
 }
 
 export const Topics = {
