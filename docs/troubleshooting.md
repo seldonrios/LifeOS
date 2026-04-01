@@ -62,4 +62,39 @@ This guide lists common runtime failures.
 - Fix: reduce module set or switch env to warn for development.
 - Verify: rerun startup and inspect enforcement logs.
 
+## 11) Traycer VS Code progress lost after freeze/reload
+- Symptoms: Traycer daily progress disappears after `Reload Window`, while Git commits remain.
+- Cause: extension state in VS Code user storage was not persisted before the freeze/reload.
+- Fix: use snapshot backup + restore scripts in `scripts/`.
+
+Manual snapshot backup (PowerShell):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\traycer-state-backup.ps1
+```
+
+Register recurring backup every 10 minutes while logged in:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\register-traycer-backup-task.ps1 -IntervalMinutes 10
+```
+
+Restore latest snapshot:
+
+```powershell
+# Close VS Code first.
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\traycer-state-restore.ps1
+```
+
+Restore a specific snapshot:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\traycer-state-restore.ps1 -Snapshot 20260331-091500
+```
+
+- Verify:
+	1. Confirm snapshots exist under `%USERPROFILE%\Backups\traycer-vscode\snapshots`.
+	2. Confirm Task Scheduler shows successful runs for `LifeOS-Traycer-State-Backup`.
+	3. Perform one test restore and confirm Traycer progress is recovered.
+
 Use `pnpm lifeos doctor` for automated detection of many failures above.
