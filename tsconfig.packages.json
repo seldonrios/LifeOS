@@ -93,6 +93,12 @@
     },
     {
       "path": "./modules/notification-bridge"
+    },
+    {
+      "path": "./services/home-node"
+    },
+    {
+      "path": "./services/dashboard"
     }
   ]
 }

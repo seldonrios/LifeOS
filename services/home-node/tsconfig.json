@@ -17,7 +17,7 @@
       "@lifeos/household-shopping-module": ["modules/household-shopping/src/index.ts"]
     },
     "skipLibCheck": true,
-    "noEmit": true
+    "outDir": "../../dist/services/home-node"
   },
   "include": ["src/**/*.ts"]
 }
