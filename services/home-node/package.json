@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "tsx --test src/index.test.ts"
+    "test": "tsx --test src/index.test.ts src/integration.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
