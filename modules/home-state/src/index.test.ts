@@ -116,7 +116,7 @@ function createModuleContextMock() {
 }
 
 test('homeStateModule does not publish snapshot updates when consent is not verified', async () => {
-  const { context, handlers, published } = createModuleContextMock();
+  const { context, handlers, logs, published } = createModuleContextMock();
   await homeStateModule.init(context);
 
   const handler = handlers.get(Topics.lifeos.householdHomeStateChanged);
@@ -137,10 +137,18 @@ test('homeStateModule does not publish snapshot updates when consent is not veri
     published.some((entry) => entry.topic === Topics.lifeos.homeNodeStateSnapshotUpdated),
     false,
   );
+  assert.equal(
+    logs.some((message) => message.includes('skipped snapshot update for house-1 because consent is not verified')),
+    true,
+  );
+  assert.equal(
+    logs.some((message) => message.includes('stored snapshot update for house-1')),
+    false,
+  );
 });
 
-test('homeStateModule publishes snapshot updates when consent is verified', async () => {
-  const { context, handlers, published } = createModuleContextMock();
+test('homeStateModule does not publish snapshot updates when consent is verified and stores state in memory', async () => {
+  const { context, handlers, logs, published } = createModuleContextMock();
   await homeStateModule.init(context);
 
   const handler = handlers.get(Topics.lifeos.householdHomeStateChanged);
@@ -159,6 +167,14 @@ test('homeStateModule publishes snapshot updates when consent is verified', asyn
 
   assert.equal(
     published.some((entry) => entry.topic === Topics.lifeos.homeNodeStateSnapshotUpdated),
+    false,
+  );
+  assert.equal(
+    logs.some((message) => message.includes('stored snapshot update for house-1 from presence.anyone_home')),
     true,
+  );
+  assert.equal(
+    logs.some((message) => message.includes('skipped snapshot update for house-1 because consent is not verified')),
+    false,
   );
 });

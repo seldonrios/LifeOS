@@ -11,8 +11,7 @@
       "subscribe:lifeos.household.homestate.changed",
       "subscribe:lifeos.household.voice.capture.created",
       "publish:lifeos.household.homestate.changed",
-      "publish:lifeos.household.voice.capture.created",
-      "publish:lifeos.homenode.state.snapshot.updated"
+      "publish:lifeos.household.voice.capture.created"
     ]
   },
   "resources": {

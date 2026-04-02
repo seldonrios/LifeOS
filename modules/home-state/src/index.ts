@@ -3,15 +3,13 @@ import { randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   HouseholdHomeStateChangedSchema,
   HouseholdVoiceCaptureCreatedSchema,
-  HomeNodeStateSnapshotUpdatedSchema,
   type HouseholdHomeStateConfig,
   type HomeStateSnapshot,
 } from '@lifeos/contracts';
-import { buildNextSnapshot } from '../../../packages/home-node-core/dist/client.js';
+import { buildNextSnapshot } from '@lifeos/home-node-core';
 import { Topics, type LifeOSModule, type ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 const DEFAULT_ACTOR_USER_ID = 'ha-bridge';
-const DEFAULT_HOME_ID = 'home-default';
 
 export type ParsedHouseholdHomeStateConfig = {
   haIntegrationEnabled: boolean;
@@ -166,21 +164,6 @@ function getCurrentSnapshot(
   return snapshotsByHouseholdId.get(householdId) ?? defaultSnapshot(now);
 }
 
-async function publishSnapshotUpdated(
-  context: ModuleRuntimeContext,
-  householdId: string,
-  snapshot: HomeStateSnapshot,
-): Promise<void> {
-  const data = HomeNodeStateSnapshotUpdatedSchema.parse({
-    home_id: DEFAULT_HOME_ID,
-    household_id: householdId,
-    snapshot,
-    updated_at: new Date().toISOString(),
-  });
-
-  await context.publish(Topics.lifeos.homeNodeStateSnapshotUpdated, data, 'home-state');
-}
-
 export const homeStateModule: LifeOSModule = {
   id: 'home-state',
   async init(context) {
@@ -200,9 +183,8 @@ export const homeStateModule: LifeOSModule = {
       const nextSnapshot = buildNextSnapshot(currentSnapshot, payload, new Date().toISOString());
       snapshotsByHouseholdId.set(payload.householdId, nextSnapshot);
 
-      await publishSnapshotUpdated(context, payload.householdId, nextSnapshot);
       context.log(
-        `[home-state] published snapshot update for ${payload.householdId} from ${payload.stateKey}`,
+        `[home-state] stored snapshot update for ${payload.householdId} from ${payload.stateKey}`,
       );
     });
 
