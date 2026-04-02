@@ -178,3 +178,27 @@ test('homeStateModule does not publish snapshot updates when consent is verified
     false,
   );
 });
+
+test('homeStateModule does not publish homeNodeStateSnapshotUpdated with any home_id', async () => {
+  const { context, handlers, published } = createModuleContextMock();
+  await homeStateModule.init(context);
+
+  const handler = handlers.get(Topics.lifeos.householdHomeStateChanged);
+  assert.ok(handler);
+
+  await handler({
+    data: buildHomeStateChangedEventData({
+      householdId: 'house-real-1',
+      deviceId: 'ha-entry',
+      stateKey: 'presence.anyone_home',
+      previousValue: false,
+      newValue: true,
+      consentVerified: true,
+    }),
+  });
+
+  assert.equal(
+    published.filter((entry) => entry.topic === Topics.lifeos.homeNodeStateSnapshotUpdated).length,
+    0,
+  );
+});
