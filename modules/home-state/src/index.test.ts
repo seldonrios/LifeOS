@@ -2,9 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { HouseholdHaWebhookRequestSchema } from '@lifeos/contracts';
+import { Topics, type ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 import {
   buildHaVoiceCaptureEventData,
+  buildHomeStateChangedEventData,
+  homeStateModule,
   isStateKeyConsented,
   normalizeConsentedStateKeys,
   parseHouseholdHomeStateConfig,
@@ -85,4 +88,77 @@ test('HouseholdHaWebhookRequestSchema accepts camelCase alias and normalizes to 
   });
 
   assert.equal(parsed.voice_transcript, 'add bananas');
+});
+
+function createModuleContextMock() {
+  const handlers = new Map<string, (event: { data: unknown }) => Promise<void>>();
+  const published: Array<{
+    topic: string;
+    data: Record<string, unknown>;
+    source: string | undefined;
+  }> = [];
+  const logs: string[] = [];
+
+  const context = {
+    env: {},
+    log(message: string) {
+      logs.push(message);
+    },
+    async publish(topic: string, data: Record<string, unknown>, source?: string) {
+      published.push({ topic, data, source });
+    },
+    async subscribe(topic: string, handler: (event: { data: unknown }) => Promise<void>) {
+      handlers.set(topic, handler);
+    },
+  } as unknown as ModuleRuntimeContext;
+
+  return { context, handlers, published, logs };
+}
+
+test('homeStateModule does not publish snapshot updates when consent is not verified', async () => {
+  const { context, handlers, published } = createModuleContextMock();
+  await homeStateModule.init(context);
+
+  const handler = handlers.get(Topics.lifeos.householdHomeStateChanged);
+  assert.ok(handler);
+
+  await handler({
+    data: buildHomeStateChangedEventData({
+      householdId: 'house-1',
+      deviceId: 'ha-entry',
+      stateKey: 'presence.anyone_home',
+      previousValue: false,
+      newValue: true,
+      consentVerified: false,
+    }),
+  });
+
+  assert.equal(
+    published.some((entry) => entry.topic === Topics.lifeos.homeNodeStateSnapshotUpdated),
+    false,
+  );
+});
+
+test('homeStateModule publishes snapshot updates when consent is verified', async () => {
+  const { context, handlers, published } = createModuleContextMock();
+  await homeStateModule.init(context);
+
+  const handler = handlers.get(Topics.lifeos.householdHomeStateChanged);
+  assert.ok(handler);
+
+  await handler({
+    data: buildHomeStateChangedEventData({
+      householdId: 'house-1',
+      deviceId: 'ha-entry',
+      stateKey: 'presence.anyone_home',
+      previousValue: false,
+      newValue: true,
+      consentVerified: true,
+    }),
+  });
+
+  assert.equal(
+    published.some((entry) => entry.topic === Topics.lifeos.homeNodeStateSnapshotUpdated),
+    true,
+  );
 });

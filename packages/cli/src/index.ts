@@ -68,6 +68,7 @@ import {
   type ImapCredentials,
 } from '@lifeos/email-summarizer-module';
 import { habitStreakModule } from '@lifeos/habit-streak-module';
+import { homeStateModule } from '@lifeos/home-state-module';
 import { householdCaptureRouterModule } from '@lifeos/household-capture-router-module';
 import { householdChoresModule } from '@lifeos/household-chores-module';
 import { householdShoppingModule } from '@lifeos/household-shopping-module';
@@ -100,6 +101,7 @@ import {
   createVoiceCore,
   type VoiceCoreOptions,
 } from '@lifeos/voice-core';
+import { voiceModule } from '@lifeos/voice-module';
 import { normalizeErrorMessage, toFriendlyCliError } from './errors';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
@@ -168,8 +170,10 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   news: newsModule,
   'email-summarizer': emailSummarizerModule,
   'habit-streak': habitStreakModule,
+  'home-state': homeStateModule,
   health: null,
   'google-bridge': googleBridgeModule,
+  voice: voiceModule,
 };
 
 const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [

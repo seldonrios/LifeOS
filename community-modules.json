@@ -68,6 +68,15 @@
       "resourceHint": "low"
     },
     {
+      "name": "home-state",
+      "repo": "lifeos-community/home-state",
+      "certified": false,
+      "category": "household",
+      "description": "Home Assistant bridge and presence event adapter for household state changes.",
+      "tags": ["home-assistant", "presence", "household", "privacy"],
+      "resourceHint": "low"
+    },
+    {
       "name": "planning-assistant",
       "repo": "lifeos-community/planning-assistant",
       "certified": false,
@@ -92,6 +101,15 @@
       "category": "productivity",
       "description": "Fetch and summarize unread emails locally via IMAP. No cloud required.",
       "tags": ["email", "imap", "summarizer", "inbox"],
+      "resourceHint": "medium"
+    },
+    {
+      "name": "voice",
+      "repo": "lifeos-community/voice",
+      "certified": false,
+      "category": "assistant",
+      "description": "Voice session lifecycle adapter - start, stop, and transcribe via the home-node voice pipeline.",
+      "tags": ["voice", "assistant", "ambient"],
       "resourceHint": "medium"
     },
     {

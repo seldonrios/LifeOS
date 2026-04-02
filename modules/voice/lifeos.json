@@ -7,13 +7,21 @@
     "graph": ["read"],
     "network": [],
     "voice": ["speak", "listen"],
-    "events": ["subscribe:lifeos.voice.command.received", "publish:lifeos.voice.command.processed"]
+    "events": [
+      "subscribe:lifeos.homenode.voice.session.started",
+      "subscribe:lifeos.homenode.voice.session.completed",
+      "subscribe:lifeos.homenode.voice.session.failed",
+      "subscribe:lifeos.household.voice.capture.created",
+      "publish:lifeos.homenode.voice.session.started",
+      "publish:lifeos.homenode.voice.session.completed",
+      "publish:lifeos.homenode.voice.session.failed"
+    ]
   },
   "resources": {
     "cpu": "medium",
     "memory": "medium"
   },
-  "requires": ["@lifeos/voice-core@>=0.3.0 <0.4.0", "@lifeos/event-bus@>=0.3.0 <0.4.0"],
+  "requires": ["@lifeos/module-sdk@>=0.1.0 <0.2.0", "@lifeos/event-bus@>=0.3.0 <0.4.0"],
   "category": "assistant",
   "tags": ["voice", "assistant"]
 }

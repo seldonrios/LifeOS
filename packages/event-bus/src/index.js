@@ -135,12 +135,14 @@ class LifeOSEventBus {
     maxReconnectAttempts;
     logger;
     allowInMemoryFallback;
+    connectFn;
     connectionPromise = null;
     connection = null;
     subscriptions = new Set();
     fallbackUnsubscribers = new Set();
     fallbackWarningShown = false;
     transport = 'unknown';
+    connectionHealth = 'disconnected';
     constructor(options = {}) {
         this.servers = normalizeServers(options.servers, options.env);
         this.name = options.name ?? 'lifeos-event-bus';
@@ -148,6 +150,31 @@ class LifeOSEventBus {
         this.maxReconnectAttempts = options.maxReconnectAttempts ?? -1;
         this.logger = options.logger;
         this.allowInMemoryFallback = options.allowInMemoryFallback ?? true;
+        this.connectFn = options.connectFn ?? connect;
+    }
+    setConnectionHealth(nextHealth) {
+        this.connectionHealth = nextHealth;
+    }
+    monitorConnection(connection) {
+        void (async () => {
+            try {
+                for await (const status of connection.status()) {
+                    const statusType = status.type ?? 'unknown';
+                    if (statusType === 'disconnect' || statusType === 'reconnecting') {
+                        this.setConnectionHealth('degraded');
+                        continue;
+                    }
+                    if (statusType === 'reconnect' || statusType === 'connect' || statusType === 'update') {
+                        this.setConnectionHealth('connected');
+                    }
+                }
+            }
+            catch {
+                if (this.transport === 'nats') {
+                    this.setConnectionHealth('degraded');
+                }
+            }
+        })();
     }
     logFallback(reason) {
         if (this.fallbackWarningShown) {
@@ -155,6 +182,7 @@ class LifeOSEventBus {
         }
         this.fallbackWarningShown = true;
         this.transport = 'in-memory';
+        this.setConnectionHealth('degraded');
         this.logger?.(`[event-bus] NATS unavailable, using in-memory fallback (${toErrorMessage(reason)})`);
     }
     async getConnection() {
@@ -164,7 +192,7 @@ class LifeOSEventBus {
         if (this.connectionPromise) {
             return this.connectionPromise;
         }
-        this.connectionPromise = connect({
+        this.connectionPromise = this.connectFn({
             servers: this.servers,
             name: this.name,
             timeout: this.timeoutMs,
@@ -174,6 +202,8 @@ class LifeOSEventBus {
             const connection = await this.connectionPromise;
             this.connection = connection;
             this.transport = 'nats';
+            this.setConnectionHealth('connected');
+            this.monitorConnection(connection);
             this.logger?.(`[event-bus] connected to ${this.servers.join(', ')}`);
             return connection;
         }
@@ -181,6 +211,7 @@ class LifeOSEventBus {
             if (!this.allowInMemoryFallback) {
                 this.connectionPromise = null;
                 this.transport = 'unknown';
+                this.setConnectionHealth('disconnected');
                 throw new Error(`[event-bus] NATS unavailable and in-memory fallback is disabled (${toErrorMessage(error)})`);
             }
             this.logFallback(error);
@@ -205,6 +236,7 @@ class LifeOSEventBus {
                 connection.publish(topic, encoded);
             }
             catch (error) {
+                this.setConnectionHealth('degraded');
                 this.logger?.(`[event-bus] publish error: ${toErrorMessage(error)}`);
                 throw error;
             }
@@ -216,6 +248,7 @@ class LifeOSEventBus {
         }
         await sharedInMemoryBus.publish(topic, event);
         this.transport = 'in-memory';
+        this.setConnectionHealth('degraded');
     }
     async subscribe(topic, handler) {
         // Validate topic
@@ -251,6 +284,7 @@ class LifeOSEventBus {
             });
             this.fallbackUnsubscribers.add(unsubscribe);
             this.transport = 'in-memory';
+            this.setConnectionHealth('degraded');
             return;
         }
         const subscription = connection.subscribe(topic);
@@ -301,6 +335,7 @@ class LifeOSEventBus {
         this.subscriptions.forEach((subscription) => subscription.unsubscribe());
         this.subscriptions.clear();
         if (!this.connectionPromise || !this.connection) {
+            this.setConnectionHealth('disconnected');
             return;
         }
         const connection = this.connection;
@@ -327,6 +362,7 @@ class LifeOSEventBus {
         finally {
             this.connection = null;
             this.connectionPromise = null;
+            this.setConnectionHealth('disconnected');
             if (this.transport !== 'in-memory') {
                 this.transport = 'unknown';
             }
@@ -334,6 +370,9 @@ class LifeOSEventBus {
     }
     getTransport() {
         return this.transport;
+    }
+    getConnectionHealth() {
+        return this.connectionHealth;
     }
 }
 export function createEventBusClient(options = {}) {

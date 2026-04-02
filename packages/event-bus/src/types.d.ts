@@ -147,6 +147,14 @@ export declare const Topics: {
         readonly householdNoteCreateRequested: "lifeos.household.note.create.requested";
         readonly householdCaptureUnresolved: "lifeos.household.capture.unresolved";
         readonly householdAutomationFailed: "lifeos.household.automation.failed";
+        readonly homeNodeSurfaceRegistered: "lifeos.homenode.surface.registered";
+        readonly homeNodeSurfaceDeregistered: "lifeos.homenode.surface.deregistered";
+        readonly homeNodeStateSnapshotUpdated: "lifeos.homenode.state.snapshot.updated";
+        readonly homeNodeDisplayFeedUpdated: "lifeos.homenode.display.feed.updated";
+        readonly homeNodeVoiceSessionStarted: "lifeos.homenode.voice.session.started";
+        readonly homeNodeVoiceSessionCompleted: "lifeos.homenode.voice.session.completed";
+        readonly homeNodeVoiceSessionFailed: "lifeos.homenode.voice.session.failed";
+        readonly homeNodeHealthChanged: "lifeos.homenode.health.changed";
     };
 };
 //# sourceMappingURL=types.d.ts.map

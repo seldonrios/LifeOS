@@ -278,6 +278,9 @@ importers:
       '@lifeos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@lifeos/home-node-core':
+        specifier: workspace:*
+        version: link:../../packages/home-node-core
       '@lifeos/module-sdk':
         specifier: workspace:*
         version: link:../../packages/module-sdk
@@ -373,6 +376,15 @@ importers:
         specifier: workspace:*
         version: link:../../packages/module-sdk
 
+  modules/voice:
+    dependencies:
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../../packages/event-bus
+      '@lifeos/module-sdk':
+        specifier: workspace:*
+        version: link:../../packages/module-sdk
+
   packages/agent-mesh:
     dependencies:
       '@lifeos/event-bus':
@@ -456,6 +468,9 @@ importers:
       '@lifeos/habit-streak-module':
         specifier: workspace:*
         version: link:../../modules/habit-streak
+      '@lifeos/home-state-module':
+        specifier: workspace:*
+        version: link:../../modules/home-state
       '@lifeos/household-capture-router-module':
         specifier: workspace:*
         version: link:../../modules/household-capture-router
@@ -498,6 +513,9 @@ importers:
       '@lifeos/voice-core':
         specifier: workspace:*
         version: link:../voice-core
+      '@lifeos/voice-module':
+        specifier: workspace:*
+        version: link:../../modules/voice
       '@lifeos/weather-module':
         specifier: workspace:*
         version: link:../weather-module
@@ -598,6 +616,15 @@ importers:
       '@lifeos/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@lifeos/event-bus':
+        specifier: workspace:*
+        version: link:../event-bus
+      '@lifeos/household-capture-router-module':
+        specifier: workspace:*
+        version: link:../../modules/household-capture-router
+      '@lifeos/voice-core':
+        specifier: workspace:*
+        version: link:../voice-core
       better-sqlite3:
         specifier: ^12.8.0
         version: 12.8.0
@@ -2495,6 +2522,7 @@ packages:
   '@lancedb/lancedb@0.27.1':
     resolution: {integrity: sha512-LqXw19VYXaG1bV/03wN5JrYOSrRv38RPbKHW0hukbyfsNV4+VuZ3VpObk3gDeJGPkkJ56MS3lbbB2pqqg1DiNQ==}
     engines: {node: '>= 18'}
+    cpu: [x64, arm64]
     os: [darwin, linux, win32]
     peerDependencies:
       apache-arrow: '>=15.0.0 <=18.1.0'
