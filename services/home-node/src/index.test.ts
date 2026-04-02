@@ -16,6 +16,8 @@ import { HomeNodeGraphClient } from '@lifeos/home-node-core';
 import {
   handleHomeStateChangedEvent,
   handleVoiceCaptureEvent,
+  publishDisplayFeedUpdatedEvent,
+  publishSnapshotUpdatedEvent,
   publishSurfaceDeregisteredEvent,
   publishSurfaceRegisteredEvent,
   runSurfaceHealthWatchdog,
@@ -561,6 +563,13 @@ test('handleHomeStateChangedEvent upserts snapshot and publishes update event', 
   const eventBus = new FakeEventBus();
 
   try {
+    client.upsertHome({
+      homeId: 'home-default',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+
     const event: BaseEvent<unknown> = {
       id: 'event-1',
       type: Topics.lifeos.householdHomeStateChanged,
@@ -591,11 +600,109 @@ test('handleHomeStateChangedEvent upserts snapshot and publishes update event', 
   }
 });
 
+test('publishSnapshotUpdatedEvent publishes using resolved home_id for household', async () => {
+  const { client, cleanup } = createClientHarness();
+  const eventBus = new FakeEventBus();
+
+  try {
+    client.upsertHome({
+      homeId: 'home-custom-abc',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+
+    const snapshot = client.upsertHomeStateSnapshot({
+      householdId: 'household-1',
+      homeMode: 'home',
+      occupancySummary: 'occupied',
+      activeRoutines: [],
+      adapterHealth: 'healthy',
+      snapshotAt: '2026-03-31T00:00:00.000Z',
+    });
+
+    await publishSnapshotUpdatedEvent(client, eventBus, 'household-1', snapshot);
+
+    assert.equal(eventBus.published.length, 1);
+    assert.equal(
+      (eventBus.published[0]?.event.data as { home_id: string }).home_id,
+      'home-custom-abc',
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('publishSnapshotUpdatedEvent skips publish when household has no registered home', async () => {
+  const { client, cleanup } = createClientHarness();
+  const eventBus = new FakeEventBus();
+
+  try {
+    const snapshot = {
+      home_mode: 'home' as const,
+      occupancy_summary: 'unknown',
+      active_routines: [],
+      adapter_health: 'healthy' as const,
+      snapshot_at: '2026-03-31T00:00:00.000Z',
+    };
+
+    await publishSnapshotUpdatedEvent(client, eventBus, 'household-orphan', snapshot);
+
+    assert.equal(eventBus.published.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('publishDisplayFeedUpdatedEvent publishes using resolved home_id for household', async () => {
+  const { client, cleanup } = createClientHarness();
+  const eventBus = new FakeEventBus();
+
+  try {
+    client.upsertHome({
+      homeId: 'home-custom-abc',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+
+    await publishDisplayFeedUpdatedEvent(client, eventBus, 'household-1', 'home');
+
+    assert.equal(eventBus.published.length, 1);
+    assert.equal(
+      (eventBus.published[0]?.event.data as { home_id: string }).home_id,
+      'home-custom-abc',
+    );
+  } finally {
+    cleanup();
+  }
+});
+
+test('publishDisplayFeedUpdatedEvent skips publish when household has no registered home', async () => {
+  const { client, cleanup } = createClientHarness();
+  const eventBus = new FakeEventBus();
+
+  try {
+    await publishDisplayFeedUpdatedEvent(client, eventBus, 'household-orphan', 'home');
+
+    assert.equal(eventBus.published.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
 test('handleHomeStateChangedEvent does not publish display feed update when mode is unchanged', async () => {
   const { client, cleanup } = createClientHarness();
   const eventBus = new FakeEventBus();
 
   try {
+    client.upsertHome({
+      homeId: 'home-default',
+      householdId: 'household-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+
     client.upsertHomeStateSnapshot({
       householdId: 'household-1',
       homeMode: 'home',

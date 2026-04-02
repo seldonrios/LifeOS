@@ -16,7 +16,6 @@ import { WhisperSttAdapter, type WhisperHealthSnapshot, type WhisperHealthStatus
 
 import { registerHomeNodeRoutes } from './routes';
 
-const DEFAULT_HOME_ID = 'home-default';
 const WATCHDOG_INTERVAL_MS = 60_000;
 const SURFACE_INACTIVITY_THRESHOLD_MS = 300_000;
 
@@ -114,12 +113,24 @@ function createEvent<T>(type: string, data: T, householdId: string): BaseEvent<T
 }
 
 export async function publishSnapshotUpdatedEvent(
+  activeGraphClient: HomeNodeGraphClient,
   activeEventBus: ManagedEventBus,
   householdId: string,
   snapshot: HomeStateSnapshot,
 ): Promise<void> {
+  const home = activeGraphClient.getHomeByHouseholdId(householdId);
+  if (!home) {
+    console.warn(
+      JSON.stringify({
+        message: 'home-node: no home registered for household, skipping snapshot event',
+        householdId,
+      }),
+    );
+    return;
+  }
+
   const data: HomeNodeStateSnapshotUpdated = HomeNodeStateSnapshotUpdatedSchema.parse({
-    home_id: DEFAULT_HOME_ID,
+    home_id: home.home_id,
     household_id: householdId,
     snapshot,
     updated_at: new Date().toISOString(),
@@ -132,13 +143,25 @@ export async function publishSnapshotUpdatedEvent(
 }
 
 export async function publishDisplayFeedUpdatedEvent(
+  activeGraphClient: HomeNodeGraphClient,
   activeEventBus: ManagedEventBus,
   householdId: string,
   homeMode: HomeStateSnapshot['home_mode'],
 ): Promise<void> {
+  const home = activeGraphClient.getHomeByHouseholdId(householdId);
+  if (!home) {
+    console.warn(
+      JSON.stringify({
+        message: 'home-node: no home registered for household, skipping snapshot event',
+        householdId,
+      }),
+    );
+    return;
+  }
+
   const data = HomeNodeDisplayFeedEventSchema.parse({
     household_id: householdId,
-    home_id: DEFAULT_HOME_ID,
+    home_id: home.home_id,
     home_mode: homeMode,
     updated_at: new Date().toISOString(),
   });
@@ -212,10 +235,15 @@ export async function handleHomeStateChangedEvent(
     result: payload.consentVerified ? 'accepted' : 'consent_skip',
   });
 
-  await publishSnapshotUpdatedEvent(activeEventBus, payload.householdId, persisted);
+  await publishSnapshotUpdatedEvent(activeGraphClient, activeEventBus, payload.householdId, persisted);
 
   if (current.home_mode !== persisted.home_mode) {
-    await publishDisplayFeedUpdatedEvent(activeEventBus, payload.householdId, persisted.home_mode);
+    await publishDisplayFeedUpdatedEvent(
+      activeGraphClient,
+      activeEventBus,
+      payload.householdId,
+      persisted.home_mode,
+    );
   }
 }
 

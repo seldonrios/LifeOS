@@ -448,6 +448,18 @@ export class HomeNodeGraphClient {
     return toHomeNodeHome(row);
   }
 
+  getHomeByHouseholdId(householdId: string): HomeNodeHome | null {
+    const row = this.db
+      .prepare('SELECT * FROM homes WHERE household_id = ? LIMIT 1')
+      .get(householdId) as HomeNodeHomeRow | undefined;
+
+    if (!row) {
+      return null;
+    }
+
+    return toHomeNodeHome(row);
+  }
+
   upsertZone(input: HomeNodeZoneWrite): HomeNodeZone {
     const createdAt = ensureIsoDateTime(input.createdAt ?? new Date().toISOString());
 
