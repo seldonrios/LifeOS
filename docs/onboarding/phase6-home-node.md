@@ -5,7 +5,7 @@ Use this checklist when contributing to the Phase 6 home-node runtime and ambien
 ## Checklist
 
 - [ ] Review the three-layer model (Home Node Runtime / Core Platform / Ambient Surfaces) in the Phase 6 ADR before implementation.
-- [ ] Preserve the single-home `DEFAULT_HOME_ID = 'home-default'` constraint and do not introduce multi-home assumptions in Phase 6 changes.
+- [ ] Do not add `home_id` emission to the `home-state` module — the home-node service is the sole publisher of `homeNodeStateSnapshotUpdated` with a DB-resolved `home_id` via `HomeNodeGraphClient.getHomeByHouseholdId()`.
 - [ ] For voice features, explicitly document whether behavior uses the constrained phrase tier or the open capture tier, including storage/retention behavior and privacy constraints.
 - [ ] Verify display sensitive-content filtering for `personal`, `household`, and `guest` trust levels, including the `guest_mode` override to effective `guest` content policy.
 - [ ] Preserve ambient action traceability for home-state changes and voice captures through the `ambient_actions` audit log.
@@ -14,7 +14,7 @@ Use this checklist when contributing to the Phase 6 home-node runtime and ambien
 
 ## Required References
 
-- Architectural decisions: [docs/adr/phase6-home-node-architecture.md](../adr/phase6-home-node-architecture.md)
+- Architectural decisions: [docs/adr/adr-005-phase6-home-node-architecture.md](../adr/adr-005-phase6-home-node-architecture.md)
 - Household onboarding baseline: [docs/onboarding/household-phase.md](./household-phase.md)
 
 ## Local Development Commands
@@ -26,13 +26,13 @@ pnpm --dir services/home-node test
 
 ## Key Code Paths
 
-| Concept | File |
-| --- | --- |
-| Service bootstrap, watchdog, event subscriptions | `services/home-node/src/app.ts` |
-| Display feed aggregation, content filtering | `services/home-node/src/feed.ts` |
-| Home-state snapshot, surface registry, ambient action log | `packages/home-node-core/src/client.ts` |
-| Voice session lifecycle | `packages/home-node-core/src/voice-session.ts` |
-| Surface/display type taxonomy | `apps/home-display/src/types.ts` |
+| Concept                                                   | File                                           |
+| --------------------------------------------------------- | ---------------------------------------------- |
+| Service bootstrap, watchdog, event subscriptions          | `services/home-node/src/app.ts`                |
+| Display feed aggregation, content filtering               | `services/home-node/src/feed.ts`               |
+| Home-state snapshot, surface registry, ambient action log | `packages/home-node-core/src/client.ts`        |
+| Voice session lifecycle                                   | `packages/home-node-core/src/voice-session.ts` |
+| Surface/display type taxonomy                             | `apps/home-display/src/types.ts`               |
 
 ## Reminder
 
