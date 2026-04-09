@@ -50,18 +50,18 @@
     "@commitlint/cli": "^20.5.0",
     "@commitlint/config-conventional": "^20.5.0",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.5.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vitest/coverage-v8": "^4.1.2",
-    "eslint": "^10.1.0",
+    "@types/node": "^25.5.2",
+    "@typescript-eslint/eslint-plugin": "^8.58.1",
+    "@typescript-eslint/parser": "^8.58.1",
+    "@vitest/coverage-v8": "^4.1.4",
+    "eslint": "^10.2.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
     "lint-staged": "^16.4.0",
     "prettier": "^3.8.1",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.2"
+    "vitest": "^4.1.4"
   },
   "optionalDependencies": {
     "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.12"
