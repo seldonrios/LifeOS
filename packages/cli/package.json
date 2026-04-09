@@ -28,7 +28,7 @@
     "test": "tsx --test src/index.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/hero-loop.integration.test.ts src/commands/init.test.ts src/commands/marketplace.test.ts"
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.3.2",
+    "@inquirer/prompts": "^8.4.1",
     "@lifeos/contracts": "workspace:*",
     "@lifeos/calendar-module": "workspace:*",
     "@lifeos/core": "workspace:*",
@@ -58,7 +58,7 @@
     "chalk": "^5.6.2",
     "cli-table3": "^0.6.5",
     "commander": "^14.0.3",
-    "inquirer": "^13.3.2",
+    "inquirer": "^13.4.1",
     "ora": "^9.3.0"
   }
 }
