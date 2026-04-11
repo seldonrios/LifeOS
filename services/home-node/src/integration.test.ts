@@ -16,7 +16,7 @@ import {
 import { HomeNodeDisplayFeedEventSchema } from '@lifeos/contracts';
 import { HomeNodeGraphClient } from '@lifeos/home-node-core';
 
-import { handleHomeStateChangedEvent } from './app';
+import { handleHomeStateChangedEvent, runGuardedWatchdogTick } from './app';
 import { DISPLAY_FEED_CACHE_TTL_MS, DisplayFeedAggregator, applyContentFilter } from './feed';
 import { registerHomeNodeRoutes } from './routes';
 
@@ -500,4 +500,130 @@ test('[integration] cold-start dashboard failure returns snapshot-only stale fee
   assert.equal(feed.choresDueToday.length, 0);
   assert.equal(feed.shoppingItems.length, 0);
   assert.equal(feed.householdNotices.some((notice) => notice.id === 'quiet-hours'), true);
+});
+
+test('[integration] consent gate blocks state mutation and publishes consent_skip ambient action', async () => {
+  let cleanup: (() => Promise<void>) | null = null;
+
+  try {
+    const harness = await createServiceHarness();
+    cleanup = harness.cleanup;
+    const { client, eventBus, dbPath } = harness;
+
+    client.upsertHome({
+      homeId: 'home-consent-gate-1',
+      householdId: 'household-consent-gate-1',
+      name: 'Home',
+      timezone: 'UTC',
+    });
+    client.upsertZone({
+      zoneId: 'zone-consent-gate-1',
+      homeId: 'home-consent-gate-1',
+      name: 'Living Room',
+      type: 'living_room',
+    });
+    client.registerSurface({
+      surfaceId: 'surface-consent-gate-1',
+      zoneId: 'zone-consent-gate-1',
+      homeId: 'home-consent-gate-1',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    const event: BaseEvent<unknown> = {
+      id: 'event-consent-gate-1',
+      type: Topics.lifeos.householdHomeStateChanged,
+      timestamp: new Date().toISOString(),
+      source: 'integration-test',
+      version: '1',
+      data: {
+        householdId: 'household-consent-gate-1',
+        deviceId: 'sensor-consent-gate-1',
+        stateKey: 'presence.anyone_home',
+        previousValue: true,
+        newValue: false,
+        source: 'ha_bridge',
+        consentVerified: false,
+      },
+    };
+
+    await eventBus.publish(Topics.lifeos.householdHomeStateChanged, event);
+
+    // No snapshot should have been upserted
+    const snapshot = client.getHomeStateSnapshot('household-consent-gate-1');
+    assert.equal(snapshot, null);
+
+    // No snapshot-updated or display-feed-updated events should have been published
+    assert.ok(
+      !eventBus.published.some((e) => e.topic === Topics.lifeos.homeNodeStateSnapshotUpdated),
+    );
+    assert.ok(
+      !eventBus.published.some((e) => e.topic === Topics.lifeos.homeNodeDisplayFeedUpdated),
+    );
+
+    // Exactly one ambient action with result 'consent_skip'
+    const actions = listAmbientActionsFromDb(dbPath, 'household-consent-gate-1');
+    assert.equal(actions.length, 1);
+    assert.equal(actions[0]?.result, 'consent_skip');
+    assert.equal(actions[0]?.trigger_type, 'home_state_changed');
+  } finally {
+    if (cleanup) {
+      await cleanup();
+    }
+  }
+});
+
+test('[integration] watchdog overlap guard skips second invocation while first is in-flight', async () => {
+  let resolveFirstBody!: () => void;
+  const firstBodyDone = new Promise<void>((resolve) => {
+    resolveFirstBody = resolve;
+  });
+
+  // Start a slow first tick — it will hold watchdogRunning = true until resolveFirstBody() is called.
+  const firstTickPromise = runGuardedWatchdogTick(async () => {
+    await firstBodyDone;
+  });
+
+  // Second tick while first is in-flight: should be skipped immediately.
+  let secondBodyRan = false;
+  const skipped = await runGuardedWatchdogTick(async () => {
+    secondBodyRan = true;
+  });
+
+  assert.equal(skipped, false, 'second tick must be skipped while first is in-flight');
+  assert.equal(secondBodyRan, false, 'second tick body must not have executed');
+
+  // Release the first tick and wait for it to complete.
+  resolveFirstBody();
+  const firstResult = await firstTickPromise;
+  assert.equal(firstResult, true, 'first tick must report it ran');
+
+  // Guard must be released — a subsequent tick must now execute.
+  let afterBodyRan = false;
+  const afterResult = await runGuardedWatchdogTick(async () => {
+    afterBodyRan = true;
+  });
+  assert.equal(afterResult, true, 'tick after guard release must run');
+  assert.equal(afterBodyRan, true, 'post-release tick body must have executed');
+});
+
+test('[integration] watchdog finally block releases guard even when body throws', async () => {
+  let firstBodyRan = false;
+  // Body throws: the finally clause must still reset watchdogRunning.
+  const errorResult = await runGuardedWatchdogTick(async () => {
+    firstBodyRan = true;
+    throw new Error('simulated watchdog error');
+  });
+
+  assert.equal(firstBodyRan, true, 'throwing body must have run');
+  assert.equal(errorResult, true, 'tick must report it ran even though the body threw');
+
+  // Subsequent tick must not be skipped — guard was released by finally.
+  let recoveryBodyRan = false;
+  const recoveryResult = await runGuardedWatchdogTick(async () => {
+    recoveryBodyRan = true;
+  });
+  assert.equal(recoveryResult, true, 'tick after error must not be skipped');
+  assert.equal(recoveryBodyRan, true, 'recovery tick body must have executed');
 });

@@ -29,6 +29,7 @@ type DisplayFeedSignalWaiter = {
 let graphClient: HomeNodeGraphClient | null = null;
 let eventBus: ManagedEventBus | null = null;
 let watchdogInterval: NodeJS.Timeout | null = null;
+let watchdogRunning = false;
 let voiceRuntimeClient: WhisperSttAdapter | null = null;
 let voiceSessionManager: VoiceSessionManager | null = null;
 const displayFeedSignalVersions = new Map<string, number>();
@@ -212,6 +213,14 @@ export async function handleHomeStateChangedEvent(
         reason: 'consent_not_verified',
       }),
     );
+    activeGraphClient.appendAmbientAction({
+      householdId: payload.householdId,
+      triggerType: 'home_state_changed',
+      triggerRef: payload.stateKey,
+      decisionSource: 'deterministic-rule-engine',
+      result: 'consent_skip',
+    });
+    return;
   }
 
   const now = new Date().toISOString();
@@ -232,7 +241,7 @@ export async function handleHomeStateChangedEvent(
     triggerType: 'home_state_changed',
     triggerRef: payload.stateKey,
     decisionSource: 'deterministic-rule-engine',
-    result: payload.consentVerified ? 'accepted' : 'consent_skip',
+    result: 'accepted',
   });
 
   await publishSnapshotUpdatedEvent(activeGraphClient, activeEventBus, payload.householdId, persisted);
@@ -363,6 +372,30 @@ export async function runSurfaceHealthWatchdog(
   return transitionedSurfaceIds;
 }
 
+/**
+ * Runs one watchdog tick body under the module-level overlap guard.
+ * Returns `true` when the body was executed (even if it threw), `false` when
+ * skipped because a previous invocation was still in-flight.
+ * Exported for unit testing of the guard and finally-reset behaviour.
+ */
+export async function runGuardedWatchdogTick(body: () => Promise<void>): Promise<boolean> {
+  if (watchdogRunning) return false;
+  watchdogRunning = true;
+  try {
+    await body();
+  } catch (error) {
+    console.error(
+      JSON.stringify({
+        message: 'home-node watchdog loop failed',
+        error: error instanceof Error ? error.message : 'unknown_error',
+      }),
+    );
+  } finally {
+    watchdogRunning = false;
+  }
+  return true;
+}
+
 export async function startHomeNodeService(): Promise<void> {
   await startService({
     serviceName: 'home-node',
@@ -481,9 +514,8 @@ export async function startHomeNodeService(): Promise<void> {
         if (!eventBus || !graphClient) {
           return;
         }
-
-        try {
-          const health = eventBus.getConnectionHealth();
+        await runGuardedWatchdogTick(async () => {
+          const health = eventBus!.getConnectionHealth();
           const currentStatus: WatchdogStatus = health === 'connected' ? 'healthy' : 'degraded';
           if (currentStatus === 'degraded' && currentStatus !== lastStatus) {
             const data = {
@@ -492,30 +524,23 @@ export async function startHomeNodeService(): Promise<void> {
               checked_at: new Date().toISOString(),
             };
 
-            await eventBus.publish(
+            await eventBus!.publish(
               Topics.lifeos.homeNodeHealthChanged,
               createEvent(Topics.lifeos.homeNodeHealthChanged, data, 'system'),
             );
           }
 
-          await runSurfaceHealthWatchdog(graphClient, eventBus);
+          await runSurfaceHealthWatchdog(graphClient!, eventBus!);
           await voiceSessionManager?.expireSessions();
           if (voiceRuntimeClient) {
             lastVoiceRuntimeStatus = await runVoiceRuntimeHealthWatchdog(
               voiceRuntimeClient,
-              eventBus,
+              eventBus!,
               lastVoiceRuntimeStatus,
             );
           }
           lastStatus = currentStatus;
-        } catch (error) {
-          console.error(
-            JSON.stringify({
-              message: 'home-node watchdog loop failed',
-              error: error instanceof Error ? error.message : 'unknown_error',
-            }),
-          );
-        }
+        });
       }, WATCHDOG_INTERVAL_MS);
 
       app.addHook('onClose', async () => {
@@ -523,6 +548,7 @@ export async function startHomeNodeService(): Promise<void> {
           clearInterval(watchdogInterval);
           watchdogInterval = null;
         }
+        watchdogRunning = false;
 
         await eventBus?.close();
         voiceSessionManager = null;
