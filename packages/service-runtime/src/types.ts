@@ -13,6 +13,8 @@ export type ServiceRuntimePhase =
   | 'health/readiness'
   | 'listen';
 
+export type RouteAuthMode = 'mutating' | 'api-prefix' | 'all';
+
 export interface ServiceRuntimeOptions {
   serviceName: string;
   registerRoutes?: (app: FastifyInstance) => Promise<void>;
@@ -23,8 +25,11 @@ export interface ServiceRuntimeOptions {
   isCoreService?: boolean;
   /** @deprecated Use `isCoreService` instead. Will be removed in a future release. Neither this flag nor `isCoreService` governs secret enforcement; use `SecretRef.policy` instead. */
   isCorService?: boolean;
+  /** @deprecated Use `enforceRouteAuthMode` instead. Ignored when `enforceRouteAuthMode` is set. Will be removed in a future release. */
   enableAuth?: boolean;
+  /** @deprecated Use `enforceRouteAuthMode` instead. Ignored when `enforceRouteAuthMode` is set. Will be removed in a future release. */
   enforceMutatingRouteAuth?: boolean;
+  enforceRouteAuthMode?: RouteAuthMode;
   enableMetrics?: boolean;
   enableReadiness?: boolean;
   enableLiveness?: boolean;

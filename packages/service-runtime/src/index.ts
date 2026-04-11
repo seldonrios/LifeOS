@@ -14,7 +14,7 @@ import { createSecurityClient, type JwtPayload } from '@lifeos/security';
 import { applySecretPolicy, SecretsError } from '@lifeos/secrets';
 import type { SecretStore } from '@lifeos/secrets';
 
-import type { ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
+import type { RouteAuthMode, ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
 
 function createNoopObservabilityClient(): ObservabilityClient {
   return {
@@ -99,6 +99,70 @@ function terminateBoot(error: unknown, message: string): never {
 
 function shouldEnforceMutatingAuth(method: string): boolean {
   return method === 'POST' || method === 'PUT' || method === 'PATCH' || method === 'DELETE';
+}
+
+function shouldEnforceAuth(method: string, path: string, mode: RouteAuthMode): boolean {
+  if (mode === 'all') {
+    return true;
+  }
+
+  if (mode === 'api-prefix') {
+    return path.startsWith('/api/');
+  }
+
+  return shouldEnforceMutatingAuth(method);
+}
+
+type RuntimeSecurityConfig = {
+  policyEnforce?: boolean;
+  failClosed?: boolean;
+};
+
+function resolveAuthPolicy(
+  opts: ServiceRuntimeOptions,
+  configSecurity: RuntimeSecurityConfig | undefined,
+): { mode: RouteAuthMode; enabled: boolean } {
+  const hasLegacyAuthFlags =
+    opts.enforceMutatingRouteAuth !== undefined || opts.enableAuth !== undefined;
+
+  if (opts.enforceRouteAuthMode !== undefined) {
+    if (hasLegacyAuthFlags) {
+      console.warn(
+        `[service-runtime] ${opts.serviceName}: enforceRouteAuthMode is set; enableAuth and enforceMutatingRouteAuth are deprecated and ignored.`,
+      );
+    }
+
+    return {
+      mode: opts.enforceRouteAuthMode,
+      enabled: true,
+    };
+  }
+
+  if (opts.enforceMutatingRouteAuth !== undefined) {
+    return {
+      mode: 'mutating',
+      enabled: opts.enforceMutatingRouteAuth,
+    };
+  }
+
+  if (opts.enableAuth !== undefined) {
+    return {
+      mode: 'mutating',
+      enabled: opts.enableAuth,
+    };
+  }
+
+  if (configSecurity?.policyEnforce !== undefined) {
+    return {
+      mode: 'mutating',
+      enabled: configSecurity.policyEnforce,
+    };
+  }
+
+  return {
+    mode: 'mutating',
+    enabled: true,
+  };
 }
 
 function extractBearerToken(value: string | undefined): string | null {
@@ -211,9 +275,12 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
   app.addHook('onSend', async (request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('X-Frame-Options', 'DENY');
-    reply.header('X-XSS-Protection', '1; mode=block');
-    reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    if (process.env.NODE_ENV === 'production') {
+      reply.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+    }
     reply.header('Content-Security-Policy', "default-src 'self'");
+    reply.header('Referrer-Policy', 'no-referrer');
+    reply.header('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
     // Do not expose server version
     reply.header('Server', 'LifeOS');
   });
@@ -221,26 +288,22 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
   await markPhase('auth/policy');
   const configSecurity = (
     resolvedConfig as unknown as {
-      security?: {
-        policyEnforce?: boolean;
-        failClosed?: boolean;
-      };
+      security?: RuntimeSecurityConfig;
     }
   ).security;
   const failClosed = opts.failClosed ?? configSecurity?.failClosed ?? true;
-  const enforceMutatingRouteAuth =
-    opts.enforceMutatingRouteAuth ?? opts.enableAuth ?? configSecurity?.policyEnforce ?? true;
+  const authPolicy = resolveAuthPolicy(opts, configSecurity);
   const securityClient = createSecurityClient();
   const policyClient = createPolicyClient();
 
   app.addHook('onRequest', async (request, reply) => {
     request.log.info({ serviceName: opts.serviceName }, 'service identity');
 
-    if (!enforceMutatingRouteAuth || !shouldEnforceMutatingAuth(request.method)) {
+    if (request.url.startsWith('/health/')) {
       return;
     }
 
-    if (request.url.startsWith('/health/')) {
+    if (!authPolicy.enabled || !shouldEnforceAuth(request.method, request.url, authPolicy.mode)) {
       return;
     }
 
@@ -255,7 +318,7 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
         method: request.method,
         path: request.url,
       });
-      reply.code(401).send({ error: 'Missing Bearer token for mutating route' });
+      reply.code(401).send({ error: 'Invalid or expired token' });
       return reply;
     }
 
@@ -269,10 +332,9 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
           serviceName: opts.serviceName,
           method: request.method,
           path: request.url,
+          error: error instanceof Error ? error.message : String(error),
         });
-        reply.code(503).send({
-          error: `JWT verification failed: ${error instanceof Error ? error.message : String(error)}`,
-        });
+        reply.code(401).send({ error: 'Invalid or expired token' });
         return reply;
       }
       return;
@@ -285,7 +347,7 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
         method: request.method,
         path: request.url,
       });
-      reply.code(401).send({ error: 'Invalid or expired JWT token' });
+      reply.code(401).send({ error: 'Invalid or expired token' });
       return reply;
     }
 

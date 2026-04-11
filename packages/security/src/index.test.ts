@@ -1,13 +1,17 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createHmac } from 'node:crypto';
 
 import { JwtService, createSecurityClient } from './index';
 
 const ENV_KEYS = [
   'LIFEOS_JWT_SECRET',
+  'LIFEOS_MASTER_KEY',
   'LIFEOS_JWT_ISSUER',
   'LIFEOS_JWT_AUDIENCE',
   'LIFEOS_JWT_EXPIRES_IN_SECONDS',
   'LIFEOS_JWT_DEFAULT_SCOPES',
+  'NODE_ENV',
+  'LIFEOS_JWT_ALLOW_INSECURE_DEFAULT',
 ];
 
 const previousEnv = new Map<string, string | undefined>();
@@ -72,5 +76,109 @@ describe('security client', () => {
 
     const payload = await jwt.verify(issued.token);
     expect(payload).toBeNull();
+  });
+});
+
+describe('JwtService constructor — secret policy', () => {
+  it('throws in production when no secret is set', () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'production';
+    expect(() => new JwtService()).toThrow();
+  });
+
+  it('throws in development without escape hatch', () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'development';
+    delete process.env.LIFEOS_JWT_ALLOW_INSECURE_DEFAULT;
+    expect(() => new JwtService()).toThrow();
+  });
+
+  it('warns but succeeds in development with escape hatch', () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'development';
+    process.env.LIFEOS_JWT_ALLOW_INSECURE_DEFAULT = 'true';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(() => new JwtService()).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('succeeds in test env without secret', () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'test';
+    expect(() => new JwtService()).not.toThrow();
+  });
+
+  it('succeeds in any env when secret is explicitly set', () => {
+    process.env.NODE_ENV = 'production';
+    process.env.LIFEOS_JWT_SECRET = 'explicit-secret';
+    expect(() => new JwtService()).not.toThrow();
+  });
+});
+
+describe('JwtService.verify() — aud enforcement', () => {
+  function base64UrlEncode(input: Buffer | string): string {
+    return Buffer.from(input)
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '');
+  }
+
+  function makeTestToken(payload: Record<string, unknown>, secret: string): string {
+    const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+    const body = base64UrlEncode(JSON.stringify(payload));
+    const signature = base64UrlEncode(
+      createHmac('sha256', secret).update(`${header}.${body}`).digest(),
+    );
+    return `${header}.${body}.${signature}`;
+  }
+
+  const TEST_SECRET = 'test-secret-aud';
+
+  const basePayload = () => {
+    const now = Math.floor(Date.now() / 1000);
+    return {
+      sub: 'service:test',
+      service_id: 'test',
+      scopes: ['service.read'],
+      iss: 'lifeos.local',
+      iat: now,
+      exp: now + 1800,
+    };
+  };
+
+  it('rejects tokens with absent aud', async () => {
+    process.env.LIFEOS_JWT_SECRET = TEST_SECRET;
+    const jwt = new JwtService();
+    const token = makeTestToken({ ...basePayload() }, TEST_SECRET);
+    expect(await jwt.verify(token)).toBeNull();
+  });
+
+  it('rejects tokens with empty string aud', async () => {
+    process.env.LIFEOS_JWT_SECRET = TEST_SECRET;
+    const jwt = new JwtService();
+    const token = makeTestToken({ ...basePayload(), aud: '' }, TEST_SECRET);
+    expect(await jwt.verify(token)).toBeNull();
+  });
+
+  it('rejects tokens with wrong aud', async () => {
+    process.env.LIFEOS_JWT_SECRET = TEST_SECRET;
+    const jwt = new JwtService();
+    const token = makeTestToken({ ...basePayload(), aud: 'other-audience' }, TEST_SECRET);
+    expect(await jwt.verify(token)).toBeNull();
+  });
+
+  it('accepts tokens with correct aud', async () => {
+    process.env.LIFEOS_JWT_SECRET = TEST_SECRET;
+    const jwt = new JwtService();
+    const token = makeTestToken({ ...basePayload(), aud: 'lifeos.services' }, TEST_SECRET);
+    const result = await jwt.verify(token);
+    expect(result).not.toBeNull();
+    expect(result?.sub).toBe('service:test');
   });
 });

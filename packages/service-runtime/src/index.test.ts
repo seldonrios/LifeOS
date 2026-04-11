@@ -339,4 +339,210 @@ describe('startService', () => {
 
     expect(response.status).toBe(200);
   });
+
+  it("enforceRouteAuthMode: 'api-prefix' enforces auth for GET /api/anything", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-api-prefix-mode',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'api-prefix',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.get('/api/anything', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/anything`);
+    expect(response.status).toBe(401);
+  });
+
+  it("enforceRouteAuthMode: 'mutating' allows GET /api/anything", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-mutating-mode',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'mutating',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.get('/api/anything', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/anything`);
+    expect(response.status).toBe(200);
+  });
+
+  it("enforceRouteAuthMode: 'all' enforces auth for GET /non-api", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-all-mode',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'all',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.get('/non-api', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/non-api`);
+    expect(response.status).toBe(401);
+  });
+
+  it('logs deprecation warning when enforceRouteAuthMode and legacy auth option are both set', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await startService({
+      serviceName: 'service-runtime-test-auth-deprecation-warning',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'all',
+      enableAuth: false,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('service-runtime-test-auth-deprecation-warning'),
+    );
+  });
+
+  it('enableAuth: false disables auth when enforceRouteAuthMode is not set', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-enable-auth-false',
+      allowObservabilityInitFallback: true,
+      enableAuth: false,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.post('/mutate', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/mutate`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("returns canonical 401 body when token verification fails", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-invalid-token-response',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.post('/mutate', async () => ({ ok: true }));
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/mutate`, {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer invalid-token',
+      },
+    });
+
+    expect(response.status).toBe(401);
+    const body = (await response.json()) as { error?: string };
+    expect(body).toEqual({ error: 'Invalid or expired token' });
+  });
+
+  it('does not send X-XSS-Protection header', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-no-xss-header',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/live`);
+    expect(response.headers.get('x-xss-protection')).toBeNull();
+  });
+
+  it('sends Referrer-Policy: no-referrer header', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-referrer-policy-header',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/live`);
+    expect(response.headers.get('referrer-policy')).toBe('no-referrer');
+  });
+
+  it('sends Permissions-Policy header', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-permissions-policy-header',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/live`);
+    expect(response.headers.get('permissions-policy')).not.toBeNull();
+  });
+
+  it('does not send Strict-Transport-Security when NODE_ENV is not production', async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+
+    await startService({
+      serviceName: 'service-runtime-test-no-hsts-non-prod',
+      allowObservabilityInitFallback: true,
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/health/live`);
+    expect(response.headers.get('strict-transport-security')).toBeNull();
+  });
 });

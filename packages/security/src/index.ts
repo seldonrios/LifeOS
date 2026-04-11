@@ -47,7 +47,26 @@ function getSigningSecret(): string {
     return master;
   }
 
-  return DEFAULT_SIGNING_SECRET;
+  if (process.env.NODE_ENV === 'test') {
+    return 'lifeos-test-secret';
+  }
+
+  if (
+    process.env.NODE_ENV === 'development' &&
+    process.env.LIFEOS_JWT_ALLOW_INSECURE_DEFAULT === 'true'
+  ) {
+    console.warn(
+      '[lifeos-security] WARNING: Using insecure default JWT signing secret. ' +
+        'Set LIFEOS_JWT_SECRET before deploying.',
+    );
+    return DEFAULT_SIGNING_SECRET;
+  }
+
+  throw new Error(
+    'Missing LIFEOS_JWT_SECRET: a signing secret must be set in all non-development ' +
+      'environments. For local development only, set NODE_ENV=development and ' +
+      'LIFEOS_JWT_ALLOW_INSECURE_DEFAULT=true to use the insecure default.',
+  );
 }
 
 function getExpiresInSeconds(): number {
@@ -96,7 +115,14 @@ export class JwtService {
     this.issuer = process.env.LIFEOS_JWT_ISSUER?.trim() || DEFAULT_ISSUER;
     this.audience = process.env.LIFEOS_JWT_AUDIENCE?.trim() || DEFAULT_AUDIENCE;
     this.secret = getSigningSecret();
+    this.validateSigningSecret(this.secret);
     this.expiresInSeconds = getExpiresInSeconds();
+  }
+
+  private validateSigningSecret(secret: string): void {
+    if (!secret || typeof secret !== 'string') {
+      throw new Error('JWT signing secret must be a non-empty string');
+    }
   }
 
   async issue(payload: {
@@ -179,7 +205,7 @@ export class JwtService {
       return null;
     }
 
-    if (payload.aud && payload.aud !== this.audience) {
+    if (typeof payload.aud !== 'string' || payload.aud === '' || payload.aud !== this.audience) {
       return null;
     }
 

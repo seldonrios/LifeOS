@@ -366,6 +366,7 @@ export async function runSurfaceHealthWatchdog(
 export async function startHomeNodeService(): Promise<void> {
   await startService({
     serviceName: 'home-node',
+    enforceRouteAuthMode: 'mutating',
     port: Number(process.env.LIFEOS_HOME_NODE_PORT ?? 3010),
     secretRefs: [],
     secretStore: createEnvSecretStore(),
