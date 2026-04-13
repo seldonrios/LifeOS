@@ -39,6 +39,25 @@ Phase 6 introduces an always-on home-node runtime layer for ambient household su
 - All mutating home-node routes now uniformly require the surface secret.
 - Phase 6 contributors must align feed filtering, notice semantics, and voice/session behavior with the frozen decisions above.
 
+## Route Auth Classification
+
+| Route | Method | Auth class |
+| ----- | ------ | ---------- |
+| `/api/home-node/homes` | POST | `surface-secret` |
+| `/api/home-node/zones` | POST | `surface-secret` |
+| `/api/home-node/snapshot/:householdId` | GET | `surface-secret` |
+| `/api/home-node/surfaces` | GET | `surface-secret` |
+| `/api/home-node/surfaces/register` | POST | `surface-secret` |
+| `/api/home-node/surfaces` | POST | `surface-secret` |
+| `/api/home-node/surfaces/:surfaceId` | DELETE | `surface-secret` |
+| `/api/home-node/surfaces/:surfaceId/heartbeat` | POST | `surface-secret` |
+| `/api/home-node/display-feed/:surfaceId` | GET | `surface-secret` |
+| `/api/home-node/display-feed-hints/:surfaceId` | GET | `surface-secret` |
+| `/health/live` | GET | `public` |
+| `/health/ready` | GET | `public` |
+
+Bearer auth for GET routes is deferred to the auth-unification wave. `/health/*` endpoints must remain unauthenticated regardless of `enforceRouteAuthMode`.
+
 ## Alternatives Considered
 
 - Dynamic trust-level mutation after registration was rejected; immutability is enforced in `registerSurface()`.

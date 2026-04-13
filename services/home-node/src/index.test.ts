@@ -114,8 +114,10 @@ function createClientHarness(): { client: HomeNodeGraphClient; cleanup: () => vo
 test('GET /api/home-node/snapshot/:householdId returns snapshot when present', async () => {
   const { client, cleanup } = createClientHarness();
   const { app, handlers } = createRouteHarness();
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
 
   try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
     client.upsertHomeStateSnapshot({
       householdId: 'household-1',
       homeMode: 'away',
@@ -134,7 +136,10 @@ test('GET /api/home-node/snapshot/:householdId returns snapshot when present', a
     const response = await routeHandler(
       {
         params: { householdId: 'household-1' },
-      },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
           send: (payload: unknown) => ({ statusCode, payload }),
@@ -146,6 +151,7 @@ test('GET /api/home-node/snapshot/:householdId returns snapshot when present', a
     assert.equal(response.statusCode, 200);
     assert.equal(payload.home_mode, 'away');
   } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
     cleanup();
   }
 });
@@ -153,8 +159,10 @@ test('GET /api/home-node/snapshot/:householdId returns snapshot when present', a
 test('GET /api/home-node/snapshot/:householdId returns 404 when absent', async () => {
   const { client, cleanup } = createClientHarness();
   const { app, handlers } = createRouteHarness();
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
 
   try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
     registerHomeNodeRoutes(app as unknown as Parameters<typeof registerHomeNodeRoutes>[0], client);
     const routeHandler = handlers.get('GET /api/home-node/snapshot/:householdId');
     if (!routeHandler) {
@@ -164,7 +172,10 @@ test('GET /api/home-node/snapshot/:householdId returns 404 when absent', async (
     const response = await routeHandler(
       {
         params: { householdId: 'household-404' },
-      },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
           send: (payload: unknown) => ({ statusCode, payload }),
@@ -174,6 +185,7 @@ test('GET /api/home-node/snapshot/:householdId returns 404 when absent', async (
 
     assert.equal(response.statusCode, 404);
   } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
     cleanup();
   }
 });
@@ -820,6 +832,9 @@ test('POST /api/home-node/surfaces registers and lists surfaces', async () => {
           active: 'true',
           householdId: 'household-1',
         },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
       } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
@@ -948,6 +963,9 @@ test('POST /api/home-node/homes and POST /api/home-node/zones satisfy contract b
           name: 'Home',
           timezone: 'UTC',
         },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
       } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
@@ -964,6 +982,9 @@ test('POST /api/home-node/homes and POST /api/home-node/zones satisfy contract b
           name: 'Kitchen',
           type: 'kitchen',
         },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
       } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
@@ -979,6 +1000,9 @@ test('POST /api/home-node/homes and POST /api/home-node/zones satisfy contract b
           home_id: 'home-default',
           name: 'Kitchen',
           type: 'kitchen',
+        },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
         },
       } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
@@ -1137,7 +1161,12 @@ test('GET /api/home-node/surfaces requires householdId and filters by household'
     }
 
     const missingHouseholdResponse = await listHandler(
-      { query: {} } as unknown as Parameters<SnapshotRouteHandler>[0],
+      {
+        query: {},
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+        },
+      } as unknown as Parameters<SnapshotRouteHandler>[0],
       {
         code: (statusCode: number) => ({
           send: (payload: unknown) => ({ statusCode, payload }),
@@ -1149,6 +1178,9 @@ test('GET /api/home-node/surfaces requires householdId and filters by household'
       {
         query: {
           householdId: 'household-1',
+        },
+        headers: {
+          'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
         },
       } as unknown as Parameters<SnapshotRouteHandler>[0],
       {

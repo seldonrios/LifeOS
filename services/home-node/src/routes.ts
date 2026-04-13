@@ -192,6 +192,10 @@ export function registerHomeNodeRoutes(
   });
 
   app.get('/api/home-node/snapshot/:householdId', async (request, reply) => {
+    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+    }
+
     const householdId = String((request.params as { householdId?: string }).householdId ?? '').trim();
     if (householdId.length === 0) {
       return reply.code(400).send({ error: 'householdId is required' });
@@ -361,6 +365,10 @@ export function registerHomeNodeRoutes(
   });
 
   app.get('/api/home-node/surfaces', async (request, reply) => {
+    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+    }
+
     const query = request.query as {
       householdId?: string;
       homeId?: string;

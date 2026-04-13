@@ -338,6 +338,109 @@ test('[integration] householdHomeStateChanged -> snapshot update -> signal incre
   }
 });
 
+test('[integration] snapshot and surfaces GET routes require surface secret', async () => {
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  let cleanup: (() => Promise<void>) | null = null;
+
+  try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+    const harness = await createServiceHarness();
+    cleanup = harness.cleanup;
+    const { client, eventBus, app } = harness;
+
+    client.upsertHome({
+      homeId: 'home-auth-get-1',
+      householdId: 'household-auth-get-1',
+      name: 'Auth GET Home',
+      timezone: 'UTC',
+    });
+    client.upsertZone({
+      zoneId: 'zone-auth-get-1',
+      homeId: 'home-auth-get-1',
+      name: 'Auth GET Kitchen',
+      type: 'kitchen',
+    });
+    client.registerSurface({
+      surfaceId: 'surface-auth-get-1',
+      zoneId: 'zone-auth-get-1',
+      homeId: 'home-auth-get-1',
+      kind: 'kitchen_display',
+      trustLevel: 'household',
+      capabilities: ['read'],
+    });
+
+    await eventBus.publish(Topics.lifeos.householdHomeStateChanged, {
+      id: 'event-auth-get-1',
+      type: Topics.lifeos.householdHomeStateChanged,
+      timestamp: new Date().toISOString(),
+      source: 'integration-test',
+      version: '1',
+      data: {
+        householdId: 'household-auth-get-1',
+        deviceId: 'sensor-auth-get-1',
+        stateKey: 'presence.anyone_home',
+        previousValue: false,
+        newValue: true,
+        source: 'ha_bridge',
+        consentVerified: true,
+      },
+    });
+
+    const snapshotUnauthorized = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/snapshot/household-auth-get-1',
+    });
+    assert.equal(snapshotUnauthorized.statusCode, 401);
+
+    const snapshotWrongSecret = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/snapshot/household-auth-get-1',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+    });
+    assert.equal(snapshotWrongSecret.statusCode, 401);
+
+    const snapshotAuthorized = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/snapshot/household-auth-get-1',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(snapshotAuthorized.statusCode, 200);
+
+    const surfacesUnauthorized = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/surfaces?householdId=household-auth-get-1',
+    });
+    assert.equal(surfacesUnauthorized.statusCode, 401);
+
+    const surfacesWrongSecret = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/surfaces?householdId=household-auth-get-1',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+    });
+    assert.equal(surfacesWrongSecret.statusCode, 401);
+
+    const surfacesAuthorized = await app.inject({
+      method: 'GET',
+      url: '/api/home-node/surfaces?householdId=household-auth-get-1',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(surfacesAuthorized.statusCode, 200);
+  } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
+    if (cleanup) {
+      await cleanup();
+    }
+  }
+});
+
 test('[integration] display feed fetch applies content filter for household trust level', async () => {
   const { client, cleanup } = createClientHarness();
 
