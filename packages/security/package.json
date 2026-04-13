@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "vitest run src/index.test.ts"
+    "test": "vitest run --coverage src/index.test.ts"
   },
   "dependencies": {
     "@lifeos/config": "workspace:*",

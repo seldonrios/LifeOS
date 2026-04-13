@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 import ical from 'node-ical';
 
 import Fastify, { type FastifyInstance } from 'fastify';
@@ -40,10 +40,26 @@ async function assertStableCount(
   assert.equal(getCount(), expected);
 }
 
-const jwtService = new JwtService();
+before(() => {
+  process.env.LIFEOS_JWT_SECRET = 'test-jwt-secret';
+});
+
+after(() => {
+  delete process.env.LIFEOS_JWT_SECRET;
+  jwtService = undefined;
+});
+
+let jwtService: JwtService | undefined;
+
+function getJwtService(): JwtService {
+  if (!jwtService) {
+    jwtService = new JwtService();
+  }
+  return jwtService;
+}
 
 async function bearerFor(userId: string): Promise<string> {
-  const token = await jwtService.issue({
+  const token = await getJwtService().issue({
     sub: userId,
     service_id: 'dashboard-service',
     scopes: ['service.read'],
@@ -55,7 +71,7 @@ async function serviceBearerFor(
   serviceId: string,
   scopes: string[] = ['service.read'],
 ): Promise<string> {
-  const token = await jwtService.issue({
+  const token = await getJwtService().issue({
     sub: `service:${serviceId}`,
     service_id: serviceId,
     scopes,

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import test from 'node:test';
+import test, { after, before } from 'node:test';
 
 import { Topics } from '@lifeos/event-bus';
 import { JwtService } from '@lifeos/security';
@@ -17,6 +17,14 @@ import {
   waitForMeshHeartbeat,
   writeMeshLeaderSnapshot,
 } from './runtime';
+
+before(() => {
+  process.env.LIFEOS_JWT_SECRET = 'test-jwt-secret';
+});
+
+after(() => {
+  delete process.env.LIFEOS_JWT_SECRET;
+});
 
 function parseJson<T>(raw: string): T {
   return JSON.parse(raw) as T;

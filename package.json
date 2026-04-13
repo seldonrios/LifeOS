@@ -11,7 +11,7 @@
     "lifeos": "pnpm --filter @lifeos/cli exec tsx src/index.ts",
     "build:modules": "tsx scripts/build-modules.ts",
     "validate": "pnpm run build:modules && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test",
-    "test": "tsx scripts/test-runner.ts",
+    "test": "tsx scripts/test-runner-entry.ts",
     "test:household-identity": "pnpm --filter @lifeos/household-identity-module run test",
     "test:voice-capture": "pnpm --filter @lifeos/household-capture-router-module run test:tracing",
     "test:household-mvp": "pnpm run test:household-tracing",

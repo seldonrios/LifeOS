@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts src/tracing.test.ts",
+    "test": "pnpm dlx c8 --reporter=text --reporter=lcov --report-dir coverage --check-coverage --lines 50 tsx --test src/index.test.ts src/tracing.test.ts",
     "test:tracing": "tsx --test src/tracing.test.ts"
   },
   "dependencies": {

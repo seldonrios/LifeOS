@@ -21,7 +21,7 @@ jobs:
         with:
           # Current CodeQL-supported repo surface is TypeScript/JavaScript.
           # Rust exists in apps/desktop/src-tauri but is not a CodeQL language.
-          languages: javascript-typescript
+          languages: javascript-typescript, actions
       - uses: github/codeql-action/analyze@v3
         with:
           category: '/language:javascript-typescript-repo'
@@ -53,7 +53,7 @@ jobs:
 
       - uses: github/codeql-action/init@v3
         with:
-          languages: javascript-typescript
+          languages: javascript-typescript, actions
 
       - uses: github/codeql-action/analyze@v3
         with:

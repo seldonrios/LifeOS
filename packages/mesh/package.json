@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts src/runtime.test.ts"
+    "test": "pnpm dlx c8 --reporter=text --reporter=lcov --report-dir coverage tsx --test src/index.test.ts src/runtime.test.ts"
   },
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
