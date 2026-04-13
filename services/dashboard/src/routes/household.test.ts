@@ -437,6 +437,74 @@ test('PATCH /api/households/:id/config rejects non-admin members', async () => {
   }
 });
 
+test('PATCH /api/households/:id/config saves and returns timeZone for admins', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/config`,
+      headers: { authorization: adminAuth },
+      payload: {
+        timeZone: 'America/New_York',
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.json().config.timeZone, 'America/New_York');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/config rejects invalid timeZone values', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/config`,
+      headers: { authorization: adminAuth },
+      payload: {
+        timeZone: 'Not/ATimezone',
+      },
+    });
+
+    assert.equal(response.statusCode, 400);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('PATCH /api/households/:id/config stores timeZone alongside HA config fields', async () => {
+  const { db, app, cleanup } = createHarness();
+  try {
+    const { householdId, adminAuth } = await seedHouseholdWithAdmin(db);
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'PATCH',
+      url: `/api/households/${householdId}/config`,
+      headers: { authorization: adminAuth },
+      payload: {
+        haIntegrationEnabled: true,
+        timeZone: 'Europe/London',
+      },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json();
+    assert.equal(body.config.haIntegrationEnabled, true);
+    assert.equal(body.config.timeZone, 'Europe/London');
+  } finally {
+    await cleanup();
+  }
+});
+
 test('POST /api/households/:id/ha/webhook returns 401 when secret is invalid', async () => {
   const { db, app, cleanup } = createHarness();
   const previousSecret = process.env.LIFEOS_HA_WEBHOOK_SECRET;
