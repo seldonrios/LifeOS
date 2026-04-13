@@ -137,6 +137,10 @@ export function registerHomeNodeRoutes(
   const expectedSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET ?? '';
 
   app.post('/api/home-node/homes', async (request, reply) => {
+    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+    }
+
     try {
       const payload = CreateHomeRequestSchema.parse(request.body ?? {});
       const home = graphClient.upsertHome({
@@ -160,6 +164,10 @@ export function registerHomeNodeRoutes(
   });
 
   app.post('/api/home-node/zones', async (request, reply) => {
+    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+    }
+
     try {
       const payload = CreateZoneRequestSchema.parse(request.body ?? {});
       if (!graphClient.getHomeById(payload.home_id)) {

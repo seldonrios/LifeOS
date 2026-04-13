@@ -403,6 +403,91 @@ test('[integration] display feed fetch applies content filter for household trus
   }
 });
 
+test('[integration] bootstrap auth gate — /homes and /zones require surface secret', async () => {
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  let cleanup: (() => Promise<void>) | null = null;
+
+  try {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+    const harness = await createServiceHarness();
+    cleanup = harness.cleanup;
+    const { app } = harness;
+
+    const createHomePayload = {
+      home_id: 'home-auth-gate-1',
+      household_id: 'household-auth-gate-1',
+      name: 'Auth Gate Home',
+      timezone: 'UTC',
+    };
+
+    const createZonePayload = {
+      zone_id: 'zone-auth-gate-1',
+      home_id: 'home-auth-gate-1',
+      name: 'Auth Gate Kitchen',
+      type: 'kitchen',
+    };
+
+    const createHomeUnauthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeUnauthorized.statusCode, 401);
+
+    const createHomeWrongSecret = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-surface-secret',
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeWrongSecret.statusCode, 401);
+
+    const createHomeAuthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeAuthorized.statusCode, 201);
+
+    const createZoneUnauthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneUnauthorized.statusCode, 401);
+
+    const createZoneWrongSecret = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-surface-secret',
+      },
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneWrongSecret.statusCode, 401);
+
+    const createZoneAuthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneAuthorized.statusCode, 201);
+  } finally {
+    process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
+    if (cleanup) {
+      await cleanup();
+    }
+  }
+});
+
 test('[integration] dashboard fetch failure returns stale fallback feed', async () => {
   let nowMs = 0;
   let shouldFail = false;
