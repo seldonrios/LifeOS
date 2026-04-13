@@ -1033,7 +1033,7 @@ test('[integration] watchdog finally block releases guard even when body throws'
   assert.equal(recoveryBodyRan, true, 'recovery tick body must have executed');
 });
 
-test('[integration] auth boundary - surface-secret routes', async () => {
+test('[integration] auth boundary — surface-secret routes', async () => {
   const { app, cleanup, householdId, homeId } = await createBoundaryHarness();
 
   try {
@@ -1157,7 +1157,7 @@ test('[integration] auth boundary - surface-secret routes', async () => {
   }
 });
 
-test('[integration] auth boundary - home-display bootstrap request shape succeeds', async () => {
+test('[integration] auth boundary — home-display bootstrap request shape succeeds', async () => {
   const { app, cleanup } = await createBoundaryHarness();
 
   try {
@@ -1195,7 +1195,7 @@ test('[integration] auth boundary - home-display bootstrap request shape succeed
   }
 });
 
-test('[integration] auth boundary - display-feed and heartbeat routes require surface-secret', async () => {
+test('[integration] auth boundary — display-feed and heartbeat routes require surface-secret', async () => {
   const { app, cleanup, surfaceId } = await createBoundaryHarness();
 
   try {
@@ -1263,7 +1263,7 @@ test('[integration] auth boundary - display-feed and heartbeat routes require su
   }
 });
 
-test('[integration] auth boundary - health routes are public (runtime-backed)', async () => {
+test('[integration] auth boundary — health routes are public', async () => {
   const { app, cleanup } = await createRuntimeServiceHarness();
 
   try {
