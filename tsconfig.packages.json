@@ -99,6 +99,9 @@
     },
     {
       "path": "./services/dashboard"
+    },
+    {
+      "path": "./modules/household-identity"
     }
   ]
 }

@@ -48,6 +48,9 @@ const migration004Path = resolve(
 );
 const migration004Sql = readFileSync(migration004Path, 'utf8');
 
+const _quietHoursNoTimezoneWarned = new Set<string>();
+const _quietHoursInvalidTimezoneWarned = new Set<string>();
+
 function parseInviteExpiry(expiresAt: string): number {
   const expiresAtMs = new Date(expiresAt).getTime();
   if (!Number.isFinite(expiresAtMs)) {
@@ -455,6 +458,7 @@ export class HouseholdGraphClient {
     const remindAtDate = new Date(remindAt);
     const config = this.getHouseholdConfig(householdId);
     const notificationMembers = this.getNotificationRoutingMembers(config);
+    const timeZone = typeof config['timeZone'] === 'string' ? config['timeZone'] : undefined;
 
     return targetUserIds.flatMap((targetUserId) => {
       const member = this.getMember(householdId, targetUserId);
@@ -469,7 +473,7 @@ export class HouseholdGraphClient {
         };
       }
 
-      if (profile?.quietHours && this.isWithinQuietHours(remindAtDate, profile.quietHours)) {
+      if (profile?.quietHours && this.isWithinQuietHours(remindAtDate, profile.quietHours, timeZone, householdId)) {
         return {
           targetUserId,
           errorCode: 'REMINDER_QUIET_HOURS' as const,
@@ -1123,21 +1127,20 @@ export class HouseholdGraphClient {
        LIMIT 1`,
     );
 
+    const activeMemberRows = this.db
+      .prepare(
+        `SELECT user_id FROM household_members WHERE household_id = ? AND status = 'active'`,
+      )
+      .all(householdId) as { user_id: string }[];
+    const activeMemberIds = new Set(activeMemberRows.map((r) => r.user_id));
+
     return chores.map((chore) => {
       const assignment = latestAssignmentStatement.get(chore.id) as ChoreAssignmentRow | undefined;
       const assignedUserId = assignment?.assigned_to ?? chore.assigned_to_user_id;
       const dueAt = assignment?.due_at ?? chore.due_at;
 
-      const member = assignedUserId
-        ? ((this.db
-            .prepare(
-              `SELECT user_id
-               FROM household_members
-               WHERE household_id = ? AND user_id = ?
-               LIMIT 1`,
-            )
-            .get(householdId, assignedUserId) as { user_id: string } | undefined) ?? null)
-        : null;
+      const member =
+        assignedUserId && activeMemberIds.has(assignedUserId) ? { user_id: assignedUserId } : null;
 
       const runs = this.getChoreRuns(chore.id);
       const overdue = isOverdue(dueAt);
@@ -1568,7 +1571,7 @@ export class HouseholdGraphClient {
         `SELECT id, household_id, device_id, state_key, previous_value, new_value, source, consent_verified, created_at
          FROM home_state_log
          WHERE household_id = ?
-         ORDER BY created_at DESC`,
+         ORDER BY created_at DESC LIMIT 200`,
       )
       .all(householdId) as HomeStateLogRow[];
 
@@ -1683,14 +1686,61 @@ export class HouseholdGraphClient {
     >;
   }
 
-  private isWithinQuietHours(value: Date, quietHours: { start: string; end: string }): boolean {
+  private isWithinQuietHours(
+    value: Date,
+    quietHours: { start: string; end: string },
+    timeZone?: string,
+    householdId?: string,
+  ): boolean {
     const start = this.parseClockMinutes(quietHours.start);
     const end = this.parseClockMinutes(quietHours.end);
     if (start === null || end === null || Number.isNaN(value.getTime())) {
       return false;
     }
 
-    const minutes = value.getUTCHours() * 60 + value.getUTCMinutes();
+    let minutes: number;
+    if (timeZone) {
+      try {
+        const parts = new Intl.DateTimeFormat('en-US', {
+          timeZone,
+          hour: 'numeric',
+          minute: 'numeric',
+          hour12: false,
+        }).formatToParts(value);
+        const hourPart = parts.find((p) => p.type === 'hour');
+        const minutePart = parts.find((p) => p.type === 'minute');
+        const localHours = Number(hourPart?.value ?? '0') % 24;
+        const localMinutes = Number(minutePart?.value ?? '0');
+        minutes = localHours * 60 + localMinutes;
+      } catch {
+        if (householdId && !_quietHoursInvalidTimezoneWarned.has(householdId)) {
+          _quietHoursInvalidTimezoneWarned.add(householdId);
+          console.warn(
+            JSON.stringify({
+              level: 'warn',
+              message:
+                'isWithinQuietHours: invalid timeZone configured, falling back to server local time',
+              householdId,
+              timeZone,
+            }),
+          );
+        }
+        minutes = value.getHours() * 60 + value.getMinutes();
+      }
+    } else {
+      if (householdId && !_quietHoursNoTimezoneWarned.has(householdId)) {
+        _quietHoursNoTimezoneWarned.add(householdId);
+        console.warn(
+          JSON.stringify({
+            level: 'warn',
+            message: 'isWithinQuietHours: no timeZone configured, falling back to server local time',
+            householdId,
+          }),
+        );
+      }
+      minutes = value.getHours() * 60 + value.getMinutes();
+    }
+
     if (start === end) {
       return false;
     }

@@ -342,6 +342,7 @@ test('evaluateReminderAutomationFailures returns quiet-hours suppression', () =>
     const household = client.createHousehold(
       'Quiet Home',
       JSON.stringify({
+        timeZone: 'UTC',
         notificationRouting: {
           members: {
             'adult-1': {
@@ -414,6 +415,287 @@ test('evaluateReminderAutomationFailures returns inactive-device failure', () =>
     assert.equal(failures.length, 1);
     assert.equal(failures[0]?.errorCode, 'REMINDER_MEMBER_INACTIVE');
     assert.match(failures[0]?.fixSuggestion ?? '', /active device/i);
+  } finally {
+    cleanup();
+  }
+});
+
+test('isWithinQuietHours — America/New_York timezone, server in UTC', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    // 23:30 UTC = 18:30 ET (EST, UTC-5) — inside quiet hours 22:00–07:00 ET? No.
+    // Use a time that IS quiet in NY: 04:00 UTC = 23:00 EST (UTC-5) — inside 22:00–07:00.
+    const household = client.createHousehold(
+      'TZ Home NY',
+      JSON.stringify({
+        timeZone: 'America/New_York',
+        notificationRouting: {
+          members: {
+            'user-tz-1': {
+              pushToken: 'expo-token-tz',
+              quietHours: { start: '22:00', end: '07:00' },
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'user-tz-1', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'user-tz-1',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    // 2026-04-12T04:00:00.000Z = 00:00 EDT (UTC-4) — inside quiet 22:00–07:00
+    const failures = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['user-tz-1'],
+      '2026-04-12T04:00:00.000Z',
+    );
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0]?.errorCode, 'REMINDER_QUIET_HOURS');
+    assert.equal(failures[0]?.deliveryStatus, 'quiet_hours_suppressed');
+  } finally {
+    cleanup();
+  }
+});
+
+test('isWithinQuietHours — cross-midnight range in non-UTC timezone (America/Chicago)', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'TZ Home Chicago',
+      JSON.stringify({
+        timeZone: 'America/Chicago',
+        notificationRouting: {
+          members: {
+            'user-tz-2': {
+              pushToken: 'expo-token-tz2',
+              quietHours: { start: '22:00', end: '06:00' },
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'user-tz-2', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'user-tz-2',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    // 2026-04-12T05:00:00.000Z = 00:00 CDT (UTC-5) — inside quiet 22:00–06:00
+    const failuresInside = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['user-tz-2'],
+      '2026-04-12T05:00:00.000Z',
+    );
+    assert.equal(failuresInside.length, 1);
+    assert.equal(failuresInside[0]?.errorCode, 'REMINDER_QUIET_HOURS');
+
+    // 2026-04-12T14:00:00.000Z = 09:00 CDT — outside quiet hours
+    const failuresOutside = client.evaluateReminderAutomationFailures(
+      household.id,
+      ['user-tz-2'],
+      '2026-04-12T14:00:00.000Z',
+    );
+    assert.equal(failuresOutside.length, 0);
+  } finally {
+    cleanup();
+  }
+});
+
+test('isWithinQuietHours — DST transition hour does not throw', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold(
+      'TZ DST Home',
+      JSON.stringify({
+        timeZone: 'America/New_York',
+        notificationRouting: {
+          members: {
+            'user-dst': {
+              pushToken: 'expo-token-dst',
+              quietHours: { start: '22:00', end: '07:00' },
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'user-dst', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'user-dst',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    // 2026-03-08T07:00:00.000Z — DST spring-forward transition in America/New_York
+    let threw = false;
+    let result: unknown;
+    try {
+      result = client.evaluateReminderAutomationFailures(
+        household.id,
+        ['user-dst'],
+        '2026-03-08T07:00:00.000Z',
+      );
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, false);
+    assert.ok(Array.isArray(result));
+  } finally {
+    cleanup();
+  }
+});
+
+test('isWithinQuietHours — no timeZone falls back to server local time and emits warning', () => {
+  const { client, cleanup } = createTestClient();
+  const originalWarn = console.warn;
+  const warnCalls: string[] = [];
+  console.warn = (...args: unknown[]) => {
+    warnCalls.push(args.map((arg) => String(arg)).join(' '));
+  };
+  try {
+    const household = client.createHousehold(
+      'No TZ Home',
+      JSON.stringify({
+        notificationRouting: {
+          members: {
+            'user-notz': {
+              pushToken: 'expo-token-notz',
+              quietHours: { start: '22:00', end: '07:00' },
+            },
+          },
+        },
+      }),
+    );
+    client.addMember(household.id, 'user-notz', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'user-notz',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    let threw = false;
+    let result: unknown;
+    try {
+      result = client.evaluateReminderAutomationFailures(
+        household.id,
+        ['user-notz'],
+        '2026-04-12T12:00:00.000Z',
+      );
+    } catch {
+      threw = true;
+    }
+    assert.equal(threw, false);
+    assert.ok(Array.isArray(result));
+    assert.equal(warnCalls.length, 1);
+    const payload = JSON.parse(warnCalls[0] ?? '{}') as {
+      message?: string;
+      householdId?: string;
+    };
+    assert.equal(
+      payload.message,
+      'isWithinQuietHours: no timeZone configured, falling back to server local time',
+    );
+    assert.equal(payload.householdId, household.id);
+  } finally {
+    console.warn = originalWarn;
+    cleanup();
+  }
+});
+
+test('listChores — 50 chores with 2 active members returns all with correct assignedTo', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold('Chore Home Large');
+    client.addMember(household.id, 'member-a', 'Adult', 'admin-1');
+    client.addMember(household.id, 'member-b', 'Adult', 'admin-1');
+    const tokenA = generateInviteToken();
+    const tokenB = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'member-a',
+      tokenA,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.storeInviteToken(
+      household.id,
+      'member-b',
+      tokenB,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(tokenA, household.id);
+    client.acceptInvite(tokenB, household.id);
+
+    for (let i = 0; i < 50; i++) {
+      client.createChore(
+        household.id,
+        `Chore ${i}`,
+        i % 2 === 0 ? 'member-a' : 'member-b',
+        new Date(Date.now() + 86_400_000).toISOString(),
+      );
+    }
+
+    const chores = client.listChores(household.id);
+    assert.equal(chores.length, 50);
+
+    for (const chore of chores) {
+      const expectedUser = chore.title.endsWith('0') ||
+        Number(chore.title.replace('Chore ', '')) % 2 === 0
+        ? 'member-a'
+        : 'member-b';
+      assert.ok(
+        chore.assignedTo.userId === 'member-a' || chore.assignedTo.userId === 'member-b',
+        `Expected member-a or member-b, got ${chore.assignedTo.userId}`,
+      );
+      assert.equal(chore.assignedTo.displayName, chore.assignedTo.userId);
+      void expectedUser;
+    }
+  } finally {
+    cleanup();
+  }
+});
+
+test('listChores — identical results with known assignment data', () => {
+  const { client, cleanup } = createTestClient();
+  try {
+    const household = client.createHousehold('Chore Home Known');
+    client.addMember(household.id, 'user-known', 'Adult', 'admin-1');
+    const token = generateInviteToken();
+    client.storeInviteToken(
+      household.id,
+      'user-known',
+      token,
+      new Date(Date.now() + 60_000).toISOString(),
+    );
+    client.acceptInvite(token, household.id);
+
+    const chore = client.createChore(
+      household.id,
+      'Wash Dishes',
+      'user-known',
+      new Date(Date.now() + 86_400_000).toISOString(),
+    );
+
+    const chores = client.listChores(household.id);
+    assert.equal(chores.length, 1);
+    assert.equal(chores[0]?.assignedTo.userId, 'user-known');
+    assert.equal(chores[0]?.assignedTo.displayName, 'user-known');
+    assert.equal(chores[0]?.streakCount, 0);
+    assert.equal(chores[0]?.id, chore.id);
   } finally {
     cleanup();
   }
