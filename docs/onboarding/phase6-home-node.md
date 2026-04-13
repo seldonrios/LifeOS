@@ -24,6 +24,12 @@ pnpm --filter @lifeos/home-node dev
 pnpm --dir services/home-node test
 ```
 
+Use `pnpm test` as the standard test entrypoint. It routes through `scripts/test-runner-entry.ts`, which sets `NODE_ENV=test` before delegating to `test-runner.ts`.
+
+Targeted runs (for example `pnpm test:household-identity`) execute package scripts directly and do not automatically route through `scripts/test-runner-entry.ts`.
+
+For direct targeted invocations (including bare `tsx --test`), ensure `NODE_ENV=test` is set explicitly.
+
 ## Key Code Paths
 
 | Concept                                                   | File                                           |
