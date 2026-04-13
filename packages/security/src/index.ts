@@ -36,6 +36,23 @@ function toJsonRecord(value: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Resolves the JWT signing secret using the following canonical precedence order:
+ *
+ * 1. LIFEOS_JWT_SECRET (highest priority — preferred explicit path for all deployments)
+ * 2. LIFEOS_MASTER_KEY (intentional fallback — allows operators managing a single
+ *    master key to avoid a second secret without changing runtime behavior; not the
+ *    preferred path and should be replaced by LIFEOS_JWT_SECRET in new deployments)
+ * 3. Test-env default ('lifeos-test-secret' when NODE_ENV=test)
+ * 4. Dev escape hatch (insecure default when NODE_ENV=development AND
+ *    LIFEOS_JWT_ALLOW_INSECURE_DEFAULT=true; emits a console warning)
+ * 5. Throw (all other cases — fail fast at startup)
+ *
+ * Rotation: both LIFEOS_JWT_SECRET and LIFEOS_MASTER_KEY should be rotated on the
+ * same schedule. Setting LIFEOS_JWT_SECRET independently is sufficient to rotate the
+ * signing secret without touching LIFEOS_MASTER_KEY. After rotation, restart all
+ * services that construct JwtService (they read the env at construction time).
+ */
 function getSigningSecret(): string {
   const configured = process.env.LIFEOS_JWT_SECRET?.trim();
   if (configured) {

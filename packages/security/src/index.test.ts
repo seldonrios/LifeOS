@@ -120,6 +120,61 @@ describe('JwtService constructor — secret policy', () => {
   });
 });
 
+describe('getSigningSecret() — LIFEOS_MASTER_KEY precedence', () => {
+  it('LIFEOS_JWT_SECRET wins over LIFEOS_MASTER_KEY when both are set', async () => {
+    process.env.LIFEOS_JWT_SECRET = 'explicit-jwt-secret';
+    process.env.LIFEOS_MASTER_KEY = 'master-key-value';
+    const issuer = new JwtService();
+    const issued = await issuer.issue({
+      sub: 'service:test',
+      service_id: 'test',
+      scopes: ['service.read'],
+    });
+
+    // A service constructed with only LIFEOS_JWT_SECRET can verify the token
+    delete process.env.LIFEOS_MASTER_KEY;
+    const jwtOnly = new JwtService();
+    expect(await jwtOnly.verify(issued.token)).not.toBeNull();
+
+    // A service constructed with only LIFEOS_MASTER_KEY cannot verify the token
+    delete process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_MASTER_KEY = 'master-key-value';
+    const masterOnly = new JwtService();
+    expect(await masterOnly.verify(issued.token)).toBeNull();
+  });
+
+  it('LIFEOS_MASTER_KEY alone is accepted as fallback in NODE_ENV=test', async () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_MASTER_KEY = 'master-only-secret';
+    process.env.NODE_ENV = 'test';
+    expect(() => new JwtService()).not.toThrow();
+
+    const issuer = new JwtService();
+    const issued = await issuer.issue({
+      sub: 'service:test',
+      service_id: 'test',
+      scopes: ['service.read'],
+    });
+
+    const verifier = new JwtService();
+    expect(await verifier.verify(issued.token)).not.toBeNull();
+
+    // Negative control: force test default secret and ensure prior token no longer verifies.
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'test';
+    const testDefaultVerifier = new JwtService();
+    expect(await testDefaultVerifier.verify(issued.token)).toBeNull();
+  });
+
+  it('neither LIFEOS_JWT_SECRET nor LIFEOS_MASTER_KEY set in NODE_ENV=production throws', () => {
+    delete process.env.LIFEOS_JWT_SECRET;
+    delete process.env.LIFEOS_MASTER_KEY;
+    process.env.NODE_ENV = 'production';
+    expect(() => new JwtService()).toThrow();
+  });
+});
+
 describe('JwtService.verify() — aud enforcement', () => {
   function base64UrlEncode(input: Buffer | string): string {
     return Buffer.from(input)
