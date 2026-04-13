@@ -41,6 +41,8 @@ export interface ServiceRuntimeOptions {
   allowObservabilityInitFallback?: boolean;
   isFeatureEnabled?: (featureGate: string) => boolean | Promise<boolean>;
   healthChecks?: HealthCheck[];
+  onBeforeListen?: (app: FastifyInstance) => void | Promise<void>;
+  skipListen?: boolean;
 }
 
 export type ServiceRuntime = void;

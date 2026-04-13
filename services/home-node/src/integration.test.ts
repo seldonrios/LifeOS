@@ -15,6 +15,8 @@ import {
 } from '@lifeos/event-bus';
 import { HomeNodeDisplayFeedEventSchema } from '@lifeos/contracts';
 import { HomeNodeGraphClient } from '@lifeos/home-node-core';
+import { createSecurityClient } from '@lifeos/security';
+import { createEnvSecretStore, startService } from '@lifeos/service-runtime';
 
 import { handleHomeStateChangedEvent, runGuardedWatchdogTick } from './app';
 import { DISPLAY_FEED_CACHE_TTL_MS, DisplayFeedAggregator, applyContentFilter } from './feed';
@@ -207,6 +209,221 @@ function createClientHarness(): { client: HomeNodeGraphClient; cleanup: () => vo
     cleanup: () => {
       client.close();
       rmSync(tempDir, { recursive: true, force: true });
+    },
+  };
+}
+
+async function createBoundaryHarness(): Promise<{
+  app: ReturnType<typeof Fastify>;
+  client: HomeNodeGraphClient;
+  cleanup: () => Promise<void>;
+  householdId: string;
+  homeId: string;
+  surfaceId: string;
+}> {
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+
+  const harness = await createServiceHarness();
+  const { client } = harness;
+
+  const householdId = 'household-integration-1';
+  const homeId = 'home-integration-1';
+  const zoneId = 'zone-kitchen-1';
+  const surfaceId = 'surface-kitchen-1';
+
+  client.upsertHome({
+    homeId,
+    householdId,
+    name: 'Home',
+    timezone: 'UTC',
+  });
+  client.upsertZone({
+    zoneId,
+    homeId,
+    name: 'Kitchen',
+    type: 'kitchen',
+  });
+  client.registerSurface({
+    surfaceId,
+    zoneId,
+    homeId,
+    kind: 'kitchen_display',
+    trustLevel: 'household',
+    capabilities: ['read'],
+  });
+
+  return {
+    ...harness,
+    householdId,
+    homeId,
+    surfaceId,
+    cleanup: async () => {
+      process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
+      await harness.cleanup();
+    },
+  };
+}
+
+async function createRuntimeServiceHarness(): Promise<{
+  app: ReturnType<typeof Fastify>;
+  client: HomeNodeGraphClient;
+  cleanup: () => Promise<void>;
+  issueBearerToken: () => Promise<string>;
+}> {
+  const originalNodeEnv = process.env.NODE_ENV;
+  const originalSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET;
+  const originalJwtSecret = process.env.LIFEOS_JWT_SECRET;
+  const originalJwtScopes = process.env.LIFEOS_JWT_DEFAULT_SCOPES;
+
+  process.env.NODE_ENV = 'test';
+  process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = TEST_SURFACE_SECRET;
+  process.env.LIFEOS_JWT_SECRET = process.env.LIFEOS_JWT_SECRET ?? 'lifeos-test-secret';
+  process.env.LIFEOS_JWT_DEFAULT_SCOPES = 'policy:allow';
+
+  const tempDir = mkdtempSync(join(tmpdir(), 'lifeos-home-node-runtime-integration-'));
+  const dbPath = join(tempDir, 'home-node.db');
+  const client = new HomeNodeGraphClient(dbPath);
+  const eventBus = new FakeEventBus();
+  client.initializeSchema();
+
+  const displayFeedSignalVersions = new Map<string, number>();
+  const displayFeedSignalWaiters = new Map<string, Set<DisplayFeedSignalWaiter>>();
+
+  const getDisplayFeedSignalVersion = (householdId: string): number => {
+    return displayFeedSignalVersions.get(householdId) ?? 0;
+  };
+
+  const signalDisplayFeedUpdated = (householdId: string): number => {
+    const next = getDisplayFeedSignalVersion(householdId) + 1;
+    displayFeedSignalVersions.set(householdId, next);
+
+    const waiters = displayFeedSignalWaiters.get(householdId);
+    if (waiters) {
+      for (const waiter of waiters) {
+        clearTimeout(waiter.timeout);
+        waiter.resolve(next);
+      }
+      displayFeedSignalWaiters.delete(householdId);
+    }
+
+    return next;
+  };
+
+  const waitForDisplayFeedSignal = (
+    householdId: string,
+    since: number,
+    timeoutMs: number,
+  ): Promise<number> => {
+    const current = getDisplayFeedSignalVersion(householdId);
+    if (current > since) {
+      return Promise.resolve(current);
+    }
+
+    return new Promise((resolve) => {
+      const waiters = displayFeedSignalWaiters.get(householdId) ?? new Set<DisplayFeedSignalWaiter>();
+      const waiter: DisplayFeedSignalWaiter = {
+        resolve,
+        timeout: setTimeout(() => {
+          waiters.delete(waiter);
+          if (waiters.size === 0) {
+            displayFeedSignalWaiters.delete(householdId);
+          }
+
+          resolve(getDisplayFeedSignalVersion(householdId));
+        }, timeoutMs),
+      };
+
+      waiters.add(waiter);
+      displayFeedSignalWaiters.set(householdId, waiters);
+    });
+  };
+
+  await eventBus.subscribe(Topics.lifeos.householdHomeStateChanged, async (event) => {
+    await handleHomeStateChangedEvent(client, eventBus, event as BaseEvent<unknown>);
+  });
+
+  await eventBus.subscribe(Topics.lifeos.homeNodeDisplayFeedUpdated, async (event) => {
+    const payload = HomeNodeDisplayFeedEventSchema.parse(event.data);
+    signalDisplayFeedUpdated(payload.household_id);
+  });
+
+  let app: ReturnType<typeof Fastify> | null = null;
+  await startService({
+    serviceName: 'home-node',
+    enforceRouteAuthMode: 'mutating',
+    port: 3010,
+    secretRefs: [],
+    secretStore: createEnvSecretStore(),
+    healthChecks: [
+      {
+        name: 'home-node-db',
+        check: async () => {
+          return client.isHealthy()
+            ? { status: 'healthy' as const }
+            : { status: 'unhealthy' as const, reason: 'home-node graph unavailable' };
+        },
+      },
+      {
+        name: 'home-node-event-bus',
+        check: async () => {
+          const health = eventBus.getConnectionHealth();
+          if (health === 'connected') {
+            return { status: 'healthy' as const };
+          }
+
+          if (health === 'degraded') {
+            return {
+              status: 'degraded' as const,
+              reason: 'event bus connection is degraded',
+            };
+          }
+
+          return { status: 'unhealthy' as const, reason: 'event bus is disconnected' };
+        },
+      },
+    ],
+    registerRoutes: async (runtimeApp) => {
+      registerHomeNodeRoutes(runtimeApp, client, {
+        getDisplayFeedSignalVersion,
+        waitForDisplayFeedSignal,
+      });
+    },
+    onBeforeListen: (runtimeApp) => {
+      app = runtimeApp as ReturnType<typeof Fastify>;
+    },
+    skipListen: true,
+  });
+
+  if (!app) {
+    throw new Error('runtime app was not initialized');
+  }
+
+  return {
+    app,
+    client,
+    cleanup: async () => {
+      for (const waiters of displayFeedSignalWaiters.values()) {
+        for (const waiter of waiters) {
+          clearTimeout(waiter.timeout);
+        }
+      }
+      displayFeedSignalWaiters.clear();
+      displayFeedSignalVersions.clear();
+
+      await app.close();
+      client.close();
+      rmSync(tempDir, { recursive: true, force: true });
+
+      process.env.NODE_ENV = originalNodeEnv;
+      process.env.LIFEOS_HOME_NODE_SURFACE_SECRET = originalSurfaceSecret;
+      process.env.LIFEOS_JWT_SECRET = originalJwtSecret;
+      process.env.LIFEOS_JWT_DEFAULT_SCOPES = originalJwtScopes;
+    },
+    issueBearerToken: async () => {
+      const security = createSecurityClient();
+      const issued = await security.issueServiceToken('home-node-runtime-test');
+      return issued.token;
     },
   };
 }
@@ -814,4 +1031,291 @@ test('[integration] watchdog finally block releases guard even when body throws'
   });
   assert.equal(recoveryResult, true, 'tick after error must not be skipped');
   assert.equal(recoveryBodyRan, true, 'recovery tick body must have executed');
+});
+
+test('[integration] auth boundary - surface-secret routes', async () => {
+  const { app, cleanup, householdId, homeId } = await createBoundaryHarness();
+
+  try {
+    const createHomePayload = {
+      home_id: 'home-auth-boundary-1',
+      household_id: 'household-auth-boundary-1',
+      name: 'Auth Boundary Home',
+      timezone: 'UTC',
+    };
+
+    const createHomeUnauthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeUnauthorized.statusCode, 401);
+
+    const createHomeWrongSecret = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeWrongSecret.statusCode, 401);
+
+    const createHomeAuthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(createHomeAuthorized.statusCode, 201);
+
+    const createZonePayload = {
+      zone_id: 'zone-auth-boundary-1',
+      home_id: homeId,
+      name: 'Auth Boundary Kitchen',
+      type: 'kitchen',
+    };
+
+    const createZoneUnauthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneUnauthorized.statusCode, 401);
+
+    const createZoneWrongSecret = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneWrongSecret.statusCode, 401);
+
+    const createZoneAuthorized = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createZonePayload,
+    });
+    assert.equal(createZoneAuthorized.statusCode, 201);
+
+    const snapshotUnauthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/snapshot/${householdId}`,
+    });
+    assert.equal(snapshotUnauthorized.statusCode, 401);
+
+    const snapshotWrongSecret = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/snapshot/${householdId}`,
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+    });
+    assert.equal(snapshotWrongSecret.statusCode, 401);
+
+    const snapshotAuthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/snapshot/${householdId}`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(snapshotAuthorized.statusCode, 200);
+
+    const surfacesUnauthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/surfaces?householdId=${householdId}`,
+    });
+    assert.equal(surfacesUnauthorized.statusCode, 401);
+
+    const surfacesWrongSecret = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/surfaces?householdId=${householdId}`,
+      headers: {
+        'x-lifeos-surface-secret': 'wrong-secret',
+      },
+    });
+    assert.equal(surfacesWrongSecret.statusCode, 401);
+
+    const surfacesAuthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/surfaces?householdId=${householdId}`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(surfacesAuthorized.statusCode, 200);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('[integration] auth boundary - home-display bootstrap request shape succeeds', async () => {
+  const { app, cleanup } = await createBoundaryHarness();
+
+  try {
+    const createHomeResponse = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: {
+        home_id: 'home-bootstrap-shape-1',
+        household_id: 'household-bootstrap-shape-1',
+        name: 'Bootstrap Shape Home',
+        timezone: 'UTC',
+      },
+    });
+    assert.equal(createHomeResponse.statusCode, 201);
+
+    const createZoneResponse = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: {
+        zone_id: 'zone-bootstrap-shape-1',
+        home_id: 'home-bootstrap-shape-1',
+        name: 'Bootstrap Shape Kitchen',
+        type: 'kitchen',
+      },
+    });
+    assert.equal(createZoneResponse.statusCode, 201);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('[integration] auth boundary - display-feed and heartbeat routes require surface-secret', async () => {
+  const { app, cleanup, surfaceId } = await createBoundaryHarness();
+
+  try {
+    const displayFeedUnauthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed/${surfaceId}`,
+    });
+    assert.equal(displayFeedUnauthorized.statusCode, 401);
+
+    const displayFeedAuthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed/${surfaceId}`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(displayFeedAuthorized.statusCode, 200);
+
+    const displayFeedHintsUnauthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed-hints/${surfaceId}?since=0&timeoutMs=0`,
+    });
+    assert.equal(displayFeedHintsUnauthorized.statusCode, 401);
+
+    const displayFeedHintsAuthorized = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed-hints/${surfaceId}?since=0&timeoutMs=0`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(displayFeedHintsAuthorized.statusCode, 200);
+
+    const heartbeatUnauthorized = await app.inject({
+      method: 'POST',
+      url: `/api/home-node/surfaces/${surfaceId}/heartbeat`,
+    });
+    assert.equal(heartbeatUnauthorized.statusCode, 401);
+
+    const heartbeatAuthorized = await app.inject({
+      method: 'POST',
+      url: `/api/home-node/surfaces/${surfaceId}/heartbeat`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(heartbeatAuthorized.statusCode, 200);
+
+    const deleteSurfaceUnauthorized = await app.inject({
+      method: 'DELETE',
+      url: `/api/home-node/surfaces/${surfaceId}`,
+    });
+    assert.equal(deleteSurfaceUnauthorized.statusCode, 401);
+
+    const deleteSurfaceAuthorized = await app.inject({
+      method: 'DELETE',
+      url: `/api/home-node/surfaces/${surfaceId}`,
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+    });
+    assert.equal(deleteSurfaceAuthorized.statusCode, 200);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('[integration] auth boundary - health routes are public (runtime-backed)', async () => {
+  const { app, cleanup } = await createRuntimeServiceHarness();
+
+  try {
+    const liveResponse = await app.inject({
+      method: 'GET',
+      url: '/health/live',
+    });
+    assert.equal(liveResponse.statusCode, 200);
+
+    const readyResponse = await app.inject({
+      method: 'GET',
+      url: '/health/ready',
+    });
+    assert.equal(readyResponse.statusCode, 200);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('[integration] auth boundary - mutating routes are bearer-gated at runtime', async () => {
+  const { app, cleanup, issueBearerToken } = await createRuntimeServiceHarness();
+
+  try {
+    const createHomePayload = {
+      home_id: 'home-runtime-bearer-1',
+      household_id: 'household-runtime-bearer-1',
+      name: 'Runtime Bearer Home',
+      timezone: 'UTC',
+    };
+
+    const withoutBearer = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(withoutBearer.statusCode, 401);
+
+    const bearerToken = await issueBearerToken();
+    const withBearer = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: {
+        authorization: `Bearer ${bearerToken}`,
+        'x-lifeos-surface-secret': TEST_SURFACE_SECRET,
+      },
+      payload: createHomePayload,
+    });
+    assert.equal(withBearer.statusCode, 201);
+  } finally {
+    await cleanup();
+  }
 });

@@ -487,6 +487,16 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
   }
 
   try {
+    await opts.onBeforeListen?.(app);
+  } catch (error) {
+    terminateBoot(error, 'Failed to initialize listen hook');
+  }
+
+  if (opts.skipListen) {
+    return;
+  }
+
+  try {
     await app.listen({ port: validatedPort, host: validatedHost });
   } catch (error) {
     terminateBoot(error, 'Failed to start listening');
