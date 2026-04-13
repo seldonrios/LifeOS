@@ -167,10 +167,12 @@ type MobileSdkClient = LifeOSClient & {
 const extra = Constants.expoConfig?.extra as { apiUrl?: string } | undefined;
 
 function loadSessionStore() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('./session') as typeof import('./session');
 }
 
 function loadQueueStore() {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   return require('./queue') as typeof import('./queue');
 }
 

@@ -98,4 +98,3 @@ export async function publishShoppingItemPurchased(context, payload) {
     await context.publish(SHOPPING_ITEM_PURCHASED_TOPIC, payload, 'dashboard-service');
 }
 export default householdShoppingModule;
-//# sourceMappingURL=index.js.map

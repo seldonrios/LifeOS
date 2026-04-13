@@ -1,0 +1,10 @@
+import type { LifeOSModule } from '@lifeos/module-sdk';
+import type { AuditLogEntry } from '@lifeos/contracts';
+import { HouseholdGraphClient, InvalidAttendeeError, InvalidShoppingItemTransitionError } from './client';
+import { registerAuditInterceptor } from './audit-interceptor';
+import { generateInviteExpiry, generateInviteToken, isInviteExpired } from './invites';
+import { canPerform } from './roles';
+export declare function getHouseholdGraphClient(): HouseholdGraphClient;
+export declare const householdIdentityModule: LifeOSModule;
+export { HouseholdGraphClient, InvalidAttendeeError, InvalidShoppingItemTransitionError, registerAuditInterceptor, canPerform, generateInviteToken, generateInviteExpiry, isInviteExpired, type AuditLogEntry, };
+export default householdIdentityModule;

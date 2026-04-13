@@ -12,4 +12,3 @@ export async function registerModuleSchema(context, schema) {
 }
 export { CaptureEntrySchema, LoopInboxItemSchema, PlannedActionSchema, ReminderEventSchema, ReviewSessionSchema, } from '@lifeos/contracts';
 export { HouseholdRoleSchema, HouseholdMemberStatusSchema, ChoreStatusSchema, ShoppingItemStatusSchema, HouseholdMemberInvitedSchema, HouseholdMemberJoinedSchema, HouseholdMemberRoleChangedSchema, HouseholdChoreAssignedSchema, HouseholdChoreCompletedSchema, HouseholdShoppingItemAddedSchema, HouseholdShoppingItemPurchasedSchema, HouseholdCalendarEventCreatedSchema, HouseholdVoiceCaptureCreatedSchema, HouseholdShoppingItemAddRequestedSchema, HouseholdChoreCreateRequestedSchema, HouseholdReminderCreateRequestedSchema, HouseholdNoteCreateRequestedSchema, HouseholdCaptureUnresolvedSchema, HouseholdAutomationFailedSchema, HouseholdHomeStateChangedSchema, HouseholdReminderFiredSchema, AuditLogEntrySchema, } from '@lifeos/contracts';
-//# sourceMappingURL=index.js.map

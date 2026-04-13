@@ -389,4 +389,3 @@ export async function bootstrapStreams(options = {}) {
     await connection.drain();
     await connection.closed();
 }
-//# sourceMappingURL=index.js.map

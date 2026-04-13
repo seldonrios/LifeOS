@@ -35,4 +35,3 @@ export function calculateStreak(runs, recurrenceRule, now = new Date()) {
     }
     return streak;
 }
-//# sourceMappingURL=streak.js.map

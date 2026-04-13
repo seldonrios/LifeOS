@@ -11,6 +11,8 @@ import { useSessionStore } from '../lib/session';
 type NetworkState = { isConnected?: boolean | null };
 type NetworkSubscription = { remove: () => void };
 
+// Expo network is loaded dynamically to keep this runtime-compatible across targets.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Network = require('expo-network') as {
   addNetworkStateListener: (listener: (state: NetworkState) => void) => NetworkSubscription;
 };

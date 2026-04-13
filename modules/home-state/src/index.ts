@@ -7,7 +7,7 @@ import {
   type HomeStateSnapshot,
 } from '@lifeos/contracts';
 import { buildNextSnapshot } from '@lifeos/home-node-core';
-import { Topics, type LifeOSModule, type ModuleRuntimeContext } from '@lifeos/module-sdk';
+import { Topics, type LifeOSModule } from '@lifeos/module-sdk';
 
 const DEFAULT_ACTOR_USER_ID = 'ha-bridge';
 

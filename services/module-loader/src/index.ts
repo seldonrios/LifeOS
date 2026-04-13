@@ -9,12 +9,16 @@ import { createEnvSecretStore, startService } from '@lifeos/service-runtime';
 function createNoopEventBus(): EventBus {
   return {
     publish: async <T>(_topic: string, _event: BaseEvent<T>): Promise<void> => {
+      void _topic;
+      void _event;
       return;
     },
     subscribe: async <T>(
       _topic: string,
       _handler: (event: BaseEvent<T>) => Promise<void>,
     ): Promise<void> => {
+      void _topic;
+      void _handler;
       return;
     },
   };

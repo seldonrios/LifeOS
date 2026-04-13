@@ -18,7 +18,7 @@
     "test:household-tracing": "pnpm --filter @lifeos/household-chores-module run test:tracing && pnpm --filter @lifeos/household-capture-router-module run test:tracing && pnpm --filter @lifeos/household-identity-module run test:tracing && pnpm --dir services/dashboard exec tsx --test --test-name-pattern \"POST /api/households/:id/reminders publishes automation failure|POST /api/households/:id/reminders traces automation failure\" src/routes/household.test.ts",
     "test:graph": "pnpm --filter @lifeos/life-graph run test",
     "test:loader": "pnpm --filter @lifeos/module-loader run test",
-    "lint": "eslint \"packages/**/*.{ts,tsx}\" \"modules/**/*.{ts,tsx}\" && tsx scripts/ruff-task.ts check",
+    "lint": "eslint \"packages/**/*.{ts,tsx}\" \"modules/**/*.{ts,tsx}\" \"services/**/*.{ts,tsx}\" \"apps/**/*.{ts,tsx}\" && tsx scripts/ruff-task.ts check",
     "format": "prettier --write . && tsx scripts/ruff-task.ts format",
     "format:check": "prettier --check . && tsx scripts/ruff-task.ts format-check",
     "typecheck": "tsc --build tsconfig.packages.json",
@@ -34,6 +34,14 @@
       "eslint --fix"
     ],
     "modules/**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "services/**/*.{ts,tsx}": [
+      "prettier --write",
+      "eslint --fix"
+    ],
+    "apps/**/*.{ts,tsx}": [
       "prettier --write",
       "eslint --fix"
     ],

@@ -95,13 +95,13 @@
       "path": "./modules/notification-bridge"
     },
     {
+      "path": "./modules/household-identity"
+    },
+    {
       "path": "./services/home-node"
     },
     {
       "path": "./services/dashboard"
-    },
-    {
-      "path": "./modules/household-identity"
     }
   ]
 }

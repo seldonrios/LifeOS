@@ -1,0 +1,62 @@
+import { z } from 'zod';
+export declare const ConfigSchema: z.ZodObject<{
+    profile: z.ZodDefault<z.ZodString>;
+    logLevel: z.ZodDefault<z.ZodString>;
+    smtp: z.ZodDefault<z.ZodObject<{
+        host: z.ZodString;
+        port: z.ZodNumber;
+    }, z.core.$strip>>;
+    features: z.ZodObject<{
+        voice: z.ZodDefault<z.ZodBoolean>;
+        vision: z.ZodDefault<z.ZodBoolean>;
+        localLlm: z.ZodDefault<z.ZodBoolean>;
+        cloudLlm: z.ZodDefault<z.ZodBoolean>;
+        automation: z.ZodDefault<z.ZodBoolean>;
+        scheduling: z.ZodDefault<z.ZodBoolean>;
+        deviceControl: z.ZodDefault<z.ZodBoolean>;
+        backgroundAgents: z.ZodDefault<z.ZodBoolean>;
+    }, z.core.$strict>;
+    security: z.ZodObject<{
+        policyEnforce: z.ZodDefault<z.ZodBoolean>;
+        failClosed: z.ZodDefault<z.ZodBoolean>;
+        moduleManifestRequired: z.ZodDefault<z.ZodBoolean>;
+        moduleRuntimePermissions: z.ZodDefault<z.ZodEnum<{
+            warn: "warn";
+            strict: "strict";
+            off: "off";
+        }>>;
+    }, z.core.$strict>;
+    transparency: z.ZodObject<{
+        trustDashboardEnabled: z.ZodDefault<z.ZodBoolean>;
+        explanationLoggingEnabled: z.ZodDefault<z.ZodBoolean>;
+        userOwnershipMessaging: z.ZodDefault<z.ZodEnum<{
+            bold: "bold";
+            "direct-friendly": "direct-friendly";
+            subtle: "subtle";
+        }>>;
+    }, z.core.$strict>;
+    services: z.ZodObject<{
+        secretsService: z.ZodObject<{
+            host: z.ZodString;
+            port: z.ZodNumber;
+        }, z.core.$strict>;
+        serviceCatalog: z.ZodObject<{
+            host: z.ZodString;
+            port: z.ZodNumber;
+        }, z.core.$strict>;
+        featureFlagService: z.ZodObject<{
+            host: z.ZodString;
+            port: z.ZodNumber;
+        }, z.core.$strict>;
+        moduleLoader: z.ZodObject<{
+            host: z.ZodString;
+            port: z.ZodNumber;
+        }, z.core.$strict>;
+    }, z.core.$strict>;
+    modules: z.ZodObject<{
+        enabled: z.ZodArray<z.ZodString>;
+    }, z.core.$strict>;
+    hardware: z.ZodObject<{
+        available: z.ZodDefault<z.ZodArray<z.ZodString>>;
+    }, z.core.$strict>;
+}, z.core.$strict>;

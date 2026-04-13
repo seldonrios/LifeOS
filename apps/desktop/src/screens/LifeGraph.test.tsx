@@ -19,7 +19,7 @@ vi.mock('react-force-graph-2d', () => ({
     onEngineStop?: () => void;
     minZoom?: number;
     maxZoom?: number;
-  }>(({ graphData, onNodeClick, onEngineStop, minZoom, maxZoom }, _ref) => {
+  }>(({ graphData, onNodeClick, onEngineStop, minZoom, maxZoom }) => {
     forceGraphPropsSpy({ onEngineStop, minZoom, maxZoom, graphData });
 
     return (

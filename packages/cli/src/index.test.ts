@@ -3450,15 +3450,7 @@ test('capture happy path returns JSON with id, status, content, and capturedAt',
           async loadGraph() {
             return { version: '0.1.0', updatedAt: fixedNow.toISOString(), captureEntries: [] };
           },
-          async appendCaptureEntry(entry: {
-            id: string;
-            content: string;
-            capturedAt: string;
-            type: string;
-            source: string;
-            status: string;
-            tags: string[];
-          }) {
+          async appendCaptureEntry() {
             return;
           },
           async saveGraph() {

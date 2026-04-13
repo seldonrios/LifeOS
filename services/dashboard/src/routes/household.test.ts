@@ -2354,7 +2354,7 @@ test('household mutation writes both domain row and audit_log row when intercept
     const savedItem = db.getShoppingItem(householdId, item.id as string);
     assert.ok(savedItem);
 
-    const rows = (db as unknown as { db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } } }).db
+    (db as unknown as { db: { prepare: (sql: string) => { all: (...args: unknown[]) => Array<Record<string, unknown>> } } }).db
       .prepare('SELECT * FROM audit_log WHERE household_id = ?')
       .all(householdId);
     await waitFor(() => {

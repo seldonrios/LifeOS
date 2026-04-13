@@ -25,4 +25,3 @@ export declare const householdChoresModule: LifeOSModule;
 export declare function publishChoreAssigned(context: ChorePublishContext, payload: HouseholdChoreAssigned): Promise<void>;
 export declare function publishChoreCompleted(context: ChorePublishContext, payload: HouseholdChoreCompleted): Promise<void>;
 export default householdChoresModule;
-//# sourceMappingURL=index.d.ts.map

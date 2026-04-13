@@ -1,5 +1,7 @@
 import type { JSX as ReactJSX } from 'react';
 
+/* eslint-disable @typescript-eslint/no-empty-object-type */
+
 declare global {
   namespace JSX {
     interface Element extends ReactJSX.Element {}

@@ -13,6 +13,8 @@ class FakeEventBus implements ManagedEventBus {
   }
 
   async subscribe<T>(_topic: string, _handler: (event: BaseEvent<T>) => Promise<void>): Promise<void> {
+    void _topic;
+    void _handler;
     return;
   }
 

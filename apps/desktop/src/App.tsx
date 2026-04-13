@@ -1,4 +1,4 @@
-import { useMemo, useState, useCallback } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';

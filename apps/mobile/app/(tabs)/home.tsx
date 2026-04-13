@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import type { GoalSummary, InboxItem, ReviewLoopSummary } from '@lifeos/contracts';
+import type { GoalSummary, InboxItem } from '@lifeos/contracts';
 import { useRouter } from 'expo-router';
 import {
   Animated,

@@ -1,0 +1,937 @@
+import { randomUUID } from 'node:crypto';
+import { Topics } from '@lifeos/event-bus';
+import { createLifeGraphClient } from '@lifeos/life-graph';
+const MAX_TASK_TITLE_CHARS = 160;
+const MAX_COMMAND_TEXT_CHARS = 600;
+const MAX_DESCRIPTION_CHARS = 1200;
+const MAX_CALENDAR_TITLE_CHARS = 200;
+const MAX_LOCATION_CHARS = 200;
+const MAX_ATTENDEES = 20;
+const MAX_ATTENDEE_CHARS = 120;
+const MAX_NOTE_TITLE_CHARS = 200;
+const MAX_NOTE_CONTENT_CHARS = 2000;
+const MAX_NOTE_TAGS = 20;
+const MAX_NOTE_TAG_CHARS = 40;
+const MAX_PREFERENCE_KEY_CHARS = 80;
+const MAX_PREFERENCE_VALUE_CHARS = 300;
+const MIN_BRIEFING_SECONDS = 10;
+const MAX_BRIEFING_SECONDS = 90;
+const DATE_ONLY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+// Security: Prevent injection patterns
+const INJECTION_PATTERN = /[\0\x00-\x1f\x7f]/;
+const PREFERENCE_KEY_ALIASES = {
+    communication_style: 'communication_style',
+    communicationstyle: 'communication_style',
+    style: 'communication_style',
+    response_style: 'communication_style',
+    briefing_style: 'communication_style',
+    briefing_max_seconds: 'briefing_max_seconds',
+    briefing_seconds: 'briefing_max_seconds',
+    sync_conflict_voice_alerts: 'sync_conflict_voice_alerts',
+    sync_conflict_alerts: 'sync_conflict_voice_alerts',
+    conflict_alerts: 'sync_conflict_voice_alerts',
+    sync_alerts: 'sync_conflict_voice_alerts',
+    sync_conflicts: 'sync_conflict_voice_alerts',
+    priority: 'priorities',
+    priorities: 'priorities',
+    quirk: 'quirks',
+    quirks: 'quirks',
+};
+export const INTENT_PROMPT = `You are LifeOS intent parser. Return ONLY JSON.
+
+{
+  "intent": "task_add | calendar_add | note_add | note_search | question_time | weather | news | email_summarize | research | briefing | next_actions | preference_set | health_log | health_query | unknown",
+  "payload": {}
+}`;
+function sentenceCase(value) {
+    const trimmed = value.trim().replace(/[.?!]+$/g, '');
+    if (!trimmed) {
+        return 'Untitled task';
+    }
+    return `${trimmed.charAt(0).toUpperCase()}${trimmed.slice(1)}`;
+}
+function clampText(value, maxLength) {
+    return value.trim().slice(0, maxLength);
+}
+/**
+ * Validates text input to prevent injection and ensure data integrity.
+ * @throws Error if text contains invalid characters
+ */
+function validateTextInput(value, maxLength) {
+    const trimmed = value.trim();
+    // Prevent null bytes and other control characters
+    if (INJECTION_PATTERN.test(trimmed)) {
+        throw new Error('Input contains invalid control characters');
+    }
+    // Ensure not empty
+    if (trimmed.length === 0) {
+        throw new Error('Input cannot be empty');
+    }
+    // Keep long utterances processable while bounding payload size.
+    return trimmed.slice(0, maxLength);
+}
+function getString(value) {
+    if (typeof value !== 'string') {
+        return null;
+    }
+    const trimmed = value.trim();
+    // Prevent null bytes
+    if (INJECTION_PATTERN.test(trimmed)) {
+        return null;
+    }
+    return trimmed.length > 0 ? trimmed : null;
+}
+function getStringArray(value) {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+    const normalized = value
+        .map((entry) => getString(entry))
+        .filter((entry) => entry !== null && !INJECTION_PATTERN.test(entry));
+    return normalized.length > 0 ? normalized.slice(0, MAX_ATTENDEES) : null;
+}
+function getNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value === 'string') {
+        const parsed = Number.parseFloat(value);
+        if (Number.isFinite(parsed)) {
+            return parsed;
+        }
+    }
+    return null;
+}
+function parseDateTime(value) {
+    const candidate = getString(value);
+    if (!candidate) {
+        return null;
+    }
+    const parsed = new Date(candidate);
+    if (Number.isNaN(parsed.getTime())) {
+        return null;
+    }
+    return parsed;
+}
+function normalizeCalendarStatus(value) {
+    if (value === 'tentative' || value === 'cancelled') {
+        return value;
+    }
+    return 'confirmed';
+}
+function normalizeDueDate(value) {
+    const candidate = getString(value);
+    if (!candidate) {
+        return null;
+    }
+    return DATE_ONLY_PATTERN.test(candidate) ? candidate : null;
+}
+function extractLocationFromText(text) {
+    const match = text.match(/\b(?:in|for)\s+([a-zA-Z][a-zA-Z\s-]{1,80})/i)?.[1];
+    return match ? clampText(match, MAX_LOCATION_CHARS) : null;
+}
+function extractResearchQuery(text) {
+    const stripped = text.replace(/^(hey life(?:\s?os)?[,\s]*)?(research|look up|investigate)\s+/i, '');
+    return clampText(stripped || text, MAX_DESCRIPTION_CHARS);
+}
+function extractNoteContent(text) {
+    const stripped = text.replace(/^(hey life(?:\s?os)?[,\s]*)?(note that|note)\s+/i, '');
+    return clampText(stripped || text, MAX_NOTE_CONTENT_CHARS);
+}
+function extractNoteSearchQuery(text) {
+    const stripped = text.replace(/^(hey life(?:\s?os)?[,\s]*)?(what did i note about|find notes? about|search notes? for)\s+/i, '');
+    return clampText(stripped || text, MAX_NOTE_CONTENT_CHARS);
+}
+function extractSinceDaysFromText(text) {
+    const lower = text.toLowerCase();
+    if (lower.includes('last week')) {
+        return 7;
+    }
+    if (lower.includes('yesterday')) {
+        return 1;
+    }
+    if (lower.includes('last month')) {
+        return 30;
+    }
+    return null;
+}
+function extractHealthMetricFromText(text) {
+    const match = text
+        .toLowerCase()
+        .match(/\b(steps?|slept?|sleep(?:ing)?|weight|heart(?:\s|-)?rate|blood(?:\s|-)?pressure|water|calories?)\b/);
+    if (!match?.[1]) {
+        return null;
+    }
+    return match[1].replace(/\s+/g, '_');
+}
+function extractHealthQueryPeriodFromText(text) {
+    const explicitDays = text.match(/\blast\s+(\d{1,3})\s+days?\b/i)?.[1];
+    if (explicitDays) {
+        const parsed = Number.parseInt(explicitDays, 10);
+        if (Number.isFinite(parsed) && parsed > 0) {
+            return parsed;
+        }
+    }
+    return extractSinceDaysFromText(text);
+}
+function extractPreferenceFromText(text) {
+    const syncConflictDisable = /\b(?:disable|turn off|mute|stop|dont|don't|do not)\b[\s\w]{0,40}\b(?:sync )?conflict alerts?\b/i.test(text);
+    if (syncConflictDisable) {
+        return {
+            key: 'sync_conflict_voice_alerts',
+            value: 'false',
+        };
+    }
+    const syncConflictEnable = /\b(?:enable|turn on|alert me|notify me)\b[\s\w]{0,40}\b(?:sync )?conflict alerts?\b/i.test(text);
+    if (syncConflictEnable) {
+        return {
+            key: 'sync_conflict_voice_alerts',
+            value: 'true',
+        };
+    }
+    const briefingSecondsMatch = text.match(/\b(?:keep\s+)?briefings?\s+(?:under|below|<=?|at most)\s*(\d{1,3})\s*seconds?\b/i)?.[1];
+    if (briefingSecondsMatch) {
+        return {
+            key: 'briefing_max_seconds',
+            value: briefingSecondsMatch,
+        };
+    }
+    const preferMatch = text.match(/^.*?\bi prefer\s+(.+)$/i)?.[1];
+    if (preferMatch) {
+        return {
+            key: 'communication_style',
+            value: clampText(preferMatch, MAX_PREFERENCE_VALUE_CHARS),
+        };
+    }
+    const rememberMatch = text.match(/^.*?\bremember(?: that)? i\s+(.+)$/i)?.[1];
+    if (rememberMatch) {
+        return {
+            key: 'quirks',
+            value: clampText(`i ${rememberMatch}`, MAX_PREFERENCE_VALUE_CHARS),
+        };
+    }
+    const prioritizeMatch = text.match(/^.*?\b(?:always\s+)?prioritize\s+(.+)$/i)?.[1];
+    if (prioritizeMatch) {
+        return {
+            key: 'priorities',
+            value: clampText(prioritizeMatch, MAX_PREFERENCE_VALUE_CHARS),
+        };
+    }
+    return null;
+}
+function normalizePreferenceKey(raw) {
+    if (!raw) {
+        return null;
+    }
+    const normalized = raw
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9_\s-]/g, '')
+        .replace(/[\s-]+/g, '_')
+        .slice(0, MAX_PREFERENCE_KEY_CHARS);
+    return PREFERENCE_KEY_ALIASES[normalized] ?? null;
+}
+function normalizeBriefingSecondsValue(raw) {
+    if (!raw) {
+        return null;
+    }
+    const parsed = Number.parseInt(raw.trim(), 10);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+    const bounded = Math.max(MIN_BRIEFING_SECONDS, Math.min(MAX_BRIEFING_SECONDS, parsed));
+    return String(bounded);
+}
+function isResearchFollowUpPhrase(text) {
+    return /^(tell me more|expand(?: on)?|continue|go deeper|what else|what about|elaborate(?: on)?)\b/i.test(text.trim());
+}
+function deriveNoteTitle(content) {
+    return clampText(content.split(/\s+/g).slice(0, 7).join(' ') || 'Voice note', MAX_NOTE_TITLE_CHARS);
+}
+function extractTaskTitle(text) {
+    const normalized = text.trim();
+    const patterns = [
+        /^add(?: me)?(?: an?| another)? task(?: to)?\s+(.+)$/i,
+        /^remind me to\s+(.+)$/i,
+        /^remember to\s+(.+)$/i,
+    ];
+    for (const pattern of patterns) {
+        const match = normalized.match(pattern);
+        const candidate = match?.[1]?.trim();
+        if (candidate) {
+            return sentenceCase(candidate);
+        }
+    }
+    return null;
+}
+function normalizeClassifiedIntent(value) {
+    if (value === 'task_add' ||
+        value === 'calendar_add' ||
+        value === 'note_add' ||
+        value === 'note_search' ||
+        value === 'question_time' ||
+        value === 'weather' ||
+        value === 'news' ||
+        value === 'email_summarize' ||
+        value === 'research' ||
+        value === 'briefing' ||
+        value === 'next_actions' ||
+        value === 'preference_set' ||
+        value === 'health_log' ||
+        value === 'health_query' ||
+        value === 'health' ||
+        value === 'preference' ||
+        value === 'preference_update') {
+        if (value === 'preference' || value === 'preference_update') {
+            return 'preference_set';
+        }
+        if (value === 'health') {
+            return 'health_log';
+        }
+        return value;
+    }
+    return 'unknown';
+}
+function parseClassificationResponse(raw) {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+        return {
+            intent: 'unknown',
+            payload: {},
+        };
+    }
+    const candidate = parsed;
+    const payload = candidate.payload && typeof candidate.payload === 'object' && !Array.isArray(candidate.payload)
+        ? candidate.payload
+        : {};
+    return {
+        intent: normalizeClassifiedIntent(candidate.intent),
+        payload,
+    };
+}
+function normalizeClassification(input) {
+    const payload = input.payload && typeof input.payload === 'object' && !Array.isArray(input.payload)
+        ? input.payload
+        : {};
+    return {
+        intent: normalizeClassifiedIntent(input.intent),
+        payload,
+    };
+}
+function normalizeErrorMessage(error) {
+    if (error instanceof Error && error.message.trim()) {
+        return error.message;
+    }
+    return String(error);
+}
+function resolveClassifierTimeoutMs(env, configuredTimeoutMs) {
+    if (Number.isFinite(configuredTimeoutMs) && (configuredTimeoutMs ?? 0) > 0) {
+        return Math.floor(configuredTimeoutMs);
+    }
+    const fromEnv = Number.parseInt(env?.LIFEOS_VOICE_CLASSIFIER_TIMEOUT_MS?.trim() ?? '', 10);
+    if (Number.isFinite(fromEnv) && fromEnv > 0) {
+        return fromEnv;
+    }
+    return 4000;
+}
+function createOllamaIntentClassifier(env, configuredTimeoutMs) {
+    const model = env?.LIFEOS_VOICE_MODEL?.trim() || env?.LIFEOS_GOAL_MODEL?.trim() || 'llama3.1:8b';
+    const host = env?.OLLAMA_HOST?.trim() || 'http://127.0.0.1:11434';
+    const endpoint = `${host.replace(/\/+$/, '')}/api/chat`;
+    const timeoutMs = resolveClassifierTimeoutMs(env, configuredTimeoutMs);
+    return async (text) => {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), timeoutMs);
+        let response;
+        try {
+            response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'content-type': 'application/json',
+                },
+                body: JSON.stringify({
+                    model,
+                    format: 'json',
+                    stream: false,
+                    options: {
+                        temperature: 0.1,
+                        num_ctx: 4096,
+                    },
+                    messages: [
+                        {
+                            role: 'system',
+                            content: INTENT_PROMPT,
+                        },
+                        {
+                            role: 'user',
+                            content: text.trim().slice(0, 800),
+                        },
+                    ],
+                }),
+                signal: controller.signal,
+            });
+        }
+        catch (error) {
+            if ((error instanceof Error && error.name === 'AbortError') ||
+                (typeof error === 'object' &&
+                    error !== null &&
+                    'name' in error &&
+                    error.name === 'AbortError')) {
+                throw new Error(`Intent classification timed out after ${timeoutMs}ms.`);
+            }
+            throw error;
+        }
+        finally {
+            clearTimeout(timeout);
+        }
+        if (!response.ok) {
+            throw new Error(`Intent classification failed (${response.status})`);
+        }
+        const data = (await response.json());
+        const content = data.message?.content;
+        if (typeof content !== 'string') {
+            throw new Error('Intent classifier returned invalid content');
+        }
+        return parseClassificationResponse(content);
+    };
+}
+async function noopPublish() {
+    return;
+}
+export class IntentRouter {
+    client;
+    publish;
+    now;
+    classifyIntent;
+    logger;
+    constructor(options = {}) {
+        const createClient = options.createLifeGraphClient ?? createLifeGraphClient;
+        const clientOptions = {};
+        if (options.env) {
+            clientOptions.env = options.env;
+        }
+        if (options.graphPath) {
+            clientOptions.graphPath = options.graphPath;
+        }
+        this.client = options.client ?? createClient(clientOptions);
+        this.publish = options.publish ?? noopPublish;
+        this.now = options.now ?? (() => new Date());
+        this.classifyIntent =
+            options.classifyIntent ??
+                createOllamaIntentClassifier(options.env, options.classifierTimeoutMs);
+        this.logger = options.logger ?? (() => undefined);
+    }
+    async handleCommand(text) {
+        // Validate input immediately
+        let normalizedText;
+        try {
+            normalizedText = validateTextInput(text, MAX_COMMAND_TEXT_CHARS);
+        }
+        catch (error) {
+            this.logger(`[voice.router] invalid input: ${error instanceof Error ? error.message : String(error)}`);
+            return this.handleUnknownIntent('');
+        }
+        let classification = { intent: 'unknown', payload: {} };
+        try {
+            classification = await this.classifyIntent(normalizedText);
+        }
+        catch (error) {
+            this.logger(`[voice.router] classifier degraded, using fallback heuristics: ${normalizeErrorMessage(error)}`);
+            // Keep command flow local-first even if local LLM is unavailable.
+            classification = {
+                intent: this.fallbackIntent(normalizedText),
+                payload: {},
+            };
+        }
+        classification = normalizeClassification(classification);
+        switch (classification.intent) {
+            case 'task_add':
+                return this.handleTaskAddIntent(normalizedText, classification.payload);
+            case 'next_actions':
+                return this.handleNextActionsIntent(normalizedText);
+            case 'question_time':
+                return this.handleTimeIntent(normalizedText);
+            case 'calendar_add':
+                return this.handleAgentIntent(normalizedText, 'calendar', classification.payload);
+            case 'note_add':
+                return this.handleAgentIntent(normalizedText, 'note', classification.payload);
+            case 'note_search':
+                return this.handleAgentIntent(normalizedText, 'note_search', classification.payload);
+            case 'weather':
+                return this.handleAgentIntent(normalizedText, 'weather', classification.payload);
+            case 'news':
+                return this.handleAgentIntent(normalizedText, 'news', classification.payload);
+            case 'email_summarize':
+                return this.handleAgentIntent(normalizedText, 'email_summarize', classification.payload);
+            case 'research':
+                return this.handleAgentIntent(normalizedText, 'research', classification.payload);
+            case 'briefing':
+                return this.handleAgentIntent(normalizedText, 'briefing', classification.payload);
+            case 'preference_set':
+                return this.handlePreferenceIntent(normalizedText, classification.payload);
+            case 'health_log':
+                return this.handleAgentIntent(normalizedText, 'health_log', classification.payload);
+            case 'health_query':
+                return this.handleAgentIntent(normalizedText, 'health_query', classification.payload);
+            default:
+                return this.handleUnknownIntent(normalizedText);
+        }
+    }
+    fallbackIntent(text) {
+        const lower = text.toLowerCase();
+        if (extractTaskTitle(text)) {
+            return 'task_add';
+        }
+        if (lower.includes("what's next") ||
+            lower.includes('what is next') ||
+            lower.includes('next task')) {
+            return 'next_actions';
+        }
+        if (lower.includes('what time is it') ||
+            lower.includes("what's the time") ||
+            lower === 'time' ||
+            lower.includes('current time')) {
+            return 'question_time';
+        }
+        if (lower.includes('calendar') || lower.includes('schedule')) {
+            return 'calendar_add';
+        }
+        if (lower.includes('what did i note about') ||
+            lower.includes('find note about') ||
+            lower.includes('search notes for')) {
+            return 'note_search';
+        }
+        if (lower.startsWith('note ') || lower.includes('note that')) {
+            return 'note_add';
+        }
+        if (lower.includes('weather')) {
+            return 'weather';
+        }
+        if (lower.includes('news') || lower.includes('headlines')) {
+            return 'news';
+        }
+        if (lower.includes('email summary') ||
+            lower.includes('summarize email') ||
+            lower.includes('summarize inbox') ||
+            lower.includes('email digest')) {
+            return 'email_summarize';
+        }
+        // Detect health log by either explicit 'log' keyword or numeric + metric pattern
+        const metricKeyword = extractHealthMetricFromText(text);
+        if (metricKeyword) {
+            // Check for numeric value followed by metric (handles "7.5 hours", "72 kg", etc.)
+            if (/\d+(?:\.\d+)?/.test(text)) {
+                return 'health_log';
+            }
+        }
+        if (lower.includes('log') &&
+            (lower.includes('steps') ||
+                lower.includes('sleep') ||
+                lower.includes('weight') ||
+                lower.includes('heart rate') ||
+                lower.includes('blood pressure') ||
+                lower.includes('calories') ||
+                lower.includes('water'))) {
+            return 'health_log';
+        }
+        if (lower.includes('health') ||
+            lower.includes('how many steps') ||
+            lower.includes('progress on') ||
+            lower.includes('streak')) {
+            return 'health_query';
+        }
+        if (extractPreferenceFromText(text) ||
+            lower.includes('i prefer') ||
+            lower.includes('remember i') ||
+            lower.includes('remember that i') ||
+            lower.includes('prioritize') ||
+            lower.includes('sync conflict alert')) {
+            return 'preference_set';
+        }
+        if (lower.includes('briefing') || lower.includes('good morning')) {
+            return 'briefing';
+        }
+        if (lower.includes('research')) {
+            return 'research';
+        }
+        if (isResearchFollowUpPhrase(text)) {
+            return 'research';
+        }
+        return 'unknown';
+    }
+    async handleTaskAddIntent(text, payload) {
+        const taskTitleRaw = getString(payload.title) ??
+            getString(payload.task) ??
+            getString(payload.name) ??
+            extractTaskTitle(text) ??
+            sentenceCase(text);
+        const taskTitle = clampText(taskTitleRaw, MAX_TASK_TITLE_CHARS) || 'Untitled task';
+        const dueDate = normalizeDueDate(payload.dueDate) ?? normalizeDueDate(payload.date);
+        return this.handleTaskIntent(text, taskTitle, dueDate);
+    }
+    async handleNextActionsIntent(text) {
+        const review = await this.client.generateReview('daily');
+        const firstAction = review.nextActions[0] ?? 'You do not have any queued next actions.';
+        const responseText = review.nextActions.length > 0 ? `Your next action is ${firstAction}.` : firstAction;
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'next_actions',
+            text,
+            responseText,
+        });
+        return {
+            handled: true,
+            action: 'next_actions',
+            responseText,
+        };
+    }
+    async handleTimeIntent(text) {
+        const timeIso = this.now().toISOString();
+        const responseText = `Current local time snapshot: ${timeIso}.`;
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'time_reported',
+            text,
+            responseText,
+            at: timeIso,
+        });
+        return {
+            handled: true,
+            action: 'time_reported',
+            responseText,
+        };
+    }
+    async handleAgentIntent(text, intent, payload) {
+        if (intent === 'calendar') {
+            return this.handleCalendarIntent(text, payload);
+        }
+        const requestedAt = this.now().toISOString();
+        const routedPayload = this.buildIntentPayload(intent, text, payload, requestedAt);
+        const topicByIntent = {
+            weather: Topics.lifeos.voiceIntentWeather,
+            research: Topics.lifeos.voiceIntentResearch,
+            note: Topics.lifeos.voiceIntentNoteAdd,
+            news: Topics.lifeos.voiceIntentNews,
+            email_summarize: Topics.lifeos.voiceIntentEmailSummarize,
+            note_search: Topics.lifeos.voiceIntentNoteSearch,
+            briefing: Topics.lifeos.voiceIntentBriefing,
+            health_log: Topics.lifeos.voiceIntentHealthLog,
+            health_query: Topics.lifeos.voiceIntentHealthQuery,
+        };
+        await this.publishSafe(topicByIntent[intent], routedPayload);
+        if (intent !== 'health_log' && intent !== 'health_query') {
+            await this.publishSafe(Topics.agent.workRequested, {
+                utterance: text,
+                intent,
+                payload: routedPayload,
+                requestedAt,
+                origin: 'voice-core',
+            });
+        }
+        const responseText = this.intentConfirmation(intent, routedPayload);
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'agent_work_requested',
+            text,
+            responseText,
+            intent,
+        });
+        return {
+            handled: true,
+            action: 'agent_work_requested',
+            responseText,
+        };
+    }
+    intentConfirmation(intent, payload) {
+        if (intent === 'weather') {
+            const location = getString(payload.location) ?? 'your location';
+            return `Checking weather for ${location}.`;
+        }
+        if (intent === 'research') {
+            const query = getString(payload.query) ?? 'that topic';
+            return `Researching ${query}.`;
+        }
+        if (intent === 'note') {
+            return 'Noted. I will save that.';
+        }
+        if (intent === 'note_search') {
+            const query = getString(payload.query) ?? 'that topic';
+            return `Searching notes about ${query}.`;
+        }
+        if (intent === 'briefing') {
+            return 'Preparing your daily briefing.';
+        }
+        if (intent === 'email_summarize') {
+            return 'Preparing your email summary.';
+        }
+        if (intent === 'health_log') {
+            return 'Logged. I will update your health tracker.';
+        }
+        if (intent === 'health_query') {
+            return 'Checking your health metrics.';
+        }
+        return 'Preparing your news digest.';
+    }
+    async handlePreferenceIntent(text, payload) {
+        const parsed = extractPreferenceFromText(text);
+        const key = normalizePreferenceKey(getString(payload.key)) ??
+            normalizePreferenceKey(parsed?.key ?? null) ??
+            'communication_style';
+        const value = clampText(getString(payload.value) ?? parsed?.value ?? '', MAX_PREFERENCE_VALUE_CHARS);
+        if (!value) {
+            return this.handleUnknownIntent(text);
+        }
+        const normalizedValue = key === 'briefing_max_seconds' ? normalizeBriefingSecondsValue(value) : value;
+        if (!normalizedValue) {
+            return this.handleUnknownIntent(text);
+        }
+        const requestedAt = this.now().toISOString();
+        const normalizedPayload = {
+            key,
+            value: normalizedValue,
+            utterance: text,
+            requestedAt,
+        };
+        await this.publishSafe(Topics.lifeos.voiceIntentPreferenceSet, normalizedPayload);
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'preference_updated',
+            text,
+            key,
+            value: normalizedValue,
+        });
+        let responseText = 'Understood. I will remember that preference.';
+        if (key === 'communication_style') {
+            responseText = 'Understood. I will keep responses concise.';
+        }
+        else if (key === 'briefing_max_seconds') {
+            responseText = `Understood. I will keep briefings under ${normalizedValue} seconds.`;
+        }
+        else if (key === 'sync_conflict_voice_alerts') {
+            responseText =
+                normalizedValue === 'false'
+                    ? 'Understood. I will keep sync conflict alerts silent.'
+                    : 'Understood. I will announce sync conflict alerts.';
+        }
+        return {
+            handled: true,
+            action: 'preference_updated',
+            responseText,
+        };
+    }
+    buildIntentPayload(intent, text, payload, requestedAt) {
+        if (intent === 'weather') {
+            return {
+                location: clampText(getString(payload.location) ?? extractLocationFromText(text) ?? 'current', MAX_LOCATION_CHARS),
+                utterance: text,
+                requestedAt,
+            };
+        }
+        if (intent === 'research') {
+            const researchPayload = {
+                query: clampText(getString(payload.query) ?? getString(payload.topic) ?? extractResearchQuery(text), MAX_DESCRIPTION_CHARS),
+                utterance: text,
+                requestedAt,
+            };
+            const threadId = getString(payload.threadId);
+            if (threadId) {
+                researchPayload.threadId = threadId;
+            }
+            return researchPayload;
+        }
+        if (intent === 'note') {
+            const content = clampText(getString(payload.content) ?? getString(payload.note) ?? extractNoteContent(text), MAX_NOTE_CONTENT_CHARS);
+            const tags = getStringArray(payload.tags)?.map((entry) => clampText(entry, MAX_NOTE_TAG_CHARS)) ?? [];
+            return {
+                title: clampText(getString(payload.title) ?? deriveNoteTitle(content), MAX_NOTE_TITLE_CHARS),
+                content,
+                tags: tags.slice(0, MAX_NOTE_TAGS),
+                utterance: text,
+                requestedAt,
+            };
+        }
+        if (intent === 'note_search') {
+            const query = clampText(getString(payload.query) ?? extractNoteSearchQuery(text), MAX_NOTE_CONTENT_CHARS);
+            const sinceDaysFromPayload = typeof payload.sinceDays === 'number' && Number.isFinite(payload.sinceDays)
+                ? Math.max(1, Math.trunc(payload.sinceDays))
+                : null;
+            return {
+                query,
+                sinceDays: sinceDaysFromPayload ?? extractSinceDaysFromText(text) ?? 30,
+                limit: 3,
+                utterance: text,
+                requestedAt,
+            };
+        }
+        if (intent === 'briefing') {
+            return {
+                requestedAt,
+                utterance: text,
+                timeframe: clampText(getString(payload.timeframe) ?? 'today', 40),
+            };
+        }
+        if (intent === 'email_summarize') {
+            const account = getString(payload.account) ?? getString(payload.label);
+            return {
+                ...(account && { account: clampText(account, 80) }),
+                limit: typeof payload.limit === 'number' && Number.isFinite(payload.limit)
+                    ? Math.max(1, Math.min(25, Math.trunc(payload.limit)))
+                    : 10,
+                utterance: text,
+                requestedAt,
+            };
+        }
+        if (intent === 'health_log') {
+            const metric = getString(payload.metric)?.toLowerCase().replace(/\s+/g, '_') ??
+                extractHealthMetricFromText(text) ??
+                undefined;
+            const value = getNumber(payload.value);
+            return {
+                metric,
+                value,
+                unit: getString(payload.unit)?.toLowerCase().replace(/\s+/g, '_') ?? undefined,
+                note: getString(payload.note) ?? undefined,
+                utterance: text,
+                requestedAt,
+            };
+        }
+        if (intent === 'health_query') {
+            const metric = getString(payload.metric)?.toLowerCase().replace(/\s+/g, '_') ??
+                extractHealthMetricFromText(text) ??
+                undefined;
+            const sinceDaysFromPayload = typeof payload.period === 'number' && Number.isFinite(payload.period)
+                ? Math.max(1, Math.trunc(payload.period))
+                : null;
+            return {
+                metric,
+                period: sinceDaysFromPayload ?? extractHealthQueryPeriodFromText(text) ?? 7,
+                utterance: text,
+                requestedAt,
+            };
+        }
+        return {
+            topic: clampText(getString(payload.topic) ?? getString(payload.query) ?? 'top', 80),
+            query: clampText(getString(payload.query) ?? text, MAX_DESCRIPTION_CHARS),
+            utterance: text,
+            requestedAt,
+        };
+    }
+    async handleCalendarIntent(text, payload) {
+        const now = this.now();
+        const start = parseDateTime(payload.start) ?? new Date(now.getTime() + 60 * 60 * 1000);
+        const requestedEnd = parseDateTime(payload.end);
+        const end = requestedEnd && requestedEnd.getTime() > start.getTime()
+            ? requestedEnd
+            : new Date(start.getTime() + 60 * 60 * 1000);
+        const title = clampText(getString(payload.title) ?? getString(payload.name) ?? sentenceCase(text), MAX_CALENDAR_TITLE_CHARS) || 'Calendar event';
+        const calendarPayload = {
+            id: getString(payload.id) ?? randomUUID(),
+            title,
+            start: start.toISOString(),
+            end: end.toISOString(),
+            status: normalizeCalendarStatus(payload.status),
+            requestedAt: now.toISOString(),
+            utterance: text,
+        };
+        const attendees = getStringArray(payload.attendees)?.map((item) => clampText(item, MAX_ATTENDEE_CHARS));
+        if (attendees) {
+            calendarPayload.attendees = attendees;
+        }
+        const location = getString(payload.location);
+        if (location) {
+            calendarPayload.location = clampText(location, MAX_LOCATION_CHARS);
+        }
+        await this.publishSafe(Topics.lifeos.voiceIntentCalendarAdd, calendarPayload);
+        await this.publishSafe(Topics.agent.workRequested, {
+            utterance: text,
+            intent: 'calendar',
+            payload: calendarPayload,
+            requestedAt: now.toISOString(),
+            origin: 'voice-core',
+        });
+        const responseText = `Added "${title}" to your calendar.`;
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'agent_work_requested',
+            text,
+            responseText,
+            intent: 'calendar',
+        });
+        return {
+            handled: true,
+            action: 'agent_work_requested',
+            responseText,
+        };
+    }
+    async handleUnknownIntent(text) {
+        await this.publishSafe(Topics.lifeos.voiceCommandUnhandled, {
+            text,
+        });
+        return {
+            handled: false,
+            action: 'unhandled',
+            responseText: 'I heard you, but I do not know how to do that yet.',
+        };
+    }
+    async handleTaskIntent(text, taskTitle, dueDate) {
+        const createdAt = this.now().toISOString();
+        const planId = `goal_${randomUUID()}`;
+        const taskId = `task_${randomUUID()}`;
+        const planTitle = `Voice task: ${clampText(taskTitle, MAX_TASK_TITLE_CHARS) || 'Untitled task'}`;
+        const trimmedCommand = clampText(text, MAX_DESCRIPTION_CHARS);
+        const task = {
+            id: taskId,
+            title: clampText(taskTitle, MAX_TASK_TITLE_CHARS) || 'Untitled task',
+            status: 'todo',
+            priority: 4,
+            voiceTriggered: true,
+        };
+        if (dueDate) {
+            task.dueDate = dueDate;
+        }
+        await this.client.createNode('plan', {
+            id: planId,
+            createdAt,
+            title: planTitle,
+            description: `Created from voice command: "${trimmedCommand}"`,
+            tasks: [task],
+        });
+        await this.publishSafe(Topics.plan.created, {
+            planId,
+            title: planTitle,
+            createdAt,
+            origin: 'voice',
+        });
+        await this.publishSafe(Topics.task.scheduled, {
+            taskId,
+            planId,
+            title: taskTitle,
+            scheduledAt: createdAt,
+            origin: 'voice',
+        });
+        await this.publishSafe(Topics.lifeos.voiceCommandProcessed, {
+            action: 'task_added',
+            text,
+            planId,
+            taskId,
+        });
+        await this.publishSafe(Topics.lifeos.voiceIntentTaskAdd, {
+            utterance: text,
+            taskTitle,
+            planId,
+            taskId,
+            requestedAt: createdAt,
+            ...(dueDate ? { dueDate } : {}),
+        });
+        return {
+            handled: true,
+            action: 'task_added',
+            responseText: `Added a task to ${taskTitle}.`,
+            planId,
+            taskId,
+        };
+    }
+    async publishSafe(topic, data) {
+        try {
+            await this.publish(topic, data, 'voice-core');
+        }
+        catch (error) {
+            this.logger(`[voice.router] publish failed topic=${topic}: ${normalizeErrorMessage(error)}`);
+        }
+    }
+}

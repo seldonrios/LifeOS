@@ -7,30 +7,38 @@
 
 import type { ReviewLoopSummary } from '@lifeos/contracts';
 
+type TauriInvoke = (cmd: string, payload?: unknown) => Promise<unknown>;
+type TauriGlobals = typeof globalThis & {
+  __TAURI_INTERNALS__?: {
+    invoke?: TauriInvoke;
+  };
+};
+
 function isTauriRuntime(): boolean {
   // Runtime check using globalThis to avoid React Native type conflicts
-  const globalAny = globalThis as any;
-  return globalAny.__TAURI_INTERNALS__ !== undefined;
+  const runtimeGlobals = globalThis as TauriGlobals;
+  return runtimeGlobals.__TAURI_INTERNALS__ !== undefined;
 }
 
 /**
  * Dynamically access Tauri invoke API without static import to support RN typings.
  */
-async function getTauriInvoke(): Promise<{ invoke: (cmd: string, payload?: any) => Promise<any> } | null> {
+async function getTauriInvoke(): Promise<{ invoke: TauriInvoke } | null> {
   if (!isTauriRuntime()) {
     return null;
   }
 
   try {
     // Use dynamic require/import if available, with fallback to globalThis
-    const globalAny = globalThis as any;
-    if (globalAny.__TAURI_INTERNALS__?.invoke) {
-      return { invoke: globalAny.__TAURI_INTERNALS__.invoke };
+    const runtimeGlobals = globalThis as TauriGlobals;
+    if (runtimeGlobals.__TAURI_INTERNALS__?.invoke) {
+      return { invoke: runtimeGlobals.__TAURI_INTERNALS__.invoke };
     }
 
     // Fallback for environments with proper module loading
     if (typeof require !== 'undefined') {
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const tauri = require('@tauri-apps/api/core');
         return { invoke: tauri.invoke };
       } catch {
@@ -74,5 +82,5 @@ export async function sidecarGetDailyReview(): Promise<ReviewLoopSummary | null>
 
   // Call the daily review command (will be registered in lib.rs)
   // Do not catch errors; let them propagate so caller can queue on failure
-  return await tauri.invoke('review_daily');
+  return (await tauri.invoke('review_daily')) as ReviewLoopSummary;
 }

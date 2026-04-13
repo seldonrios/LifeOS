@@ -8,31 +8,39 @@ interface PackageJson {
   scripts?: { test?: string };
 }
 
-const packagesDir = join(process.cwd(), 'packages');
-const packageDirs = readdirSync(packagesDir, { withFileTypes: true })
-  .filter((d) => d.isDirectory())
-  .map((d) => d.name);
-
 const violations: string[] = [];
 
-for (const pkg of packageDirs) {
-  const pkgDir = join(packagesDir, pkg);
-  const pkgJsonPath = join(pkgDir, 'package.json');
+for (const tier of ['packages', 'modules', 'services']) {
+  const rootDir = join(process.cwd(), tier);
+  const dirs = readdirSync(rootDir, { withFileTypes: true })
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
 
-  if (!existsSync(pkgJsonPath)) continue;
+  for (const pkg of dirs) {
+    const pkgDir = join(rootDir, pkg);
+    const pkgJsonPath = join(pkgDir, 'package.json');
 
-  const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as PackageJson;
-  const srcDir = join(pkgDir, 'src');
+    if (!existsSync(pkgJsonPath)) continue;
 
-  if (!existsSync(srcDir)) continue;
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf8')) as PackageJson;
+    const srcDir = join(pkgDir, 'src');
 
-  const allFiles = readdirSync(srcDir, { recursive: true, encoding: 'utf8' });
-  const hasTestFiles = (allFiles as string[]).some((f) => f.endsWith('.test.ts'));
+    if (!existsSync(srcDir)) continue;
 
-  if (hasTestFiles && !pkgJson.scripts?.test) {
-    violations.push(
-      `${pkgJson.name ?? pkg}: contains .test.ts files but is missing "scripts.test"`,
+    const allFiles = readdirSync(srcDir, { recursive: true, encoding: 'utf8' });
+    const hasTestFiles = (allFiles as string[]).some(
+      (f) =>
+        f.endsWith('.test.ts') ||
+        f.endsWith('.spec.ts') ||
+        f.endsWith('.test.tsx') ||
+        f.endsWith('.spec.tsx'),
     );
+
+    if (hasTestFiles && !pkgJson.scripts?.test) {
+      violations.push(
+        `${pkgJson.name ?? pkg}: contains test files but is missing "scripts.test"`,
+      );
+    }
   }
 }
 
@@ -46,7 +54,18 @@ if (violations.length > 0) {
 
 const result = spawnSync(
   'pnpm',
-  ['-r', '--filter', './packages/*', 'run', '--if-present', 'test'],
+  [
+    '-r',
+    '--filter',
+    './packages/*',
+    '--filter',
+    './modules/*',
+    '--filter',
+    './services/*',
+    'run',
+    '--if-present',
+    'test',
+  ],
   { stdio: 'inherit', shell: true },
 );
 

@@ -125,4 +125,3 @@ export function emitAutomationFailureSpan(client, spanName, input) {
     client.endSpan(span);
     return span;
 }
-//# sourceMappingURL=index.js.map

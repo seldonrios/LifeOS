@@ -13,4 +13,3 @@ export interface CreateEventBusClientOptions {
 }
 export declare function createEventBusClient(options?: CreateEventBusClientOptions): ManagedEventBus;
 export declare function bootstrapStreams(options?: CreateEventBusClientOptions): Promise<void>;
-//# sourceMappingURL=index.d.ts.map

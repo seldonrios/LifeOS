@@ -221,7 +221,7 @@ test('[integration] householdHomeStateChanged -> snapshot update -> signal incre
     const harness = await createServiceHarness();
     cleanup = harness.cleanup;
     const { client, eventBus, app, dbPath } = harness;
-    globalThis.fetch = async (..._args: Parameters<typeof fetch>) => {
+    globalThis.fetch = async () => {
       return new Response(
         JSON.stringify({
           topReminders: [
