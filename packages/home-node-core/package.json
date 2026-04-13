@@ -19,6 +19,6 @@
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/household-capture-router-module": "workspace:*",
     "@lifeos/voice-core": "workspace:*",
-    "better-sqlite3": "^12.8.0"
+    "better-sqlite3": "^12.9.0"
   }
 }
