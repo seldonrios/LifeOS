@@ -41,22 +41,22 @@ Phase 6 introduces an always-on home-node runtime layer for ambient household su
 
 ## Route Auth Classification
 
-| Route | Method | Auth class |
-| ----- | ------ | ---------- |
-| `/api/home-node/homes` | POST | `surface-secret` |
-| `/api/home-node/zones` | POST | `surface-secret` |
-| `/api/home-node/snapshot/:householdId` | GET | `surface-secret` |
-| `/api/home-node/surfaces` | GET | `surface-secret` |
-| `/api/home-node/surfaces/register` | POST | `surface-secret` |
-| `/api/home-node/surfaces` | POST | `surface-secret` |
-| `/api/home-node/surfaces/:surfaceId` | DELETE | `surface-secret` |
-| `/api/home-node/surfaces/:surfaceId/heartbeat` | POST | `surface-secret` |
-| `/api/home-node/display-feed/:surfaceId` | GET | `surface-secret` |
-| `/api/home-node/display-feed-hints/:surfaceId` | GET | `surface-secret` |
-| `/health/live` | GET | `public` |
-| `/health/ready` | GET | `public` |
+| Route | Method | Auth class | Notes |
+| ----- | ------ | ---------- | ----- |
+| `/api/home-node/homes` | POST | `surface-secret` | Provisioning — creates or upserts a home record |
+| `/api/home-node/zones` | POST | `surface-secret` | Provisioning — creates or upserts a zone within a home |
+| `/api/home-node/snapshot/:householdId` | GET | `surface-secret` | Returns current home-state snapshot for a household |
+| `/api/home-node/surfaces` | GET | `surface-secret` | Lists registered surfaces; requires `householdId` query param |
+| `/api/home-node/surfaces/register` | POST | `surface-secret` | Alias for `/surfaces` POST; kept for backward compatibility |
+| `/api/home-node/surfaces` | POST | `surface-secret` | Registers a new surface; `surface_id` auto-generated if omitted |
+| `/api/home-node/surfaces/:surfaceId` | DELETE | `surface-secret` | Deregisters a surface; triggers `onSurfaceDeregistered` hook |
+| `/api/home-node/surfaces/:surfaceId/heartbeat` | POST | `surface-secret` | Records surface liveness; updates `last_seen_at` |
+| `/api/home-node/display-feed/:surfaceId` | GET | `surface-secret` | Returns aggregated display feed for a surface; 30 s cache TTL |
+| `/api/home-node/display-feed-hints/:surfaceId` | GET | `surface-secret` | Long-poll for feed signal version; max 60 s timeout |
+| `/health/live` | GET | `public` | Liveness probe; must remain unauthenticated regardless of `enforceRouteAuthMode` |
+| `/health/ready` | GET | `public` | Readiness probe; must remain unauthenticated regardless of `enforceRouteAuthMode` |
 
-Bearer auth for GET routes is deferred to the auth-unification wave. `/health/*` endpoints must remain unauthenticated regardless of `enforceRouteAuthMode`.
+The **Notes** column documents route semantics for contributors; see the inline `// auth:` comments in `services/home-node/src/routes.ts` for the per-route access mode. Bearer auth for GET routes is deferred to the auth-unification wave. `/health/*` endpoints must remain unauthenticated regardless of `enforceRouteAuthMode`.
 
 ## Alternatives Considered
 

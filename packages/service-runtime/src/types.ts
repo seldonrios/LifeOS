@@ -15,6 +15,21 @@ export type ServiceRuntimePhase =
 
 export type RouteAuthMode = 'mutating' | 'api-prefix' | 'all';
 
+/**
+ * Per-route authentication mode. Controls how the service-runtime auth middleware
+ * handles incoming requests for a given route.
+ *
+ * - `'inherit'` — Uses the service-level `enforceRouteAuthMode` policy; no per-route
+ *   override. This is the default when `RouteConfig.accessMode` is omitted.
+ * - `'bearer'` — Route requires a valid JWT bearer token in the `Authorization` header.
+ * - `'surface-secret'` — Route requires the `x-lifeos-surface-secret` header (or body
+ *   field) matching `LIFEOS_HOME_NODE_SURFACE_SECRET`; used by home-node display
+ *   lifecycle routes.
+ * - `'public'` — Route is unauthenticated; no token or secret required
+ *   (e.g., `/health/*` endpoints).
+ *
+ * `RouteConfig.accessMode` defaults to `'inherit'` when omitted.
+ */
 export type RouteAccessMode = 'inherit' | 'bearer' | 'surface-secret' | 'public';
 
 export interface RouteConfig {

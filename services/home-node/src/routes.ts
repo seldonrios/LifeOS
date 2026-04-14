@@ -136,6 +136,7 @@ export function registerHomeNodeRoutes(
 ): void {
   const expectedSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET ?? '';
 
+  // auth: surface-secret
   app.route({
     method: 'POST',
     url: '/api/home-node/homes',
@@ -168,6 +169,7 @@ export function registerHomeNodeRoutes(
     },
   });
 
+  // auth: surface-secret
   app.route({
     method: 'POST',
     url: '/api/home-node/zones',
@@ -201,6 +203,7 @@ export function registerHomeNodeRoutes(
     },
   });
 
+  // auth: surface-secret
   app.route({
     method: 'GET',
     url: '/api/home-node/snapshot/:householdId',
@@ -265,6 +268,7 @@ export function registerHomeNodeRoutes(
     }
   };
 
+  // auth: surface-secret
   app.route({
     method: 'GET',
     url: '/api/home-node/display-feed/:surfaceId',
@@ -272,6 +276,7 @@ export function registerHomeNodeRoutes(
     handler: getFeedHandler,
   });
 
+  // auth: surface-secret
   app.route({
     method: 'GET',
     url: '/api/home-node/display-feed-hints/:surfaceId',
@@ -367,12 +372,14 @@ export function registerHomeNodeRoutes(
     }
   };
 
+  // auth: surface-secret
   app.route({
     method: 'POST',
     url: '/api/home-node/surfaces/register',
     config: { accessMode: 'surface-secret' },
     handler: registerSurfaceHandler,
   });
+  // auth: surface-secret
   app.route({
     method: 'POST',
     url: '/api/home-node/surfaces',
@@ -380,6 +387,7 @@ export function registerHomeNodeRoutes(
     handler: registerSurfaceHandler,
   });
 
+  // auth: surface-secret
   app.route({
     method: 'DELETE',
     url: '/api/home-node/surfaces/:surfaceId',
@@ -404,6 +412,7 @@ export function registerHomeNodeRoutes(
     },
   });
 
+  // auth: surface-secret
   app.route({
     method: 'GET',
     url: '/api/home-node/surfaces',
@@ -436,6 +445,7 @@ export function registerHomeNodeRoutes(
     },
   });
 
+  // auth: surface-secret
   app.route({
     method: 'POST',
     url: '/api/home-node/surfaces/:surfaceId/heartbeat',
