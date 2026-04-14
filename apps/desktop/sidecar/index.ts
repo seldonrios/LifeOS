@@ -5,6 +5,7 @@ import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import {
+  runCaptureCommand,
   runGoalCommand,
   runMarketplaceCommand,
   runModuleCommand,
@@ -17,6 +18,7 @@ import {
 type RpcCommand =
   | 'graph_summary'
   | 'goal_run'
+  | 'capture_create'
   | 'task_list'
   | 'task_complete'
   | 'review_daily'
@@ -89,6 +91,7 @@ const MODEL_IDENTIFIER_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
 const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'graph_summary',
   'goal_run',
+  'capture_create',
   'task_list',
   'task_complete',
   'review_daily',
@@ -158,6 +161,17 @@ function normalizeGoal(value: unknown): string {
     throw new Error(`Goal exceeds ${MAX_GOAL_LENGTH} characters.`);
   }
   return goal;
+}
+
+function normalizeCaptureText(value: unknown): string {
+  const text = String(value ?? '').trim();
+  if (!text) {
+    throw new Error('Capture text is required.');
+  }
+  if (text.length > MAX_GOAL_LENGTH) {
+    throw new Error(`Capture text exceeds ${MAX_GOAL_LENGTH} characters.`);
+  }
+  return text;
 }
 
 function normalizeTaskId(value: unknown): string {
@@ -507,6 +521,25 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       );
       if (output.exitCode !== 0) {
         throw new Error(output.stderr || 'goal_run failed');
+      }
+      return parseJsonOutput(output.stdout);
+    }
+
+    case 'capture_create': {
+      const text = normalizeCaptureText(request.args?.text);
+      const output = await runCapture((dependencies) =>
+        runCaptureCommand(
+          {
+            text,
+            type: 'text',
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'capture_create failed');
       }
       return parseJsonOutput(output.stdout);
     }

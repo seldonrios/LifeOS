@@ -46,6 +46,10 @@ export interface ReviewLoopSummary {
   suggestedNextActions?: string[];
 }
 
+export interface CaptureInput {
+  text: string;
+}
+
 export interface ModuleRow {
   id: string;
   tier: string;
@@ -264,11 +268,15 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     return { id: taskId, status: 'done' } as T;
   }
 
+  if (command === 'capture_create') {
+    return { id: 'mock-capture-' + Date.now() } as T;
+  }
+
   if (command === 'review_daily') {
     return {
       pendingCaptures: 1,
       actionsDueToday: 2,
-      unacknowledgedReminders: 0,
+      unacknowledgedReminders: 2,
       completedActions: [],
     } as T;
   }
@@ -337,4 +345,8 @@ export async function listOllamaModels(): Promise<string[]> {
 
 export async function readTrustStatus(): Promise<TrustStatus> {
   return invokeOrMock<TrustStatus>('trust_status');
+}
+
+export async function createCapture(text: string): Promise<{ id: string }> {
+  return invokeOrMock<{ id: string }>('capture_create', { text });
 }

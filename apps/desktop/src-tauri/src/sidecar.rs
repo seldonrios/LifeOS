@@ -10,6 +10,7 @@ const SIDECAR_TIMEOUT_MS: u64 = 30_000;
 const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
     "graph_summary",
     "goal_run",
+    "capture_create",
     "task_list",
     "task_complete",
     "review_daily",
@@ -209,4 +210,14 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
         .get("result")
         .cloned()
         .ok_or_else(|| sidecar_error("SIDECAR_MISSING_RESULT", "Missing sidecar result payload"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ALLOWED_SIDECAR_COMMANDS;
+
+    #[test]
+    fn allowlist_includes_capture_create() {
+        assert!(ALLOWED_SIDECAR_COMMANDS.contains(&"capture_create"));
+    }
 }

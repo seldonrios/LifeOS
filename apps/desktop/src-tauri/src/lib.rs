@@ -1,6 +1,7 @@
 mod commands;
 mod sidecar;
 
+use commands::capture::capture_create;
 use commands::goal::{goal_run, task_complete, task_list};
 use commands::graph::graph_summary;
 use commands::marketplace::marketplace_list;
@@ -15,6 +16,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             graph_summary,
             goal_run,
+            capture_create,
             task_list,
             task_complete,
             review_daily,

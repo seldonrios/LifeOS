@@ -1,4 +1,7 @@
 import assert from 'node:assert/strict';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 
 import { parseJsonOutput, processRequest } from './index.ts';
@@ -25,6 +28,32 @@ test('processRequest executes supported command and returns result', async () =>
   assert.equal(response.id, 'settings-1');
   assert.equal(typeof response.result, 'object');
   assert.equal(response.error, undefined);
+});
+
+test('processRequest executes capture_create and returns capture payload', async () => {
+  const originalCwd = process.cwd();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-sidecar-capture-'));
+
+  try {
+    process.chdir(tempDir);
+    const response = await processRequest(
+      JSON.stringify({
+        id: 'capture-1',
+        command: 'capture_create',
+        args: { text: 'Remember the dentist appointment' },
+      }),
+    );
+
+    assert.equal(response.id, 'capture-1');
+    assert.equal(response.error, undefined);
+    const result = response.result as { id?: string; content?: string; status?: string };
+    assert.equal(typeof result.id, 'string');
+    assert.equal(result.content, 'Remember the dentist appointment');
+    assert.equal(result.status, 'pending');
+  } finally {
+    process.chdir(originalCwd);
+    await rm(tempDir, { recursive: true, force: true });
+  }
 });
 
 test('processRequest executes trust_status and returns structured trust payload', async () => {

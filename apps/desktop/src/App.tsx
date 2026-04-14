@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
-import { Dashboard } from './screens/Dashboard';
+import { Today } from './screens/Today';
 import { GoalBuilder } from './screens/GoalBuilder';
 import { Inbox } from './screens/Inbox';
 import { Review } from './screens/Review';
@@ -87,7 +87,7 @@ export function App(): JSX.Element {
           </span>
         </header>
 
-        <main className="screen-area">{renderScreen(activeScreen)}</main>
+        <main className="screen-area">{renderScreen(activeScreen, setActiveScreen)}</main>
 
         <StatusBar model={activeModel} graphSummary={graphSummary} modulesSummary={modulesSummary} />
       </div>
@@ -95,9 +95,9 @@ export function App(): JSX.Element {
   );
 }
 
-function renderScreen(screen: ScreenId): JSX.Element {
+function renderScreen(screen: ScreenId, onNavigate: (screen: ScreenId) => void): JSX.Element {
   if (screen === 'today') {
-    return <Dashboard />;
+    return <Today onNavigate={onNavigate} />;
   }
   if (screen === 'inbox') {
     return <Inbox />;

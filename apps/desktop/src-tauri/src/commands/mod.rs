@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod goal;
 pub mod graph;
 pub mod marketplace;
