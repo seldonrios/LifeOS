@@ -6,11 +6,12 @@ interface SidebarProps {
 }
 
 const NAV_ITEMS: Array<{ id: ScreenId; label: string; icon: string }> = [
-  { id: 'dashboard', label: 'Dashboard', icon: '*' },
-  { id: 'graph', label: 'Life Graph', icon: 'o' },
-  { id: 'goals', label: 'Goal Builder', icon: '+' },
-  { id: 'marketplace', label: 'Marketplace', icon: '#' },
-  { id: 'trust', label: 'Trust Center', icon: '!' },
+  { id: 'today', label: 'Today', icon: '*' },
+  { id: 'inbox', label: 'Inbox', icon: '@' },
+  { id: 'plans', label: 'Plans', icon: '+' },
+  { id: 'review', label: 'Review', icon: '↺' },
+  { id: 'memory', label: 'Memory', icon: '◎' },
+  { id: 'integrations', label: 'Integrations', icon: '#' },
   { id: 'settings', label: 'Settings', icon: '~' },
 ];
 

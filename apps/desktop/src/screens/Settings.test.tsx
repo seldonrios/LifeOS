@@ -9,6 +9,21 @@ vi.mock('../ipc', () => ({
   readSettings: vi.fn(),
   writeSettings: vi.fn(),
   listOllamaModels: vi.fn(),
+  readTrustStatus: vi.fn().mockResolvedValue({
+    ownership: {
+      dataOwnership: 'All data stored locally.',
+      methodsTransparency: 'All methods are inspectable.',
+      localFirstDefault: true,
+    },
+    runtime: {
+      model: 'llama3.1:8b',
+      policyEnforced: true,
+      moduleManifestRequired: true,
+      moduleRuntimePermissions: 'sandboxed',
+    },
+    modules: [],
+    recentDecisions: [],
+  }),
 }));
 
 function renderWithQueryClient(): void {

@@ -3,6 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { listOllamaModels, readSettings, writeSettings } from '../ipc';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
+import { TrustCenter } from './TrustCenter';
+// TrustCenter folded into Settings per UX-A1 guardrail; will be surfaced as a dedicated Settings sub-section in UX-A6.
 
 export function Settings(): JSX.Element {
   const queryClient = useQueryClient();
@@ -270,6 +272,10 @@ export function Settings(): JSX.Element {
             Revert
           </button>
         </div>
+      </section>
+
+      <section className="settings-section">
+        <TrustCenter />
       </section>
     </div>
   );

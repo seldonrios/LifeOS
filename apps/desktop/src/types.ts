@@ -1,1 +1,1 @@
-export type ScreenId = 'dashboard' | 'graph' | 'goals' | 'marketplace' | 'trust' | 'settings';
+export type ScreenId = 'today' | 'inbox' | 'plans' | 'review' | 'memory' | 'integrations' | 'settings';

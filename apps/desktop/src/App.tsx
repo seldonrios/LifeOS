@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Dashboard } from './screens/Dashboard';
-import { LifeGraph } from './screens/LifeGraph';
 import { GoalBuilder } from './screens/GoalBuilder';
-import { Marketplace } from './screens/Marketplace';
-import { TrustCenter } from './screens/TrustCenter';
+import { Inbox } from './screens/Inbox';
+import { Review } from './screens/Review';
+import { Memory } from './screens/Memory';
+import { Integrations } from './screens/Integrations';
 import { Settings } from './screens/Settings';
 import { useGraph } from './hooks/useGraph';
 import { useModules } from './hooks/useModules';
@@ -26,22 +27,23 @@ function isDesktopRuntime(): boolean {
 }
 
 const SCREEN_META: Record<ScreenId, { title: string }> = {
-  dashboard: { title: 'Dashboard' },
-  graph: { title: 'Life Graph' },
-  goals: { title: 'Goal Builder' },
-  marketplace: { title: 'Marketplace' },
-  trust: { title: 'Trust Center' },
+  today: { title: 'Today' },
+  inbox: { title: 'Inbox' },
+  plans: { title: 'Plans' },
+  review: { title: 'Review' },
+  memory: { title: 'Memory' },
+  integrations: { title: 'Integrations' },
   settings: { title: 'Settings' },
 };
 
 export function App(): JSX.Element {
-  const [activeScreen, setActiveScreen] = useState<ScreenId>('dashboard');
+  const [activeScreen, setActiveScreen] = useState<ScreenId>('today');
   const graphQuery = useGraph();
   const { modulesQuery } = useModules();
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
 
   const screenTitle = useMemo(() => {
-    if (activeScreen === 'dashboard') return getTimeGreeting();
+    if (activeScreen === 'today') return getTimeGreeting();
     return SCREEN_META[activeScreen].title;
   }, [activeScreen]);
 
@@ -94,20 +96,23 @@ export function App(): JSX.Element {
 }
 
 function renderScreen(screen: ScreenId): JSX.Element {
-  if (screen === 'dashboard') {
+  if (screen === 'today') {
     return <Dashboard />;
   }
-  if (screen === 'graph') {
-    return <LifeGraph />;
+  if (screen === 'inbox') {
+    return <Inbox />;
   }
-  if (screen === 'goals') {
+  if (screen === 'plans') {
     return <GoalBuilder />;
   }
-  if (screen === 'marketplace') {
-    return <Marketplace />;
+  if (screen === 'review') {
+    return <Review />;
   }
-  if (screen === 'trust') {
-    return <TrustCenter />;
+  if (screen === 'memory') {
+    return <Memory />;
+  }
+  if (screen === 'integrations') {
+    return <Integrations />;
   }
   return <Settings />;
 }
