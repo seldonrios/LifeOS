@@ -265,7 +265,9 @@ async function createBoundaryHarness(): Promise<{
   };
 }
 
-async function createRuntimeServiceHarness(): Promise<{
+async function createRuntimeServiceHarness(options?: {
+  registerAdditionalRoutes?: (runtimeApp: ReturnType<typeof Fastify>) => Promise<void> | void;
+}): Promise<{
   app: ReturnType<typeof Fastify>;
   client: HomeNodeGraphClient;
   cleanup: () => Promise<void>;
@@ -388,6 +390,8 @@ async function createRuntimeServiceHarness(): Promise<{
         getDisplayFeedSignalVersion,
         waitForDisplayFeedSignal,
       });
+
+      await options?.registerAdditionalRoutes?.(runtimeApp as ReturnType<typeof Fastify>);
     },
     onBeforeListen: (runtimeApp) => {
       app = runtimeApp as ReturnType<typeof Fastify>;
@@ -1315,6 +1319,246 @@ test('[integration] auth boundary - mutating routes are bearer-gated at runtime'
       payload: createHomePayload,
     });
     assert.equal(withBearer.statusCode, 201);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('[integration] display bootstrap auth — end-to-end regression suite', async () => {
+  const { app, cleanup, issueBearerToken } = await createRuntimeServiceHarness({
+    registerAdditionalRoutes: (runtimeApp) => {
+      runtimeApp.post('/api/home-node/runtime-auth-probe', async (_request, reply) => {
+        return reply.code(204).send();
+      });
+    },
+  });
+
+  try {
+    // ── Test case 1: Full bootstrap with valid surface secret, no bearer → all succeed ──
+    //
+    // This mirrors the exact request shape that apps/home-display/src/hooks/useDisplayFeed.ts
+    // issues during bootstrap. No Authorization: Bearer header is ever sent by that hook.
+    //
+    const tc1HomeId = 'home-e2e-tc1-1';
+    const tc1HouseholdId = 'household-e2e-tc1-1';
+    const tc1ZoneId = 'zone-e2e-tc1-1';
+
+    const tc1CreateHome = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+      payload: {
+        home_id: tc1HomeId,
+        household_id: tc1HouseholdId,
+        name: 'E2E TC1 Home',
+        timezone: 'UTC',
+      },
+    });
+    assert.equal(tc1CreateHome.statusCode, 201, 'TC1: POST /homes should return 201 with valid surface secret');
+
+    const tc1CreateZone = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+      payload: {
+        zone_id: tc1ZoneId,
+        home_id: tc1HomeId,
+        name: 'E2E TC1 Kitchen',
+        type: 'kitchen',
+      },
+    });
+    assert.equal(tc1CreateZone.statusCode, 201, 'TC1: POST /zones should return 201 with valid surface secret');
+
+    const tc1RegisterSurface = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/surfaces/register',
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+      payload: {
+        zone_id: tc1ZoneId,
+        home_id: tc1HomeId,
+        kind: 'kitchen_display',
+        trust_level: 'household',
+        capabilities: ['read', 'quick-action'],
+      },
+    });
+    assert.ok(
+      tc1RegisterSurface.statusCode === 200 || tc1RegisterSurface.statusCode === 201,
+      'TC1: POST /surfaces/register should return 200 or 201 with valid surface secret',
+    );
+    const tc1SurfaceBody = tc1RegisterSurface.json() as { surface_id: string };
+    const tc1SurfaceId = tc1SurfaceBody.surface_id;
+    assert.ok(tc1SurfaceId, 'TC1: surface_id must be present in register response');
+
+    const tc1DisplayFeed = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed/${tc1SurfaceId}`,
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+    });
+    assert.equal(tc1DisplayFeed.statusCode, 200, 'TC1: GET /display-feed/:surfaceId should return 200 with valid surface secret');
+
+    const tc1Heartbeat = await app.inject({
+      method: 'POST',
+      url: `/api/home-node/surfaces/${tc1SurfaceId}/heartbeat`,
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+      payload: { seen_at: new Date().toISOString() },
+    });
+    assert.equal(tc1Heartbeat.statusCode, 200, 'TC1: POST /surfaces/:surfaceId/heartbeat should return 200 with valid surface secret');
+
+    // ── Test case 2: Same flow with wrong surface secret → all return 401 ──
+    const tc2Payload = {
+      home_id: 'home-e2e-tc2-1',
+      household_id: 'household-e2e-tc2-1',
+      name: 'E2E TC2 Home',
+      timezone: 'UTC',
+    };
+
+    const tc2CreateHome = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: { 'x-lifeos-surface-secret': 'wrong-secret' },
+      payload: tc2Payload,
+    });
+    assert.equal(tc2CreateHome.statusCode, 401, 'TC2: POST /homes should return 401 with wrong surface secret');
+
+    const tc2CreateZone = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      headers: { 'x-lifeos-surface-secret': 'wrong-secret' },
+      payload: { zone_id: 'zone-e2e-tc2-1', home_id: 'home-e2e-tc2-1', name: 'E2E TC2 Kitchen', type: 'kitchen' },
+    });
+    assert.equal(tc2CreateZone.statusCode, 401, 'TC2: POST /zones should return 401 with wrong surface secret');
+
+    const tc2RegisterSurface = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/surfaces/register',
+      headers: { 'x-lifeos-surface-secret': 'wrong-secret' },
+      payload: {
+        zone_id: 'zone-e2e-tc2-1',
+        home_id: 'home-e2e-tc2-1',
+        kind: 'kitchen_display',
+        trust_level: 'household',
+        capabilities: ['read'],
+      },
+    });
+    assert.equal(tc2RegisterSurface.statusCode, 401, 'TC2: POST /surfaces/register should return 401 with wrong surface secret');
+
+    const tc2DisplayFeed = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed/${tc1SurfaceId}`,
+      headers: { 'x-lifeos-surface-secret': 'wrong-secret' },
+    });
+    assert.equal(tc2DisplayFeed.statusCode, 401, 'TC2: GET /display-feed/:surfaceId should return 401 with wrong surface secret');
+
+    const tc2Heartbeat = await app.inject({
+      method: 'POST',
+      url: `/api/home-node/surfaces/${tc1SurfaceId}/heartbeat`,
+      headers: { 'x-lifeos-surface-secret': 'wrong-secret' },
+      payload: { seen_at: new Date().toISOString() },
+    });
+    assert.equal(tc2Heartbeat.statusCode, 401, 'TC2: POST /surfaces/:surfaceId/heartbeat should return 401 with wrong surface secret');
+
+    // ── Test case 3: Same flow with no credentials at all → all return 401 ──
+    const tc3CreateHome = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      payload: {
+        home_id: 'home-e2e-tc3-1',
+        household_id: 'household-e2e-tc3-1',
+        name: 'E2E TC3 Home',
+        timezone: 'UTC',
+      },
+    });
+    assert.equal(tc3CreateHome.statusCode, 401, 'TC3: POST /homes should return 401 with no credentials');
+
+    const tc3CreateZone = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/zones',
+      payload: { zone_id: 'zone-e2e-tc3-1', home_id: 'home-e2e-tc3-1', name: 'E2E TC3 Kitchen', type: 'kitchen' },
+    });
+    assert.equal(tc3CreateZone.statusCode, 401, 'TC3: POST /zones should return 401 with no credentials');
+
+    const tc3RegisterSurface = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/surfaces/register',
+      payload: {
+        zone_id: 'zone-e2e-tc3-1',
+        home_id: 'home-e2e-tc3-1',
+        kind: 'kitchen_display',
+        trust_level: 'household',
+        capabilities: ['read'],
+      },
+    });
+    assert.equal(tc3RegisterSurface.statusCode, 401, 'TC3: POST /surfaces/register should return 401 with no credentials');
+
+    const tc3DisplayFeed = await app.inject({
+      method: 'GET',
+      url: `/api/home-node/display-feed/${tc1SurfaceId}`,
+    });
+    assert.equal(tc3DisplayFeed.statusCode, 401, 'TC3: GET /display-feed/:surfaceId should return 401 with no credentials');
+
+    const tc3Heartbeat = await app.inject({
+      method: 'POST',
+      url: `/api/home-node/surfaces/${tc1SurfaceId}/heartbeat`,
+      payload: { seen_at: new Date().toISOString() },
+    });
+    assert.equal(tc3Heartbeat.statusCode, 401, 'TC3: POST /surfaces/:surfaceId/heartbeat should return 401 with no credentials');
+
+    // ── Test case 4: Surface route with valid secret, no bearer → succeeds (critical regression guard) ──
+    //
+    // This test would return 401 if SQ-13/SQ-14 were reverted, because the runtime would
+    // bearer-gate the POST before the handler runs. With accessMode: 'surface-secret' set on
+    // the route (SQ-14), the service-runtime onRequest hook bypasses the bearer check entirely,
+    // allowing the handler's own surface-secret check to pass.
+    //
+    const tc4CreateHome = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/homes',
+      headers: { 'x-lifeos-surface-secret': TEST_SURFACE_SECRET },
+      // No Authorization: Bearer header
+      payload: {
+        home_id: 'home-e2e-tc4-1',
+        household_id: 'household-e2e-tc4-1',
+        name: 'E2E TC4 Home',
+        timezone: 'UTC',
+      },
+    });
+    assert.equal(tc4CreateHome.statusCode, 201, 'TC4: POST /homes with only surface secret (no bearer) should return 201 — regression guard for SQ-13/SQ-14');
+
+    // ── Test case 5: Inherit mutating route without bearer → 401 from runtime gate ──
+    //
+    // home-node mutating production routes are now marked accessMode: 'surface-secret'.
+    // To assert runtime bearer enforcement semantics for the 'inherit' mutating class,
+    // this suite registers a test-only POST route with no accessMode override.
+    //
+    const tc5WithoutBearer = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/runtime-auth-probe',
+      payload: { probe: true },
+    });
+    assert.equal(tc5WithoutBearer.statusCode, 401, 'TC5: POST /runtime-auth-probe without bearer should return 401 from runtime');
+    assert.equal(
+      (tc5WithoutBearer.json() as { error?: string }).error,
+      'Invalid or expired token',
+      'TC5: runtime bearer gate should return the canonical auth error payload',
+    );
+
+    const tc5BearerToken = await issueBearerToken();
+    const tc5WithBearer = await app.inject({
+      method: 'POST',
+      url: '/api/home-node/runtime-auth-probe',
+      headers: {
+        authorization: `Bearer ${tc5BearerToken}`,
+      },
+      payload: { probe: true },
+    });
+    assert.equal(tc5WithBearer.statusCode, 204, 'TC5: POST /runtime-auth-probe with bearer should pass runtime auth and reach handler');
+
+    // ── Test case 6: /health/live with no credentials → 200 ──
+    const tc6Live = await app.inject({
+      method: 'GET',
+      url: '/health/live',
+    });
+    assert.equal(tc6Live.statusCode, 200, 'TC6: GET /health/live with no credentials should return 200');
   } finally {
     await cleanup();
   }
