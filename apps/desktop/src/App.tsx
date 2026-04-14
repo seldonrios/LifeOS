@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { Today } from './screens/Today';
-import { GoalBuilder } from './screens/GoalBuilder';
+import { Plans } from './screens/Plans';
 import { Inbox } from './screens/Inbox';
 import { Review } from './screens/Review';
 import { Memory } from './screens/Memory';
@@ -103,7 +103,7 @@ function renderScreen(screen: ScreenId, onNavigate: (screen: ScreenId) => void):
     return <Inbox />;
   }
   if (screen === 'plans') {
-    return <GoalBuilder />;
+    return <Plans />;
   }
   if (screen === 'review') {
     return <Review />;

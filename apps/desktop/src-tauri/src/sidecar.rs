@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 const SIDECAR_TIMEOUT_MS: u64 = 30_000;
 const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
     "graph_summary",
+    "goal_list",
     "goal_run",
     "capture_create",
     "inbox_list",
@@ -217,10 +218,24 @@ pub fn invoke_sidecar(command: &str, args: Value) -> Result<Value, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::ALLOWED_SIDECAR_COMMANDS;
+    use super::{invoke_sidecar, ALLOWED_SIDECAR_COMMANDS};
+    use serde_json::json;
 
     #[test]
     fn allowlist_includes_capture_create() {
         assert!(ALLOWED_SIDECAR_COMMANDS.contains(&"capture_create"));
+    }
+
+    #[test]
+    fn allowlist_includes_goal_list() {
+        assert!(ALLOWED_SIDECAR_COMMANDS.contains(&"goal_list"));
+    }
+
+    #[test]
+    fn invoke_sidecar_rejects_unsupported_commands_before_spawn() {
+        let result = invoke_sidecar("not_allowed", json!({}));
+        assert!(result.is_err());
+        let message = result.err().unwrap_or_default();
+        assert!(message.contains("SIDECAR_UNSUPPORTED_COMMAND"));
     }
 }

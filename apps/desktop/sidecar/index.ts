@@ -19,6 +19,7 @@ import {
 
 type RpcCommand =
   | 'graph_summary'
+  | 'goal_list'
   | 'goal_run'
   | 'capture_create'
   | 'inbox_list'
@@ -80,6 +81,20 @@ interface ModuleListRow {
   permissions: ModulePermissionSummary;
 }
 
+interface RuntimeGoalSummary {
+  id?: unknown;
+  title?: unknown;
+  totalTasks?: unknown;
+  completedTasks?: unknown;
+  priority?: unknown;
+  deadline?: unknown;
+  dueDate?: unknown;
+}
+
+interface RuntimeGraphSummary {
+  activeGoals?: unknown;
+}
+
 interface DesktopSettings {
   model: string;
   ollamaHost: string;
@@ -105,6 +120,7 @@ const MODEL_IDENTIFIER_PATTERN = /^[a-zA-Z0-9._:/-]+$/;
 
 const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'graph_summary',
+  'goal_list',
   'goal_run',
   'capture_create',
   'inbox_list',
@@ -388,6 +404,64 @@ function toStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function toGoalSummaryNumber(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return 0;
+  }
+  return Math.max(0, Math.floor(value));
+}
+
+function toOptionalIsoDeadline(value: unknown): string | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  const parsed = new Date(trimmed);
+  if (!Number.isFinite(parsed.getTime())) {
+    return null;
+  }
+
+  return trimmed;
+}
+
+export function mapGraphSummaryToGoalSummaries(summary: RuntimeGraphSummary): Array<{
+  id: string;
+  title: string;
+  totalTasks: number;
+  completedTasks: number;
+  priority: number;
+  deadline: string | null;
+}> {
+  if (!Array.isArray(summary.activeGoals)) {
+    throw new Error('goal_list failed: graph summary did not include active goals.');
+  }
+
+  return summary.activeGoals
+    .filter((goal): goal is RuntimeGoalSummary => isObjectRecord(goal))
+    .map((goal) => {
+      const id = String(goal.id ?? '').trim();
+      const title = String(goal.title ?? '').trim();
+
+      if (!id || !title) {
+        throw new Error('goal_list failed: invalid goal summary entry.');
+      }
+
+      return {
+        id,
+        title,
+        totalTasks: toGoalSummaryNumber(goal.totalTasks),
+        completedTasks: toGoalSummaryNumber(goal.completedTasks),
+        priority: toGoalSummaryNumber(goal.priority) || 3,
+        deadline: toOptionalIsoDeadline(goal.deadline ?? goal.dueDate),
+      };
+    });
+}
+
 function resolveManifestModuleId(moduleId: string): string {
   if (moduleId === 'health') {
     return 'health-tracker';
@@ -583,6 +657,24 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         throw new Error(output.stderr || 'graph_summary failed');
       }
       return parseJsonOutput(output.stdout);
+    }
+
+    case 'goal_list': {
+      const output = await runCapture((dependencies) =>
+        runStatusCommand(
+          {
+            outputJson: true,
+            graphPath: '',
+            verbose: false,
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'goal_list failed');
+      }
+      const summary = parseJsonOutput<RuntimeGraphSummary>(output.stdout);
+      return mapGraphSummaryToGoalSummaries(summary);
     }
 
     case 'goal_run': {

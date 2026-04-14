@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { InboxItem } from '@lifeos/contracts';
+import type { InboxItem, GoalSummary } from '@lifeos/contracts';
 
 export interface GraphSummary {
   totalGoals: number;
@@ -308,6 +308,27 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     ] as T;
   }
 
+  if (command === 'goal_list') {
+    return [
+      {
+        id: 'goal-home-office',
+        title: 'Home office setup',
+        totalTasks: 6,
+        completedTasks: 2,
+        priority: 4,
+        deadline: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      },
+      {
+        id: 'goal-q2-personal',
+        title: 'Q2 personal goals',
+        totalTasks: 5,
+        completedTasks: 0,
+        priority: 3,
+        deadline: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+      },
+    ] as T;
+  }
+
   if (command === 'task_create') {
     return { id: 'mock-task-' + Date.now() } as T;
   }
@@ -321,7 +342,8 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       pendingCaptures: 1,
       actionsDueToday: 2,
       unacknowledgedReminders: 2,
-      completedActions: [],
+      completedActions: ['Sent contractor reply', 'Ordered standing desk'],
+      suggestedNextActions: ['Cable management kit'],
     } as T;
   }
 
@@ -397,6 +419,10 @@ export async function createCapture(text: string): Promise<{ id: string }> {
 
 export async function listInboxItems(): Promise<InboxItem[]> {
   return invokeOrMock<InboxItem[]>('inbox_list');
+}
+
+export async function listGoals(): Promise<GoalSummary[]> {
+  return invokeOrMock<GoalSummary[]>('goal_list');
 }
 
 export async function createTask(captureId: string, title: string): Promise<{ id: string }> {

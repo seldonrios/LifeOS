@@ -2,7 +2,7 @@ mod commands;
 mod sidecar;
 
 use commands::capture::capture_create;
-use commands::goal::{goal_run, task_complete, task_list};
+use commands::goal::{goal_list, goal_run, task_complete, task_list};
 use commands::graph::graph_summary;
 use commands::inbox::{inbox_list, reminder_schedule, task_create};
 use commands::marketplace::marketplace_list;
@@ -16,6 +16,7 @@ pub fn run() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             graph_summary,
+            goal_list,
             goal_run,
             capture_create,
             inbox_list,

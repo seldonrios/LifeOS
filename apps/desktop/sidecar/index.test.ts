@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
-import { parseJsonOutput, processRequest } from './index.ts';
+import { mapGraphSummaryToGoalSummaries, parseJsonOutput, processRequest } from './index.ts';
 
 test('parseJsonOutput accepts logs before JSON payload', () => {
   const parsed = parseJsonOutput<{ ok: boolean }>('debug line\n{"ok":true}');
@@ -28,6 +28,26 @@ test('processRequest executes supported command and returns result', async () =>
   assert.equal(response.id, 'settings-1');
   assert.equal(typeof response.result, 'object');
   assert.equal(response.error, undefined);
+});
+
+test('processRequest executes goal_list and returns goal summaries', async () => {
+  const response = await processRequest(JSON.stringify({ id: 'goals-1', command: 'goal_list' }));
+  assert.equal(response.id, 'goals-1');
+  assert.equal(response.error, undefined);
+  const result = response.result as Array<{ id: string; title: string; totalTasks: number; completedTasks: number }>;
+  assert.equal(Array.isArray(result), true);
+  assert.equal(result.length > 0, true);
+  assert.equal(typeof result[0].id, 'string');
+  assert.equal(typeof result[0].title, 'string');
+  assert.equal(typeof result[0].totalTasks, 'number');
+  assert.equal(typeof result[0].completedTasks, 'number');
+});
+
+test('mapGraphSummaryToGoalSummaries rejects missing activeGoals', () => {
+  assert.throws(
+    () => mapGraphSummaryToGoalSummaries({}),
+    /goal_list failed: graph summary did not include active goals\./,
+  );
 });
 
 test('processRequest executes capture_create and returns capture payload', async () => {

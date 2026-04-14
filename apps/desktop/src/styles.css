@@ -303,6 +303,18 @@ select {
   border-top: 1px solid #e9edef;
 }
 
+.item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+}
+
+.item-row + .item-row {
+  border-top: 1px solid #e9edef;
+}
+
 .task-row {
   display: flex;
   justify-content: space-between;
@@ -686,6 +698,76 @@ select {
   padding: 9px 14px;
   cursor: pointer;
 }
+
+/* ── Plans screen ───────────────────────────────────── */
+
+.plans-layout {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+}
+
+.plans-list-pane {
+  width: 280px;
+  border-right: 1px solid #2d3748;
+  padding: 24px 16px;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.plans-detail-pane {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+}
+
+.plan-item {
+  padding: 12px;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+
+.plan-item.active {
+  background: #1e2535;
+  border-color: #2d3748;
+}
+
+.plan-name {
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.plan-meta {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.step-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 0;
+  border-bottom: 1px solid #1e2535;
+}
+
+.step-num {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #1e2535;
+  border: 1px solid #2d3748;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+/* ────────────────────────────────────────────────────── */
 
 .capture-input {
   width: 100%;
