@@ -1,6 +1,6 @@
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 
 import {
@@ -136,64 +136,78 @@ export function registerHomeNodeRoutes(
 ): void {
   const expectedSurfaceSecret = process.env.LIFEOS_HOME_NODE_SURFACE_SECRET ?? '';
 
-  app.post('/api/home-node/homes', async (request, reply) => {
-    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
-    }
-
-    try {
-      const payload = CreateHomeRequestSchema.parse(request.body ?? {});
-      const home = graphClient.upsertHome({
-        homeId: payload.home_id,
-        householdId: payload.household_id,
-        name: payload.name,
-        timezone: payload.timezone,
-        quietHoursStart: payload.quiet_hours_start,
-        quietHoursEnd: payload.quiet_hours_end,
-        routineProfile: payload.routine_profile,
-      });
-
-      return reply.code(201).send(home);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return reply.code(400).send({ error: 'Invalid home payload' });
+  app.route({
+    method: 'POST',
+    url: '/api/home-node/homes',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
+      if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
       }
 
-      return reply.code(500).send({ error: 'Failed to create home' });
-    }
+      try {
+        const payload = CreateHomeRequestSchema.parse(request.body ?? {});
+        const home = graphClient.upsertHome({
+          homeId: payload.home_id,
+          householdId: payload.household_id,
+          name: payload.name,
+          timezone: payload.timezone,
+          quietHoursStart: payload.quiet_hours_start,
+          quietHoursEnd: payload.quiet_hours_end,
+          routineProfile: payload.routine_profile,
+        });
+
+        return reply.code(201).send(home);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return reply.code(400).send({ error: 'Invalid home payload' });
+        }
+
+        return reply.code(500).send({ error: 'Failed to create home' });
+      }
+    },
   });
 
-  app.post('/api/home-node/zones', async (request, reply) => {
-    if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
-    }
-
-    try {
-      const payload = CreateZoneRequestSchema.parse(request.body ?? {});
-      if (!graphClient.getHomeById(payload.home_id)) {
-        return reply.code(404).send({ error: `home ${payload.home_id} was not found` });
+  app.route({
+    method: 'POST',
+    url: '/api/home-node/zones',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
+      if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
       }
 
-      const zone = graphClient.upsertZone({
-        zoneId: payload.zone_id,
-        homeId: payload.home_id,
-        name: payload.name,
-        type: payload.type,
-      });
+      try {
+        const payload = CreateZoneRequestSchema.parse(request.body ?? {});
+        if (!graphClient.getHomeById(payload.home_id)) {
+          return reply.code(404).send({ error: `home ${payload.home_id} was not found` });
+        }
 
-      return reply.code(201).send(zone);
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return reply.code(400).send({ error: 'Invalid zone payload' });
+        const zone = graphClient.upsertZone({
+          zoneId: payload.zone_id,
+          homeId: payload.home_id,
+          name: payload.name,
+          type: payload.type,
+        });
+
+        return reply.code(201).send(zone);
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return reply.code(400).send({ error: 'Invalid zone payload' });
+        }
+
+        return reply.code(500).send({ error: 'Failed to create zone' });
       }
-
-      return reply.code(500).send({ error: 'Failed to create zone' });
-    }
+    },
   });
 
-  app.get('/api/home-node/snapshot/:householdId', async (request, reply) => {
+  app.route({
+    method: 'GET',
+    url: '/api/home-node/snapshot/:householdId',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
     if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+      return reply.code(401).send({ error: 'Unauthorized surface request' });
     }
 
     const householdId = String((request.params as { householdId?: string }).householdId ?? '').trim();
@@ -207,15 +221,16 @@ export function registerHomeNodeRoutes(
     }
 
     return reply.code(200).send(snapshot);
+    },
   });
 
   const getFeedHandler = async (
-    request: Parameters<FastifyInstance['get']>[1] extends (...args: infer A) => unknown ? A[0] : never,
-    reply: Parameters<FastifyInstance['get']>[1] extends (...args: infer A) => unknown ? A[1] : never,
+    request: FastifyRequest,
+    reply: FastifyReply,
   ) => {
     try {
       if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+        return reply.code(401).send({ error: 'Unauthorized surface request' });
       }
 
       const surfaceId = String((request.params as { surfaceId?: string }).surfaceId ?? '').trim();
@@ -250,56 +265,66 @@ export function registerHomeNodeRoutes(
     }
   };
 
-  app.get('/api/home-node/display-feed/:surfaceId', getFeedHandler);
+  app.route({
+    method: 'GET',
+    url: '/api/home-node/display-feed/:surfaceId',
+    config: { accessMode: 'surface-secret' },
+    handler: getFeedHandler,
+  });
 
-  app.get('/api/home-node/display-feed-hints/:surfaceId', async (request, reply) => {
-    try {
-      if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-        return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+  app.route({
+    method: 'GET',
+    url: '/api/home-node/display-feed-hints/:surfaceId',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
+      try {
+        if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
+          return reply.code(401).send({ error: 'Unauthorized surface request' });
+        }
+
+        const surfaceId = String((request.params as { surfaceId?: string }).surfaceId ?? '').trim();
+        if (surfaceId.length === 0) {
+          return reply.code(400).send({ error: 'surfaceId is required' });
+        }
+
+        const registeredSurface = graphClient.getRegisteredSurface(surfaceId);
+        const surfaceState = graphClient.getSurface(surfaceId);
+        if (!registeredSurface || !surfaceState || !surfaceState.active) {
+          return reply.code(404).send({ error: 'Surface not found' });
+        }
+
+        const query = request.query as {
+          householdId?: string;
+          since?: string;
+          timeoutMs?: string;
+        };
+        const householdId = query.householdId?.trim() || registeredSurface.household_id;
+        if (householdId !== registeredSurface.household_id) {
+          return reply.code(403).send({ error: 'Surface does not belong to household' });
+        }
+
+        const since = Number.parseInt(String(query.since ?? '0'), 10);
+        const timeoutMs = Math.min(
+          Math.max(Number.parseInt(String(query.timeoutMs ?? '30000'), 10), 0),
+          60_000,
+        );
+
+        const currentVersion = hooks.getDisplayFeedSignalVersion?.(householdId) ?? 0;
+        const signalVersion =
+          hooks.waitForDisplayFeedSignal && currentVersion <= since
+            ? await hooks.waitForDisplayFeedSignal(householdId, since, timeoutMs)
+            : currentVersion;
+
+        return reply.code(200).send({ signalVersion });
+      } catch {
+        return reply.code(500).send({ error: 'Failed to fetch display-feed hints' });
       }
-
-      const surfaceId = String((request.params as { surfaceId?: string }).surfaceId ?? '').trim();
-      if (surfaceId.length === 0) {
-        return reply.code(400).send({ error: 'surfaceId is required' });
-      }
-
-      const registeredSurface = graphClient.getRegisteredSurface(surfaceId);
-      const surfaceState = graphClient.getSurface(surfaceId);
-      if (!registeredSurface || !surfaceState || !surfaceState.active) {
-        return reply.code(404).send({ error: 'Surface not found' });
-      }
-
-      const query = request.query as {
-        householdId?: string;
-        since?: string;
-        timeoutMs?: string;
-      };
-      const householdId = query.householdId?.trim() || registeredSurface.household_id;
-      if (householdId !== registeredSurface.household_id) {
-        return reply.code(403).send({ error: 'Surface does not belong to household' });
-      }
-
-      const since = Number.parseInt(String(query.since ?? '0'), 10);
-      const timeoutMs = Math.min(
-        Math.max(Number.parseInt(String(query.timeoutMs ?? '30000'), 10), 0),
-        60_000,
-      );
-
-      const currentVersion = hooks.getDisplayFeedSignalVersion?.(householdId) ?? 0;
-      const signalVersion =
-        hooks.waitForDisplayFeedSignal && currentVersion <= since
-          ? await hooks.waitForDisplayFeedSignal(householdId, since, timeoutMs)
-          : currentVersion;
-
-      return reply.code(200).send({ signalVersion });
-    } catch {
-      return reply.code(500).send({ error: 'Failed to fetch display-feed hints' });
-    }
+    },
   });
 
   const registerSurfaceHandler = async (
-    request: Parameters<FastifyInstance['post']>[1] extends (...args: infer A) => unknown ? A[0] : never,
-    reply: Parameters<FastifyInstance['post']>[1] extends (...args: infer A) => unknown ? A[1] : never,
+    request: FastifyRequest,
+    reply: FastifyReply,
   ) => {
     try {
       if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
@@ -342,10 +367,24 @@ export function registerHomeNodeRoutes(
     }
   };
 
-  app.post('/api/home-node/surfaces/register', registerSurfaceHandler);
-  app.post('/api/home-node/surfaces', registerSurfaceHandler);
+  app.route({
+    method: 'POST',
+    url: '/api/home-node/surfaces/register',
+    config: { accessMode: 'surface-secret' },
+    handler: registerSurfaceHandler,
+  });
+  app.route({
+    method: 'POST',
+    url: '/api/home-node/surfaces',
+    config: { accessMode: 'surface-secret' },
+    handler: registerSurfaceHandler,
+  });
 
-  app.delete('/api/home-node/surfaces/:surfaceId', async (request, reply) => {
+  app.route({
+    method: 'DELETE',
+    url: '/api/home-node/surfaces/:surfaceId',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
     if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
       return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
     }
@@ -362,11 +401,16 @@ export function registerHomeNodeRoutes(
 
     await hooks.onSurfaceDeregistered?.(surface);
     return reply.code(200).send({ surface_id: surfaceId, status: 'deregistered' });
+    },
   });
 
-  app.get('/api/home-node/surfaces', async (request, reply) => {
+  app.route({
+    method: 'GET',
+    url: '/api/home-node/surfaces',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
     if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
-      return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
+      return reply.code(401).send({ error: 'Unauthorized surface request' });
     }
 
     const query = request.query as {
@@ -389,9 +433,14 @@ export function registerHomeNodeRoutes(
     });
 
     return reply.code(200).send({ items: surfaces, count: surfaces.length });
+    },
   });
 
-  app.post('/api/home-node/surfaces/:surfaceId/heartbeat', async (request, reply) => {
+  app.route({
+    method: 'POST',
+    url: '/api/home-node/surfaces/:surfaceId/heartbeat',
+    config: { accessMode: 'surface-secret' },
+    handler: async (request, reply) => {
     if (!isAuthorizedSurfaceMutation(expectedSurfaceSecret, request)) {
       return reply.code(401).send({ error: 'Unauthorized surface mutation request' });
     }
@@ -411,5 +460,6 @@ export function registerHomeNodeRoutes(
     }
 
     return reply.code(200).send(surface);
+    },
   });
 }
