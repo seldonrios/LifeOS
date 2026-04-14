@@ -4,6 +4,7 @@ mod sidecar;
 use commands::capture::capture_create;
 use commands::goal::{goal_run, task_complete, task_list};
 use commands::graph::graph_summary;
+use commands::inbox::{inbox_list, reminder_schedule, task_create};
 use commands::marketplace::marketplace_list;
 use commands::modules::{module_disable, module_enable, modules_list};
 use commands::review::review_daily;
@@ -17,6 +18,9 @@ pub fn run() {
             graph_summary,
             goal_run,
             capture_create,
+            inbox_list,
+            task_create,
+            reminder_schedule,
             task_list,
             task_complete,
             review_daily,

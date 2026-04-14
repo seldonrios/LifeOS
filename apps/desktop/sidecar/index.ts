@@ -7,8 +7,10 @@ import { pathToFileURL } from 'node:url';
 import {
   runCaptureCommand,
   runGoalCommand,
+  runInboxCommand,
   runMarketplaceCommand,
   runModuleCommand,
+  runRemindCommand,
   runReviewCommand,
   runStatusCommand,
   runTaskCommand,
@@ -19,6 +21,9 @@ type RpcCommand =
   | 'graph_summary'
   | 'goal_run'
   | 'capture_create'
+  | 'inbox_list'
+  | 'task_create'
+  | 'reminder_schedule'
   | 'task_list'
   | 'task_complete'
   | 'review_daily'
@@ -47,6 +52,16 @@ interface RunCaptureResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+}
+
+interface CaptureListItem {
+  id: string;
+  content: string;
+  capturedAt: string;
+  type?: string;
+  source?: string;
+  status?: string;
+  tags?: string[];
 }
 
 interface ModulePermissionSummary {
@@ -92,6 +107,9 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'graph_summary',
   'goal_run',
   'capture_create',
+  'inbox_list',
+  'task_create',
+  'reminder_schedule',
   'task_list',
   'task_complete',
   'review_daily',
@@ -180,6 +198,18 @@ function normalizeTaskId(value: unknown): string {
     throw new Error('Invalid task id.');
   }
   return taskId;
+}
+
+function normalizeCaptureId(value: unknown): string {
+  const captureId = String(value ?? '').trim();
+  if (!captureId || captureId.length > MAX_MODULE_ID_LENGTH || /[^a-zA-Z0-9._:-]/.test(captureId)) {
+    throw new Error('Invalid capture id.');
+  }
+  return captureId;
+}
+
+function reminderScheduleAtIso(): string {
+  return new Date(Date.now() + 60 * 60 * 1000).toISOString();
 }
 
 function normalizeHttpUrl(value: unknown, fallback: string): string {
@@ -294,6 +324,58 @@ function emptyPermissions(): ModulePermissionSummary {
 
 function isObjectRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function toInboxType(value: unknown): 'notification' | 'reminder' | 'approval' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'approval') {
+    return 'approval';
+  }
+  if (normalized === 'reminder') {
+    return 'reminder';
+  }
+  return 'notification';
+}
+
+function toSource(value: unknown): 'typed' | 'voice' | 'notification' {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (normalized === 'voice') {
+    return 'voice';
+  }
+  if (normalized === 'notification') {
+    return 'notification';
+  }
+  return 'typed';
+}
+
+function toEpochMs(value: string): number {
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : Date.now();
+}
+
+function mapCaptureRowsToInboxItems(rows: CaptureListItem[]): Array<{
+  id: string;
+  title: string;
+  type: 'notification' | 'reminder' | 'approval';
+  source: 'typed' | 'voice' | 'notification';
+  createdAt: number;
+  read: boolean;
+  description: string;
+  data: Record<string, unknown>;
+}> {
+  return rows.map((entry) => ({
+    id: entry.id,
+    title: entry.content,
+    type: toInboxType(entry.type),
+    source: toSource(entry.source ?? entry.type),
+    createdAt: toEpochMs(entry.capturedAt),
+    read: false,
+    description: entry.content,
+    data: {
+      status: entry.status ?? 'pending',
+      tags: Array.isArray(entry.tags) ? entry.tags : [],
+    },
+  }));
 }
 
 function toStringArray(value: unknown): string[] {
@@ -542,6 +624,95 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         throw new Error(output.stderr || 'capture_create failed');
       }
       return parseJsonOutput(output.stdout);
+    }
+
+    case 'inbox_list': {
+      const output = await runCapture((dependencies) =>
+        runInboxCommand(
+          {
+            action: 'list',
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'inbox_list failed');
+      }
+      const rows = parseJsonOutput<CaptureListItem[]>(output.stdout);
+      return mapCaptureRowsToInboxItems(rows);
+    }
+
+    case 'task_create': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      const output = await runCapture((dependencies) =>
+        runInboxCommand(
+          {
+            action: 'triage',
+            captureId,
+            triageAction: 'task',
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'task_create failed');
+      }
+      const result = parseJsonOutput<{ plannedAction?: { id?: string } }>(output.stdout);
+      const id = result.plannedAction?.id;
+      if (!id) {
+        throw new Error('task_create failed: missing planned action id');
+      }
+      return { id };
+    }
+
+    case 'reminder_schedule': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      const triageOutput = await runCapture((dependencies) =>
+        runInboxCommand(
+          {
+            action: 'triage',
+            captureId,
+            triageAction: 'task',
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (triageOutput.exitCode !== 0) {
+        throw new Error(triageOutput.stderr || 'reminder_schedule failed during task creation');
+      }
+
+      const triageResult = parseJsonOutput<{ plannedAction?: { id?: string } }>(triageOutput.stdout);
+      const actionId = triageResult.plannedAction?.id;
+      if (!actionId) {
+        throw new Error('reminder_schedule failed: missing planned action id');
+      }
+
+      const remindOutput = await runCapture((dependencies) =>
+        runRemindCommand(
+          {
+            actionId,
+            at: reminderScheduleAtIso(),
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (remindOutput.exitCode !== 0) {
+        throw new Error(remindOutput.stderr || 'reminder_schedule failed');
+      }
+
+      const reminder = parseJsonOutput<{ id?: string }>(remindOutput.stdout);
+      if (!reminder.id) {
+        throw new Error('reminder_schedule failed: missing reminder id');
+      }
+      return { id: reminder.id };
     }
 
     case 'task_list': {

@@ -1,6 +1,7 @@
 pub mod capture;
 pub mod goal;
 pub mod graph;
+pub mod inbox;
 pub mod marketplace;
 pub mod modules;
 pub mod review;

@@ -74,6 +74,9 @@ importers:
       '@lifeos/cli':
         specifier: workspace:*
         version: link:../../packages/cli
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@tanstack/react-query':
         specifier: ^5.99.0
         version: 5.99.0(react@19.2.5)

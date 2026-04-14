@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import type { InboxItem } from '@lifeos/contracts';
 
 export interface GraphSummary {
   totalGoals: number;
@@ -272,6 +273,49 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     return { id: 'mock-capture-' + Date.now() } as T;
   }
 
+  if (command === 'inbox_list') {
+    return [
+      {
+        id: 'inbox-1',
+        title: 'Idea: turn garage cleanout into a weekend project plan',
+        type: 'capture',
+        source: 'typed',
+        createdAt: Date.now() - 8 * 60 * 1000,
+        read: false,
+        description: 'Captured from quick entry.',
+        data: {},
+      },
+      {
+        id: 'inbox-2',
+        title: 'Reminder: follow up with dentist office',
+        type: 'reminder',
+        source: 'voice',
+        createdAt: Date.now() - 2 * 60 * 60 * 1000,
+        read: false,
+        description: 'Voice capture from commute.',
+        data: {},
+      },
+      {
+        id: 'inbox-3',
+        title: 'School calendar sync completed',
+        type: 'notification',
+        source: 'notification',
+        createdAt: Date.now() - 28 * 60 * 60 * 1000,
+        read: false,
+        description: 'Bridge service pushed a status update.',
+        data: {},
+      },
+    ] as T;
+  }
+
+  if (command === 'task_create') {
+    return { id: 'mock-task-' + Date.now() } as T;
+  }
+
+  if (command === 'reminder_schedule') {
+    return { id: 'mock-reminder-' + Date.now() } as T;
+  }
+
   if (command === 'review_daily') {
     return {
       pendingCaptures: 1,
@@ -349,4 +393,16 @@ export async function readTrustStatus(): Promise<TrustStatus> {
 
 export async function createCapture(text: string): Promise<{ id: string }> {
   return invokeOrMock<{ id: string }>('capture_create', { text });
+}
+
+export async function listInboxItems(): Promise<InboxItem[]> {
+  return invokeOrMock<InboxItem[]>('inbox_list');
+}
+
+export async function createTask(captureId: string, title: string): Promise<{ id: string }> {
+  return invokeOrMock<{ id: string }>('task_create', { captureId, title });
+}
+
+export async function scheduleReminder(captureId: string, title: string): Promise<{ id: string }> {
+  return invokeOrMock<{ id: string }>('reminder_schedule', { captureId, title });
 }

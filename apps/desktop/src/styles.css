@@ -211,6 +211,78 @@ select {
   grid-column: 1 / -1;
 }
 
+.inbox-tabs {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tab-btn {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.batch-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inbox-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.source-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand-soft);
+  flex-shrink: 0;
+}
+
+.inbox-card-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-text {
+  margin: 0;
+  font-size: 15px;
+}
+
+.card-meta {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.inbox-actions-row {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .card-label {
   margin-bottom: 12px;
   color: var(--ink-dim);
