@@ -340,6 +340,117 @@ describe('startService', () => {
     expect(response.status).toBe(200);
   });
 
+  it("accessMode: 'surface-secret' bypasses bearer in 'mutating' service mode", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-route-surface-secret',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'mutating',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.route({
+          method: 'POST',
+          url: '/api/test',
+          config: { accessMode: 'surface-secret' },
+          handler: async () => ({ ok: true }),
+        });
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/test`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(200);
+  });
+
+  it("accessMode: 'public' bypasses all auth", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-route-public',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'all',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.route({
+          method: 'GET',
+          url: '/api/test',
+          config: { accessMode: 'public' },
+          handler: async () => ({ ok: true }),
+        });
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/test`);
+
+    expect(response.status).toBe(200);
+  });
+
+  it("accessMode: 'bearer' enforces bearer on GET", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-route-bearer',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'mutating',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.route({
+          method: 'GET',
+          url: '/api/test',
+          config: { accessMode: 'bearer' },
+          handler: async () => ({ ok: true }),
+        });
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/test`);
+
+    expect(response.status).toBe(401);
+  });
+
+  it("no route config in 'mutating' mode still requires bearer (backward compat)", async () => {
+    const port = await getFreePort();
+    previousPort = process.env.PORT;
+    process.env.PORT = String(port);
+    previousJwtSecret = process.env.LIFEOS_JWT_SECRET;
+    process.env.LIFEOS_JWT_SECRET = 'service-runtime-test-secret';
+
+    await startService({
+      serviceName: 'service-runtime-test-route-inherit-default',
+      allowObservabilityInitFallback: true,
+      enforceRouteAuthMode: 'mutating',
+      registerRoutes: async (fastifyApp) => {
+        app = fastifyApp;
+        fastifyApp.route({
+          method: 'POST',
+          url: '/api/test',
+          handler: async () => ({ ok: true }),
+        });
+      },
+    });
+
+    const response = await fetch(`http://127.0.0.1:${port}/api/test`, {
+      method: 'POST',
+    });
+
+    expect(response.status).toBe(401);
+  });
+
   it("enforceRouteAuthMode: 'api-prefix' enforces auth for GET /api/anything", async () => {
     const port = await getFreePort();
     previousPort = process.env.PORT;

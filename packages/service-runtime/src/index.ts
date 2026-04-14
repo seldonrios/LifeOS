@@ -1,6 +1,7 @@
 export * from './types';
 
 import fastify from 'fastify';
+import type { FastifyRequest } from 'fastify';
 
 import { loadConfig, type ResolvedConfig } from '@lifeos/config';
 import { HealthRegistry, livenessHandler, readinessHandler } from '@lifeos/health';
@@ -14,7 +15,18 @@ import { createSecurityClient, type JwtPayload } from '@lifeos/security';
 import { applySecretPolicy, SecretsError } from '@lifeos/secrets';
 import type { SecretStore } from '@lifeos/secrets';
 
-import type { RouteAuthMode, ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
+import type {
+  RouteAccessMode,
+  RouteAuthMode,
+  ServiceRuntimeOptions,
+  ServiceRuntimePhase,
+} from './types';
+
+declare module 'fastify' {
+  interface FastifyContextConfig {
+    accessMode?: RouteAccessMode;
+  }
+}
 
 function createNoopObservabilityClient(): ObservabilityClient {
   return {
@@ -111,6 +123,30 @@ function shouldEnforceAuth(method: string, path: string, mode: RouteAuthMode): b
   }
 
   return shouldEnforceMutatingAuth(method);
+}
+
+function resolveRouteAccessMode(request: FastifyRequest): RouteAccessMode {
+  const routeConfig = request.routeOptions.config as
+    | {
+        accessMode?: unknown;
+        config?: { accessMode?: unknown };
+      }
+    | undefined;
+  const configuredAccessMode =
+    routeConfig?.accessMode ??
+    routeConfig?.config?.accessMode ??
+    (request as { routeConfig?: { accessMode?: unknown } }).routeConfig?.accessMode;
+
+  if (
+    configuredAccessMode === 'inherit' ||
+    configuredAccessMode === 'bearer' ||
+    configuredAccessMode === 'surface-secret' ||
+    configuredAccessMode === 'public'
+  ) {
+    return configuredAccessMode;
+  }
+
+  return 'inherit';
 }
 
 type RuntimeSecurityConfig = {
@@ -303,7 +339,19 @@ export async function startService(opts: InternalServiceRuntimeOptions): Promise
       return;
     }
 
-    if (!authPolicy.enabled || !shouldEnforceAuth(request.method, request.url, authPolicy.mode)) {
+    const routeAccessMode = resolveRouteAccessMode(request);
+
+    if (routeAccessMode === 'public' || routeAccessMode === 'surface-secret') {
+      return;
+    }
+
+    const enforceBearerAuth =
+      routeAccessMode === 'bearer' ||
+      (routeAccessMode === 'inherit' &&
+        authPolicy.enabled &&
+        shouldEnforceAuth(request.method, request.url, authPolicy.mode));
+
+    if (!enforceBearerAuth) {
       return;
     }
 

@@ -15,6 +15,12 @@ export type ServiceRuntimePhase =
 
 export type RouteAuthMode = 'mutating' | 'api-prefix' | 'all';
 
+export type RouteAccessMode = 'inherit' | 'bearer' | 'surface-secret' | 'public';
+
+export interface RouteConfig {
+  accessMode?: RouteAccessMode;
+}
+
 export interface ServiceRuntimeOptions {
   serviceName: string;
   registerRoutes?: (app: FastifyInstance) => Promise<void>;
