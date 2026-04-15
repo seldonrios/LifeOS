@@ -1,7 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { QuickCaptureOverlay } from './components/QuickCaptureOverlay';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
+import { TrustIndicator } from './components/TrustIndicator';
 import { Today } from './screens/Today';
 import { Plans } from './screens/Plans';
 import { Inbox } from './screens/Inbox';
@@ -36,11 +38,34 @@ const SCREEN_META: Record<ScreenId, { title: string }> = {
   settings: { title: 'Settings' },
 };
 
+function getLastSyncLabel(updatedAt?: string): string {
+  if (!updatedAt) return 'just now';
+  const diff = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60_000);
+  if (diff < 1) return 'just now';
+  return `${diff} min ago`;
+}
+
 export function App(): JSX.Element {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('today');
+  const [captureOpen, setCaptureOpen] = useState(false);
   const graphQuery = useGraph();
   const { modulesQuery } = useModules();
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key.toLowerCase() === 'k' && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        setCaptureOpen(true);
+      }
+      if (event.key === 'Escape' && captureOpen) {
+        setCaptureOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [captureOpen]);
 
   const screenTitle = useMemo(() => {
     if (activeScreen === 'today') return getTimeGreeting();
@@ -63,6 +88,9 @@ export function App(): JSX.Element {
   }, [modulesQuery.data]);
 
   const activeModel = settingsQuery.data?.model ?? 'llama3.1:8b';
+  const localOnlyMode = settingsQuery.data?.localOnlyMode ?? true;
+  const connectedServices = modulesQuery.data?.filter((module) => module.enabled).length ?? 0;
+  const lastSyncLabel = getLastSyncLabel(graphQuery.data?.updatedAt);
   const runtimeMode = isDesktopRuntime() ? 'Desktop runtime' : 'Preview mode';
   const runtimeHint = isDesktopRuntime()
     ? 'Connected to your local services and user-owned data.'
@@ -82,15 +110,28 @@ export function App(): JSX.Element {
               {runtimeMode}. {runtimeHint}
             </p>
           </div>
-          <span className="status-pill" title={runtimeHint}>
-            {runtimeStatus}
-          </span>
+          <div className="row gap-sm">
+            <button type="button" className="ghost-btn" onClick={() => setCaptureOpen(true)}>
+              + Capture
+            </button>
+            <span className="status-pill" title={runtimeHint}>
+              {runtimeStatus}
+            </span>
+          </div>
         </header>
+
+        <TrustIndicator
+          localOnlyMode={localOnlyMode}
+          connectedServices={connectedServices}
+          lastSyncLabel={lastSyncLabel}
+        />
 
         <main className="screen-area">{renderScreen(activeScreen, setActiveScreen)}</main>
 
         <StatusBar model={activeModel} graphSummary={graphSummary} modulesSummary={modulesSummary} />
       </div>
+
+      <QuickCaptureOverlay open={captureOpen} onClose={() => setCaptureOpen(false)} />
     </div>
   );
 }

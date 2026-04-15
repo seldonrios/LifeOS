@@ -802,6 +802,39 @@ select {
   font-weight: 600;
 }
 
+.capture-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.capture-overlay-modal {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 24px;
+  width: min(520px, 90vw);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.capture-overlay-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.capture-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .footer-strip {
   display: flex;
   align-items: center;

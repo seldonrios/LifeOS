@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createCapture, completeTask, getDailyReview, getGraphSummary, listTasks } from '../ipc';
-import { useModules } from '../hooks/useModules';
 import type { ScreenId } from '../types';
 
 function getGreeting(): string {
@@ -11,13 +10,6 @@ function getGreeting(): string {
   if (hour >= 12 && hour < 17) return 'Good afternoon';
   if (hour >= 17 && hour < 21) return 'Good evening';
   return 'Welcome back';
-}
-
-function getLastSyncLabel(updatedAt?: string): string {
-  if (!updatedAt) return 'just now';
-  const diff = Math.floor((Date.now() - new Date(updatedAt).getTime()) / 60_000);
-  if (diff < 1) return 'just now';
-  return `${diff} min ago`;
 }
 
 interface Props {
@@ -37,7 +29,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
     staleTime: 10_000,
   });
   const reviewQuery = useQuery({ queryKey: ['daily-review'], queryFn: getDailyReview });
-  const { modulesQuery } = useModules();
 
   const captureMutation = useMutation({
     mutationFn: createCapture,
@@ -52,8 +43,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
   const activeGoals = graphQuery.data?.activeGoals ?? [];
   const pendingCaptures = reviewQuery.data?.pendingCaptures ?? 0;
   const unacknowledgedReminders = reviewQuery.data?.unacknowledgedReminders ?? 0;
-  const connectedServices = modulesQuery.data?.filter((m) => m.enabled).length ?? 0;
-  const lastSyncLabel = getLastSyncLabel(graphQuery.data?.updatedAt);
   const hasResolvedTodayData =
     tasksQuery.isSuccess && reviewQuery.isSuccess && graphQuery.isSuccess;
 
@@ -62,17 +51,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
     pendingCaptures === 0 &&
     unacknowledgedReminders === 0 &&
     activeGoals.length === 0;
-
-  const trustBar = (
-    <div className="trust-bar">
-      <span className="trust-dot" aria-hidden="true" />
-      <span>Local only</span>
-      <span className="trust-separator">·</span>
-      <span>Last sync {lastSyncLabel}</span>
-      <span className="trust-separator">·</span>
-      <span>{connectedServices} services connected</span>
-    </div>
-  );
 
   const greetingBlock = (
     <div className="greeting-block">
@@ -107,20 +85,9 @@ export function Today({ onNavigate }: Props): JSX.Element {
     </div>
   );
 
-  const footerStrip = (
-    <div className="footer-strip card card-wide">
-      <span>● Local-first</span>
-      <span className="trust-separator">·</span>
-      <span>Last sync: {lastSyncLabel}</span>
-      <span className="trust-separator">·</span>
-      <span>{connectedServices} services connected</span>
-    </div>
-  );
-
   if (tasksQuery.isError) {
     return (
       <div className="screen-grid">
-        {trustBar}
         {greetingBlock}
         <div className="card card-wide">
           <p>
@@ -132,7 +99,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
           </button>
         </div>
         {quickCapture}
-        {footerStrip}
       </div>
     );
   }
@@ -140,7 +106,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
   if (hasResolvedTodayData && isAllClear) {
     return (
       <div className="screen-grid">
-        {trustBar}
         {greetingBlock}
         <div className="card card-wide empty-state">
           <h3>You&apos;re all clear right now.</h3>
@@ -157,7 +122,6 @@ export function Today({ onNavigate }: Props): JSX.Element {
           </div>
         </div>
         {quickCapture}
-        {footerStrip}
       </div>
     );
   }
@@ -246,14 +210,12 @@ export function Today({ onNavigate }: Props): JSX.Element {
 
   return (
     <div className="screen-grid">
-      {trustBar}
       {greetingBlock}
       {nextUpCard}
       {triageCard}
       {planCard}
       {remindersCard}
       {quickCapture}
-      {footerStrip}
     </div>
   );
 }
