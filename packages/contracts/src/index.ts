@@ -4,7 +4,7 @@
  * Shared contracts for SDK/mobile surfaces and the Personal Operations hero loop.
  */
 
-export { Topics } from '@lifeos/event-bus';
+export { Topics } from './topics';
 
 export { LoginRequestSchema, type LoginRequest, type AuthTokens, type UserProfile } from './auth';
 

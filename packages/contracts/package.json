@@ -9,7 +9,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@lifeos/event-bus": "workspace:*",
     "zod": "^4.3.6"
   },
   "scripts": {
