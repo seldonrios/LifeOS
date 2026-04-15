@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { AppState, ActivityIndicator, StyleSheet, View } from 'react-native';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { Redirect, Slot, useSegments } from 'expo-router';
@@ -6,7 +6,7 @@ import { lightColors } from '@lifeos/ui';
 
 import { queryClient } from '../lib/query-client';
 import { useQueueStore } from '../lib/queue';
-import { useSessionStore } from '../lib/session';
+import { isOnboardingComplete, useSessionStore } from '../lib/session';
 
 type NetworkState = { isConnected?: boolean | null };
 type NetworkSubscription = { remove: () => void };
@@ -19,14 +19,43 @@ const Network = require('expo-network') as {
 
 export default function RootLayout() {
   const status = useSessionStore((state) => state.status);
+  const onboardingDone = useSessionStore((state) => state.onboardingComplete);
   const segments = useSegments();
   const inAuthGroup = segments[0] === '(auth)';
   const inTabsGroup = segments[0] === '(tabs)';
   const inModalGroup = segments[0] === 'modal';
   const lastForegroundAt = useRef<number>(Date.now());
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
 
   useEffect(() => {
-    void useSessionStore.getState().restoreSession();
+    let cancelled = false;
+
+    void (async () => {
+      const { restoreSession, setOnboardingComplete } = useSessionStore.getState();
+
+      try {
+        await restoreSession();
+
+        try {
+          const complete = await isOnboardingComplete();
+          if (!cancelled) {
+            setOnboardingComplete(complete);
+          }
+        } catch {
+          if (!cancelled) {
+            setOnboardingComplete(false);
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setOnboardingChecked(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -64,7 +93,7 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={queryClient}>
-      {status === 'loading' ? (
+      {status === 'loading' || (status === 'authenticated' && !onboardingChecked) ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={lightColors.accent.brand} />
         </View>
@@ -73,6 +102,12 @@ export default function RootLayout() {
           <Slot />
         ) : (
           <Redirect href="/(auth)/sign-in" />
+        )
+      ) : onboardingChecked && !onboardingDone ? (
+        inTabsGroup || inModalGroup ? (
+          inModalGroup ? <Slot /> : <Redirect href="/modal/onboarding" />
+        ) : (
+          <Redirect href="/modal/onboarding" />
         )
       ) : inTabsGroup || inModalGroup ? (
         <Slot />

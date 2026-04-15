@@ -1,3 +1,4 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { create } from 'zustand';
@@ -14,9 +15,11 @@ type SessionState = {
   accessToken: string | null;
   user: UserProfile | null;
   householdId: string | null;
+  onboardingComplete: boolean;
   biometricEnabled: boolean;
   biometricAvailable: boolean;
   restoreSession: () => Promise<void>;
+  setOnboardingComplete: (completed: boolean) => void;
   setHouseholdId: (id: string) => Promise<void>;
   loadBiometricPreference: () => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
@@ -28,6 +31,16 @@ type SessionState = {
 const REFRESH_TOKEN_KEY = 'lifeos.refresh_token';
 const HOUSEHOLD_ID_KEY = 'lifeos.household_id';
 const BIOMETRIC_ENABLED_KEY = 'lifeos.biometric_enabled';
+export const ONBOARDING_COMPLETE_KEY = 'lifeos.onboarding_complete';
+
+export async function isOnboardingComplete(): Promise<boolean> {
+  const storedValue = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
+  return storedValue === 'true';
+}
+
+export async function markOnboardingComplete(): Promise<void> {
+  await AsyncStorage.setItem(ONBOARDING_COMPLETE_KEY, 'true');
+}
 
 function userFromAccessToken(accessToken: string): UserProfile {
   return {
@@ -42,6 +55,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   accessToken: null,
   user: null,
   householdId: null,
+  onboardingComplete: false,
   biometricEnabled: false,
   biometricAvailable: false,
   async restoreSession() {
@@ -88,6 +102,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   async setHouseholdId(id) {
     await SecureStore.setItemAsync(HOUSEHOLD_ID_KEY, id);
     set({ householdId: id });
+  },
+  setOnboardingComplete(completed) {
+    set({ onboardingComplete: completed });
   },
   async loadBiometricPreference() {
     const [hasHardware, isEnrolled, storedValue] = await Promise.all([
