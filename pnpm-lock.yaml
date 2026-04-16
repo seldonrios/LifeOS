@@ -558,9 +558,6 @@ importers:
 
   packages/contracts:
     dependencies:
-      '@lifeos/event-bus':
-        specifier: workspace:*
-        version: link:../event-bus
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -575,6 +572,9 @@ importers:
 
   packages/event-bus:
     dependencies:
+      '@lifeos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       nats:
         specifier: ^2.29.3
         version: 2.29.3
@@ -871,8 +871,8 @@ importers:
         specifier: workspace:*
         version: link:../security
       fastify:
-        specifier: ^5.8.4
-        version: 5.8.4
+        specifier: ^5.8.5
+        version: 5.8.5
     devDependencies:
       vitest:
         specifier: ^4.1.2
@@ -984,8 +984,8 @@ importers:
         version: 4.3.6
     devDependencies:
       fastify:
-        specifier: ^5.6.1
-        version: 5.8.4
+        specifier: ^5.8.5
+        version: 5.8.5
       node-ical:
         specifier: ^0.25.6
         version: 0.25.6
@@ -1030,8 +1030,8 @@ importers:
         version: link:../../packages/voice-core
     devDependencies:
       fastify:
-        specifier: ^5.6.1
-        version: 5.8.4
+        specifier: ^5.8.5
+        version: 5.8.5
 
   services/module-loader:
     dependencies:
@@ -4817,8 +4817,8 @@ packages:
   fast-wrap-ansi@0.2.0:
     resolution: {integrity: sha512-rLV8JHxTyhVmFYhBJuMujcrHqOT2cnO5Zxj37qROj23CP39GXubJRBUFF0z8KFK77Uc0SukZUf7JZhsVEQ6n8w==}
 
-  fastify@5.8.4:
-    resolution: {integrity: sha512-sa42J1xylbBAYUWALSBoyXKPDUvM3OoNOibIefA+Oha57FryXKKCZarA1iDntOCWp3O35voZLuDg2mdODXtPzQ==}
+  fastify@5.8.5:
+    resolution: {integrity: sha512-Yqptv59pQzPgQUSIm87hMqHJmdkb1+GPxdE6vW6FRyVE9G86mt7rOghitiU4JHRaTyDUk9pfeKmDeu70lAwM4Q==}
 
   fastq@1.20.1:
     resolution: {integrity: sha512-GGToxJ/w1x32s/D2EKND7kTil4n8OVk/9mycTc4VDza13lOvpUZTGX3mFSCtV9ksdGBVzvsyAVLM6mHFThxXxw==}
@@ -11807,7 +11807,7 @@ snapshots:
     dependencies:
       fast-string-width: 3.0.2
 
-  fastify@5.8.4:
+  fastify@5.8.5:
     dependencies:
       '@fastify/ajv-compiler': 4.0.5
       '@fastify/error': 4.2.0
