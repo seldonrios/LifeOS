@@ -54,7 +54,7 @@ jobs:
         run: npx --yes eas-cli@latest build --platform all --profile preview --non-interactive --json > eas-build.json
       - name: Comment build URL on commit
         if: steps.expo_token.outputs.available == 'true'
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             const fs = require('fs');
