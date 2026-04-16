@@ -3,6 +3,7 @@ import type { ScreenId } from '../types';
 interface SidebarProps {
   active: ScreenId;
   onSelect: (screen: ScreenId) => void;
+  onHelpOpen: () => void;
 }
 
 const NAV_ITEMS: Array<{ id: ScreenId; label: string; icon: string }> = [
@@ -15,7 +16,7 @@ const NAV_ITEMS: Array<{ id: ScreenId; label: string; icon: string }> = [
   { id: 'settings', label: 'Settings', icon: '~' },
 ];
 
-export function Sidebar({ active, onSelect }: SidebarProps): JSX.Element {
+export function Sidebar({ active, onSelect, onHelpOpen }: SidebarProps): JSX.Element {
   return (
     <aside className="sidebar">
       <div className="sidebar-brand">
@@ -40,6 +41,16 @@ export function Sidebar({ active, onSelect }: SidebarProps): JSX.Element {
           {item.label}
         </button>
       ))}
+      <button
+        type="button"
+        className="nav-item help-btn"
+        tabIndex={0}
+        aria-label="Help"
+        onClick={onHelpOpen}
+      >
+        <span className="nav-icon" aria-hidden="true">?</span>
+        Help
+      </button>
     </aside>
   );
 }

@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { HelpPanel } from './components/HelpPanel';
 import { QuickCaptureOverlay } from './components/QuickCaptureOverlay';
 import { Sidebar } from './components/Sidebar';
 import { StatusBar } from './components/StatusBar';
 import { TrustIndicator } from './components/TrustIndicator';
+import { WelcomeOverlay } from './components/WelcomeOverlay';
+import { useFirstRun } from './hooks/useFirstRun';
 import { Today } from './screens/Today';
 import { Plans } from './screens/Plans';
 import { Inbox } from './screens/Inbox';
@@ -48,6 +51,8 @@ function getLastSyncLabel(updatedAt?: string): string {
 export function App(): JSX.Element {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('today');
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const { isFirstRun, markComplete, resetOnboarding } = useFirstRun();
   const graphQuery = useGraph();
   const { modulesQuery } = useModules();
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
@@ -101,7 +106,7 @@ export function App(): JSX.Element {
 
   return (
     <div className="app-shell">
-      <Sidebar active={activeScreen} onSelect={setActiveScreen} />
+      <Sidebar active={activeScreen} onSelect={setActiveScreen} onHelpOpen={() => setHelpOpen(true)} />
       <div className="main-shell">
         <header className="topbar">
           <div className="topbar-copy">
@@ -111,6 +116,15 @@ export function App(): JSX.Element {
             </p>
           </div>
           <div className="row gap-sm">
+            <button
+              type="button"
+              className="ghost-btn"
+              tabIndex={0}
+              aria-label="Help"
+              onClick={() => setHelpOpen(true)}
+            >
+              ?
+            </button>
             <button type="button" className="ghost-btn" onClick={() => setCaptureOpen(true)}>
               + Capture
             </button>
@@ -132,6 +146,21 @@ export function App(): JSX.Element {
       </div>
 
       <QuickCaptureOverlay open={captureOpen} onClose={() => setCaptureOpen(false)} />
+      <HelpPanel
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        activeScreen={activeScreen}
+        onReplayOnboarding={() => {
+          resetOnboarding();
+          setHelpOpen(false);
+        }}
+      />
+      {isFirstRun && (
+        <WelcomeOverlay
+          onComplete={markComplete}
+          onSkip={markComplete}
+        />
+      )}
     </div>
   );
 }

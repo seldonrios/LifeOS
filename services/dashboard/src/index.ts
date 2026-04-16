@@ -203,5 +203,6 @@ code {
         'Use `lifeos next` when you want the highest-impact next actions.',
       ],
     }));
+
   },
 });

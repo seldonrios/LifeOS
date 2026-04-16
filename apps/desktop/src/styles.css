@@ -823,6 +823,122 @@ select {
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
 }
 
+.welcome-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-card {
+  background: #161b27;
+  border: 1px solid #2d3748;
+  border-radius: 16px;
+  padding: 40px;
+  width: min(520px, 90vw);
+  color: #f4f7ff;
+}
+
+.welcome-card .muted {
+  color: #a9b3c9;
+}
+
+.welcome-step-indicator {
+  font-size: 12px;
+  color: #98a3bb;
+  margin: -6px 0 8px;
+}
+
+.welcome-option {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #3a455d;
+  background: #1e2535;
+  color: #f4f7ff;
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: pointer;
+}
+
+.welcome-option.selected {
+  border-color: #7ab8cc;
+  box-shadow: 0 0 0 3px rgba(122, 184, 204, 0.2);
+}
+
+.health-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid #2d3748;
+  border-radius: 10px;
+  background: #1e2535;
+}
+
+.health-status-pass,
+.health-status-warn,
+.health-status-fail {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.health-status-pass {
+  background: #3bb273;
+}
+
+.health-status-warn {
+  background: #e6a23c;
+}
+
+.health-status-fail {
+  background: #e05353;
+}
+
+.help-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  z-index: 1500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.help-panel {
+  width: min(460px, 90vw);
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 22px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.help-entry-btn {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-strong);
+  color: var(--ink);
+  text-align: left;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.help-btn {
+  margin-top: auto;
+}
+
 .capture-overlay-header {
   display: flex;
   align-items: center;

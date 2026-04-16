@@ -1,5 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { InboxItem, GoalSummary } from '@lifeos/contracts';
+import type { InboxItem, GoalSummary, HealthCheckResult } from '@lifeos/contracts';
+
+const UX_HEALTH_ENDPOINT = 'http://127.0.0.1:3000/api/ux/health';
 
 export interface GraphSummary {
   totalGoals: number;
@@ -347,6 +349,32 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     } as T;
   }
 
+  if (command === 'ux_health') {
+    return [
+      {
+        key: 'storage',
+        title: 'Storage available',
+        status: 'pass',
+        detail: 'Local storage read/write succeeded.',
+        repairAction: null,
+      },
+      {
+        key: 'model',
+        title: 'Model runtime reachable',
+        status: 'pass',
+        detail: 'Ollama responded at http://127.0.0.1:11434.',
+        repairAction: null,
+      },
+      {
+        key: 'eventBus',
+        title: 'Event bus connected',
+        status: 'pass',
+        detail: 'NATS transport is connected.',
+        repairAction: null,
+      },
+    ] as T;
+  }
+
   throw new Error(`No mock available for command: ${command}`);
 }
 
@@ -431,4 +459,18 @@ export async function createTask(captureId: string, title: string): Promise<{ id
 
 export async function scheduleReminder(captureId: string, title: string): Promise<{ id: string }> {
   return invokeOrMock<{ id: string }>('reminder_schedule', { captureId, title });
+}
+
+export async function getUXHealth(): Promise<HealthCheckResult[]> {
+  if (isMockRuntime()) {
+    return mockInvoke<HealthCheckResult[]>('ux_health');
+  }
+
+  const response = await fetch(UX_HEALTH_ENDPOINT, { method: 'GET' });
+  if (!response.ok) {
+    throw new Error(`Failed to load UX health checks (${response.status})`);
+  }
+
+  const payload = await response.json() as unknown;
+  return Array.isArray(payload) ? payload as HealthCheckResult[] : [];
 }
