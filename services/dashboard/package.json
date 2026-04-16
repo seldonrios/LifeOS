@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "start": "tsx src/index.ts",
-    "test": "pnpm dlx c8 --reporter=text --reporter=lcov --report-dir coverage --check-coverage --lines 50 tsx --test src/routes/household.test.ts src/routes/capture.test.ts"
+    "test": "pnpm dlx c8 --reporter=text --reporter=lcov --report-dir coverage --check-coverage --lines 50 tsx --test src/routes/household.test.ts src/routes/capture.test.ts src/routes/ux.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",

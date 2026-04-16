@@ -245,6 +245,25 @@ export {
   type LifeOSError,
 } from './errors';
 
+export {
+  HealthCheckKeySchema,
+  HealthCheckStatusSchema,
+  RepairActionSchema,
+  HealthCheckResultSchema,
+  UXPreferencesSchema,
+  OnboardingStageSchema,
+  OnboardingProgressSchema,
+  TourProgressSchema,
+  type HealthCheckKey,
+  type HealthCheckStatus,
+  type RepairAction,
+  type HealthCheckResult,
+  type UXPreferences,
+  type OnboardingStage,
+  type OnboardingProgress,
+  type TourProgress,
+} from './ux';
+
 export type { SDKConfig } from './sdk';
 
 export * from './loop/index';

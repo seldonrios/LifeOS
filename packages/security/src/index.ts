@@ -10,6 +10,9 @@ const DEFAULT_EXPIRES_IN_SECONDS = 60 * 30;
 const DEFAULT_SIGNING_SECRET = 'lifeos-dev-secret-change-me';
 const DEFAULT_SERVICE_SCOPES = ['service.read', 'policy.check'];
 
+export const SECURITY_DEFAULT_SIGNING_SECRET = DEFAULT_SIGNING_SECRET;
+export const SECURITY_TEST_SIGNING_SECRET = 'lifeos-test-secret';
+
 function base64UrlEncode(input: Buffer | string): string {
   return Buffer.from(input)
     .toString('base64')
@@ -65,7 +68,7 @@ function getSigningSecret(): string {
   }
 
   if (process.env.NODE_ENV === 'test') {
-    return 'lifeos-test-secret';
+    return SECURITY_TEST_SIGNING_SECRET;
   }
 
   if (

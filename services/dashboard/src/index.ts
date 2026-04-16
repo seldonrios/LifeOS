@@ -5,6 +5,7 @@ import { createLifeGraphClient, getDefaultLifeGraphPath } from '@lifeos/life-gra
 
 import { registerCaptureRoutes } from './routes/capture';
 import { registerHouseholdRoutes } from './routes/household';
+import { registerUxRoutes } from './routes/ux';
 
 startService({
   serviceName: "dashboard-service",
@@ -25,6 +26,7 @@ startService({
     await registerAuditInterceptor(eventBus, householdGraphClient);
     registerHouseholdRoutes(app, householdGraphClient, eventBus);
     registerCaptureRoutes(app, householdGraphClient, eventBus, lifeGraphClient);
+    registerUxRoutes(app);
 
     app.addHook('onClose', async () => {
       await eventBus.close();
