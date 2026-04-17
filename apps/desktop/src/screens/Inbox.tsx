@@ -3,7 +3,15 @@ import type { InboxItem } from '@lifeos/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FeatureTour } from '../components/FeatureTour';
 import { usePageTour } from '../hooks/usePageTour';
-import { createTask, listInboxItems, scheduleReminder } from '../ipc';
+import {
+  createTask,
+  deferInboxItem,
+  deleteInboxItem,
+  listInboxItems,
+  makePlanFromCapture,
+  saveAsNote,
+  scheduleReminder,
+} from '../ipc';
 import { inboxTourSteps } from '../tours';
 
 type InboxTab = 'all' | 'needs-triage' | 'converted' | 'deferred';
@@ -119,6 +127,8 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [deferredIds, setDeferredIds] = useState<Set<string>>(new Set());
+  const [convertedIds, setConvertedIds] = useState<Set<string>>(new Set());
   const queryClient = useQueryClient();
 
   const inboxQuery = useQuery({ queryKey: ['inbox'], queryFn: listInboxItems });
@@ -141,7 +151,8 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
   const makeTaskMutation = useMutation({
     mutationFn: ({ captureId, title }: { captureId: string; title: string }) =>
       createTask(captureId, title),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      setConvertedIds((current) => { const next = new Set(current); next.add(variables.captureId); return next; });
       void queryClient.invalidateQueries({ queryKey: ['inbox'] });
       setActionError(null);
       setTransientMessage('Task created ✓');
@@ -154,7 +165,8 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
   const scheduleReminderMutation = useMutation({
     mutationFn: ({ captureId, title }: { captureId: string; title: string }) =>
       scheduleReminder(captureId, title),
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      setConvertedIds((current) => { const next = new Set(current); next.add(variables.captureId); return next; });
       void queryClient.invalidateQueries({ queryKey: ['inbox'] });
       setActionError(null);
       setTransientMessage('Reminder scheduled ✓');
@@ -164,15 +176,75 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
     },
   });
 
+  const makePlanMutation = useMutation({
+    mutationFn: ({ captureId, title }: { captureId: string; title: string }) =>
+      makePlanFromCapture(captureId, title),
+    onSuccess: (_data, variables) => {
+      setConvertedIds((current) => { const next = new Set(current); next.add(variables.captureId); return next; });
+      void queryClient.invalidateQueries({ queryKey: ['inbox'] });
+      setActionError(null);
+      setTransientMessage('Plan created ✓');
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't create a plan right now. Your capture is still safe.");
+    },
+  });
+
+  const saveAsNoteMutation = useMutation({
+    mutationFn: ({ captureId, title }: { captureId: string; title: string }) =>
+      saveAsNote(captureId, title),
+    onSuccess: (_data, variables) => {
+      setConvertedIds((current) => { const next = new Set(current); next.add(variables.captureId); return next; });
+      void queryClient.invalidateQueries({ queryKey: ['inbox'] });
+      setActionError(null);
+      setTransientMessage('Saved as note ✓');
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't save this as a note right now.");
+    },
+  });
+
+  const deferMutation = useMutation({
+    mutationFn: ({ captureId }: { captureId: string }) => deferInboxItem(captureId),
+    onSuccess: (_data, variables) => {
+      setDeferredIds((current) => {
+        const next = new Set(current);
+        next.add(variables.captureId);
+        return next;
+      });
+      void queryClient.invalidateQueries({ queryKey: ['inbox'] });
+      setActionError(null);
+      setTransientMessage('Deferred ✓');
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't defer this item right now.");
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ captureId }: { captureId: string }) => deleteInboxItem(captureId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['inbox'] });
+      setActionError(null);
+      setTransientMessage('Deleted ✓');
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't delete this item right now.");
+    },
+  });
+
   const filteredItems = useMemo(() => {
     if (activeTab === 'needs-triage') {
       return items.filter((item) => !item.read);
     }
-    if (activeTab === 'converted' || activeTab === 'deferred') {
-      return [] as InboxItem[];
+    if (activeTab === 'converted') {
+      return items.filter((item) => item.read === true || convertedIds.has(item.id));
+    }
+    if (activeTab === 'deferred') {
+      return items.filter((item) => deferredIds.has(item.id));
     }
     return items;
-  }, [activeTab, items]);
+  }, [activeTab, convertedIds, deferredIds, items]);
 
   const handleMakeTask = (item: InboxItem): void => {
     setPendingActionId(item.id);
@@ -190,9 +262,32 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
       .finally(() => setPendingActionId(null));
   };
 
-  const handleStubAction = (action: string): void => {
-    console.log(`Coming soon: ${action}`);
-    setTransientMessage('Coming soon');
+  const handleMakePlan = (item: InboxItem): void => {
+    setPendingActionId(item.id);
+    setActionError(null);
+    void makePlanMutation
+      .mutateAsync({ captureId: item.id, title: item.title })
+      .finally(() => setPendingActionId(null));
+  };
+
+  const handleSaveAsNote = (item: InboxItem): void => {
+    setPendingActionId(item.id);
+    setActionError(null);
+    void saveAsNoteMutation
+      .mutateAsync({ captureId: item.id, title: item.title })
+      .finally(() => setPendingActionId(null));
+  };
+
+  const handleDefer = (item: InboxItem): void => {
+    setPendingActionId(item.id);
+    setActionError(null);
+    void deferMutation.mutateAsync({ captureId: item.id }).finally(() => setPendingActionId(null));
+  };
+
+  const handleDelete = (item: InboxItem): void => {
+    setPendingActionId(item.id);
+    setActionError(null);
+    void deleteMutation.mutateAsync({ captureId: item.id }).finally(() => setPendingActionId(null));
   };
 
   return (
@@ -230,9 +325,8 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
         <button
           className="ghost-btn"
           type="button"
-          onClick={() => {
-            handleStubAction('batch triage');
-          }}
+          disabled
+          title="Batch triage coming soon"
         >
           Start batch triage →
         </button>
@@ -278,10 +372,10 @@ export function Inbox({ onResetTour }: Props): JSX.Element {
           badgeDescribedBy={tourActive && currentStep === 1 && index === 0 ? `coachmark-${currentStep + 1}` : undefined}
           onMakeTask={handleMakeTask}
           onScheduleReminder={handleScheduleReminder}
-          onMakePlan={() => handleStubAction('make plan')}
-          onSaveAsNote={() => handleStubAction('save as note')}
-          onDefer={() => handleStubAction('defer')}
-          onDelete={() => handleStubAction('delete')}
+          onMakePlan={handleMakePlan}
+          onSaveAsNote={handleSaveAsNote}
+          onDefer={handleDefer}
+          onDelete={handleDelete}
         />
       ))}
       <FeatureTour

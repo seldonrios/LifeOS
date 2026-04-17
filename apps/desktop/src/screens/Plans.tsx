@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { GoalSummary } from '@lifeos/contracts';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FeatureTour } from '../components/FeatureTour';
 import { useGoal } from '../hooks/useGoal';
 import { usePageTour } from '../hooks/usePageTour';
-import { listGoals, readSettings } from '../ipc';
+import { listGoals, markPlanBlocked, readSettings, requestPlanAlternatives, splitPlan } from '../ipc';
 import { plansTourSteps } from '../tours';
+import type { ScreenId } from '../types';
 
 type PlanTab = 'active' | 'waiting' | 'done' | 'stalled';
 
@@ -58,10 +59,11 @@ function formatDeadline(deadline: string | null): string {
 interface PlanItemProps {
   plan: GoalSummary;
   isActive: boolean;
+  isBlocked: boolean;
   onClick: () => void;
 }
 
-function PlanItem({ plan, isActive, onClick }: PlanItemProps): JSX.Element {
+function PlanItem({ plan, isActive, isBlocked, onClick }: PlanItemProps): JSX.Element {
   const deadlineStr = formatDeadline(plan.deadline);
   const meta = `${plan.completedTasks} of ${plan.totalTasks} steps done${deadlineStr ? ` · Due ${deadlineStr}` : ''}`;
   return (
@@ -72,19 +74,30 @@ function PlanItem({ plan, isActive, onClick }: PlanItemProps): JSX.Element {
       onClick={onClick}
       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); }}
     >
-      <p className="plan-name">{plan.title}</p>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+        <p className="plan-name" style={{ margin: 0 }}>{plan.title}</p>
+        {isBlocked ? <span className="badge warn">Blocked</span> : null}
+      </div>
       <p className="plan-meta">{meta}</p>
     </div>
   );
 }
 
 interface Props {
+  onNavigate: (screen: ScreenId) => void;
   onResetTour?: (resetTour: (() => void) | null) => void;
 }
 
-export function Plans({ onResetTour }: Props): JSX.Element {
+export function Plans({ onNavigate, onResetTour }: Props): JSX.Element {
   const [activeTab, setActiveTab] = useState<PlanTab>('active');
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [planAlternativesMap, setPlanAlternativesMap] = useState<Record<string, string[]>>({});
+  const [planSubPlansMap, setPlanSubPlansMap] = useState<Record<string, Array<{ id: string; title: string }>>>({});
+  const [blockedPlanIds, setBlockedPlanIds] = useState<Set<string>>(new Set());
+  const [blockerReason, setBlockerReason] = useState('');
+  const queryClient = useQueryClient();
 
   const goalsQuery = useQuery({ queryKey: ['goals'], queryFn: listGoals });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
@@ -98,11 +111,81 @@ export function Plans({ onResetTour }: Props): JSX.Element {
   const model = settingsQuery.data?.model ?? 'llama3.1:8b';
   const allGoals = goalsQuery.data ?? [];
 
+  const setTransientMessage = (message: string): void => {
+    setActionMessage(message);
+    setTimeout(() => setActionMessage(null), 2_000);
+  };
+
+  const markBlockedMutation = useMutation({
+    mutationFn: ({ planId, reason }: { planId: string; reason: string }) => markPlanBlocked(planId, reason),
+    onSuccess: (_data, variables) => {
+      setBlockedPlanIds((current) => {
+        const next = new Set(current);
+        next.add(variables.planId);
+        return next;
+      });
+      setActionError(null);
+      setTransientMessage('Plan marked blocked ✓');
+      void queryClient.invalidateQueries({ queryKey: ['goals'] });
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't mark this plan blocked right now.");
+    },
+  });
+
+  const requestAlternativesMutation = useMutation({
+    mutationFn: (planId: string) => requestPlanAlternatives(planId),
+    onSuccess: (data, planId) => {
+      setPlanAlternativesMap((current) => ({ ...current, [planId]: data.alternatives }));
+      setActionError(null);
+      setTransientMessage('Alternatives ready ✓');
+      void queryClient.invalidateQueries({ queryKey: ['goals'] });
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't request alternatives right now.");
+    },
+  });
+
+  const splitPlanMutation = useMutation({
+    mutationFn: (planId: string) => splitPlan(planId),
+    onSuccess: (data, planId) => {
+      setPlanSubPlansMap((current) => ({ ...current, [planId]: data.subPlans }));
+      setActionError(null);
+      setTransientMessage('Sub-plans created ✓');
+      void queryClient.invalidateQueries({ queryKey: ['goals'] });
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't split this plan right now.");
+    },
+  });
+
   const filteredPlans = useMemo((): GoalSummary[] => {
     if (activeTab === 'active') {
       return allGoals.filter((p) => isPlanActiveForDate(p, new Date()));
     }
-    return [];
+    if (activeTab === 'waiting') {
+      return allGoals.filter(
+        (p) =>
+          p.completedTasks === 0 &&
+          Boolean(p.deadline) &&
+          parseDeadlineToLocalDayKey(p.deadline as string) !== null &&
+          (parseDeadlineToLocalDayKey(p.deadline as string) as number) >= toLocalDayKey(new Date()),
+      );
+    }
+    if (activeTab === 'done') {
+      return allGoals.filter((p) => p.completedTasks === p.totalTasks && p.totalTasks > 0);
+    }
+    if (activeTab === 'stalled') {
+      return allGoals.filter(
+        (p) =>
+          p.completedTasks > 0 &&
+          p.completedTasks < p.totalTasks &&
+          Boolean(p.deadline) &&
+          parseDeadlineToLocalDayKey(p.deadline as string) !== null &&
+          (parseDeadlineToLocalDayKey(p.deadline as string) as number) < toLocalDayKey(new Date()),
+      );
+    }
+    return allGoals;
   }, [activeTab, allGoals]);
 
   const effectiveSelectedId = useMemo(() => {
@@ -113,6 +196,9 @@ export function Plans({ onResetTour }: Props): JSX.Element {
   }, [selectedPlanId, filteredPlans]);
 
   const selectedPlan = filteredPlans.find((p) => p.id === effectiveSelectedId) ?? null;
+  const isSelectedBlocked = effectiveSelectedId ? blockedPlanIds.has(effectiveSelectedId) : false;
+  const selectedAlternatives = effectiveSelectedId ? (planAlternativesMap[effectiveSelectedId] ?? null) : null;
+  const selectedSubPlans = effectiveSelectedId ? (planSubPlansMap[effectiveSelectedId] ?? null) : null;
 
   const tabs: { id: PlanTab; label: string }[] = [
     { id: 'active', label: 'Active' },
@@ -174,6 +260,7 @@ export function Plans({ onResetTour }: Props): JSX.Element {
               key={plan.id}
               plan={plan}
               isActive={plan.id === effectiveSelectedId}
+              isBlocked={blockedPlanIds.has(plan.id)}
               onClick={() => setSelectedPlanId(plan.id)}
             />
           ))
@@ -182,6 +269,18 @@ export function Plans({ onResetTour }: Props): JSX.Element {
 
       {/* Detail pane */}
       <div className="plans-detail-pane">
+        {actionMessage ? (
+          <section className="card card-wide">
+            <p style={{ margin: 0 }}>{actionMessage}</p>
+          </section>
+        ) : null}
+
+        {actionError ? (
+          <section className="card card-wide">
+            <p style={{ margin: 0 }}>{actionError}</p>
+          </section>
+        ) : null}
+
         {filteredPlans.length === 0 && !goalsQuery.isLoading ? (
           <section className="card card-wide empty-state">
             <h3>No active plans yet.</h3>
@@ -207,14 +306,17 @@ export function Plans({ onResetTour }: Props): JSX.Element {
               <button
                 className="primary-btn"
                 type="button"
-                onClick={() => { console.log('Coming soon: Turn a task into a plan'); }}
+                onClick={() => {
+                  onNavigate('inbox');
+                }}
               >
                 Turn a task into a plan
               </button>
               <button
                 className="ghost-btn"
                 type="button"
-                onClick={() => { console.log('Coming soon: Start with a goal'); }}
+                disabled
+                title="Start with a goal coming soon"
               >
                 Start with a goal
               </button>
@@ -250,7 +352,48 @@ export function Plans({ onResetTour }: Props): JSX.Element {
             )}
 
             <p className="section-label" style={{ marginTop: '24px' }}>BLOCKERS</p>
-            <p className="muted" style={{ fontSize: '13px' }}>None</p>
+            {isSelectedBlocked ? (
+              <div className="item-row" style={{ marginBottom: '10px' }}>
+                <span className="badge warn">Blocked</span>
+              </div>
+            ) : (
+              <p className="muted" style={{ fontSize: '13px', marginTop: 0 }}>None</p>
+            )}
+
+            <div style={{ marginTop: '8px' }}>
+              <label htmlFor="plan-blocker-reason" className="muted" style={{ display: 'block', marginBottom: '6px' }}>
+                Reason (optional)
+              </label>
+              <input
+                id="plan-blocker-reason"
+                value={blockerReason}
+                onChange={(e) => setBlockerReason(e.target.value)}
+                placeholder="Waiting on dependency, approval, etc."
+                style={{ width: '100%', maxWidth: '420px' }}
+              />
+            </div>
+
+            <p className="section-label" style={{ marginTop: '24px' }}>ALTERNATIVES</p>
+            {selectedAlternatives && selectedAlternatives.length > 0 ? (
+              selectedAlternatives.map((alternative) => (
+                <div className="item-row" key={alternative}>
+                  <span>{alternative}</span>
+                </div>
+              ))
+            ) : (
+              <p className="muted" style={{ fontSize: '13px' }}>No alternatives requested yet.</p>
+            )}
+
+            <p className="section-label" style={{ marginTop: '24px' }}>SUB-PLANS</p>
+            {selectedSubPlans && selectedSubPlans.length > 0 ? (
+              selectedSubPlans.map((subPlan) => (
+                <div className="item-row" key={subPlan.id}>
+                  <span>{subPlan.title}</span>
+                </div>
+              ))
+            ) : (
+              <p className="muted" style={{ fontSize: '13px' }}>No sub-plans generated yet.</p>
+            )}
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '24px' }}>
               <button
@@ -268,7 +411,8 @@ export function Plans({ onResetTour }: Props): JSX.Element {
               <button
                 className="ghost-btn"
                 type="button"
-                onClick={() => { console.log('Coming soon: Reorder'); }}
+                disabled
+                title="Reorder coming soon"
               >
                 Reorder
               </button>
@@ -276,24 +420,45 @@ export function Plans({ onResetTour }: Props): JSX.Element {
                 id="plans-blocked-btn"
                 className="ghost-btn"
                 type="button"
+                disabled={markBlockedMutation.isPending || !effectiveSelectedId}
                 aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
-                onClick={() => { console.log('Coming soon: Mark blocked'); }}
+                onClick={() => {
+                  if (!effectiveSelectedId) {
+                    return;
+                  }
+                  setActionError(null);
+                  void markBlockedMutation.mutateAsync({ planId: effectiveSelectedId, reason: blockerReason });
+                }}
               >
-                Mark blocked
+                {markBlockedMutation.isPending ? 'Marking…' : 'Mark blocked'}
               </button>
               <button
                 className="ghost-btn"
                 type="button"
-                onClick={() => { console.log('Coming soon: Request alternatives'); }}
+                disabled={requestAlternativesMutation.isPending || !effectiveSelectedId}
+                onClick={() => {
+                  if (!effectiveSelectedId) {
+                    return;
+                  }
+                  setActionError(null);
+                  void requestAlternativesMutation.mutateAsync(effectiveSelectedId);
+                }}
               >
-                Request alternatives
+                {requestAlternativesMutation.isPending ? 'Requesting…' : 'Request alternatives'}
               </button>
               <button
                 className="ghost-btn"
                 type="button"
-                onClick={() => { console.log('Coming soon: Split into smaller actions'); }}
+                disabled={splitPlanMutation.isPending || !effectiveSelectedId}
+                onClick={() => {
+                  if (!effectiveSelectedId) {
+                    return;
+                  }
+                  setActionError(null);
+                  void splitPlanMutation.mutateAsync(effectiveSelectedId);
+                }}
               >
-                Split into smaller actions
+                {splitPlanMutation.isPending ? 'Splitting…' : 'Split into smaller actions'}
               </button>
             </div>
           </>

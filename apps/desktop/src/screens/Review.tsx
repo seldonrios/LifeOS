@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FeatureTour } from '../components/FeatureTour';
 import { usePageTour } from '../hooks/usePageTour';
-import { getDailyReview } from '../ipc';
+import { archiveCompleted, closeDay, getDailyReview, moveAllOpenToTomorrow } from '../ipc';
 import { reviewTourSteps } from '../tours';
 
 type ReviewTab = 'daily' | 'weekly';
@@ -14,7 +14,53 @@ interface Props {
 export function Review({ onResetTour }: Props): JSX.Element {
   const [activeTab, setActiveTab] = useState<ReviewTab>('daily');
   const [tomorrowNote, setTomorrowNote] = useState('');
+  const [actionMessage, setActionMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [dayClosedState, setDayClosedState] = useState(false);
+  const queryClient = useQueryClient();
   const reviewQuery = useQuery({ queryKey: ['daily-review'], queryFn: getDailyReview });
+
+  const setTransientMessage = (message: string): void => {
+    setActionMessage(message);
+    setTimeout(() => setActionMessage(null), 2_000);
+  };
+
+  const closeDayMutation = useMutation({
+    mutationFn: (note?: string) => closeDay(note),
+    onSuccess: () => {
+      setDayClosedState(true);
+      void queryClient.invalidateQueries({ queryKey: ['daily-review'] });
+      setActionError(null);
+      setTransientMessage('Day closed. See you tomorrow.');
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't close your day right now.");
+    },
+  });
+
+  const moveAllOpenMutation = useMutation({
+    mutationFn: moveAllOpenToTomorrow,
+    onSuccess: (data) => {
+      setActionError(null);
+      setTransientMessage(`Moved ${data.movedCount} items to tomorrow ✓`);
+      void queryClient.invalidateQueries({ queryKey: ['daily-review'] });
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't move open items right now.");
+    },
+  });
+
+  const archiveCompletedMutation = useMutation({
+    mutationFn: archiveCompleted,
+    onSuccess: (data) => {
+      setActionError(null);
+      setTransientMessage(`Archived ${data.archivedCount} completed items ✓`);
+      void queryClient.invalidateQueries({ queryKey: ['daily-review'] });
+    },
+    onError: () => {
+      setActionError("LifeOS couldn't archive completed items right now.");
+    },
+  });
 
   const subtitle = new Date().toLocaleDateString(undefined, {
     weekday: 'long',
@@ -75,7 +121,8 @@ export function Review({ onResetTour }: Props): JSX.Element {
             className="primary-btn"
             type="button"
             onClick={() => {
-              console.log('Coming soon: start daily review');
+              setActiveTab('daily');
+              window.scrollTo(0, 0);
             }}
           >
             Start a 2-minute review
@@ -117,10 +164,25 @@ export function Review({ onResetTour }: Props): JSX.Element {
 
       {activeTab === 'weekly' ? (
         <section className="card card-wide">
-          <p className="muted">Weekly review coming soon.</p>
+          <div className="empty-state" style={{ padding: '8px 0' }}>
+            <h3 style={{ marginBottom: '8px' }}>Weekly review is coming soon</h3>
+            <p className="muted" style={{ margin: 0 }}>Daily review actions are available now.</p>
+          </div>
         </section>
       ) : (
         <>
+          {actionMessage ? (
+            <section className="card card-wide">
+              <p style={{ margin: 0 }}>{actionMessage}</p>
+            </section>
+          ) : null}
+
+          {actionError ? (
+            <section className="card card-wide">
+              <p style={{ margin: 0 }}>{actionError}</p>
+            </section>
+          ) : null}
+
           <section className="card">
             <div className="card-label">COMPLETED TODAY</div>
             {reviewData.completedActions.length === 0 ? (
@@ -196,37 +258,52 @@ export function Review({ onResetTour }: Props): JSX.Element {
             />
           </section>
 
-          <div className="card card-wide" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-            <button
-              id="review-close-day"
-              className="primary-btn"
-              type="button"
-              aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
-              onClick={() => {
-                console.log('Coming soon: close day');
-              }}
-            >
-              Close day
-            </button>
-            <button
-              className="ghost-btn"
-              type="button"
-              onClick={() => {
-                console.log('Coming soon: move all open to tomorrow');
-              }}
-            >
-              Move all open to tomorrow
-            </button>
-            <button
-              className="ghost-btn"
-              type="button"
-              onClick={() => {
-                console.log('Coming soon: archive completed');
-              }}
-            >
-              Archive completed
-            </button>
-          </div>
+          {dayClosedState ? (
+            <section className="card card-wide empty-state" style={{ border: '1px solid #2d4a7a' }}>
+              <h3 style={{ marginBottom: '8px' }}>Day closed. See you tomorrow.</h3>
+              <p className="muted" style={{ margin: 0 }}>
+                You can still review details, but today&apos;s wrap-up actions are complete.
+              </p>
+            </section>
+          ) : (
+            <div className="card card-wide" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button
+                id="review-close-day"
+                className="primary-btn"
+                type="button"
+                disabled={closeDayMutation.isPending}
+                aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
+                onClick={() => {
+                  setActionError(null);
+                  void closeDayMutation.mutateAsync(tomorrowNote.trim() ? tomorrowNote : undefined);
+                }}
+              >
+                {closeDayMutation.isPending ? 'Closing day…' : 'Close day'}
+              </button>
+              <button
+                className="ghost-btn"
+                type="button"
+                disabled={moveAllOpenMutation.isPending}
+                onClick={() => {
+                  setActionError(null);
+                  void moveAllOpenMutation.mutateAsync();
+                }}
+              >
+                {moveAllOpenMutation.isPending ? 'Moving…' : 'Move all open to tomorrow'}
+              </button>
+              <button
+                className="ghost-btn"
+                type="button"
+                disabled={archiveCompletedMutation.isPending}
+                onClick={() => {
+                  setActionError(null);
+                  void archiveCompletedMutation.mutateAsync();
+                }}
+              >
+                {archiveCompletedMutation.isPending ? 'Archiving…' : 'Archive completed'}
+              </button>
+            </div>
+          )}
         </>
       )}
       <FeatureTour

@@ -185,7 +185,7 @@ function renderScreen(
     return <Inbox onResetTour={onResetTour} />;
   }
   if (screen === 'plans') {
-    return <Plans onResetTour={onResetTour} />;
+    return <Plans onNavigate={onNavigate} onResetTour={onResetTour} />;
   }
   if (screen === 'review') {
     return <Review onResetTour={onResetTour} />;
