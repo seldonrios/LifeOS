@@ -13,6 +13,7 @@ import type {
   GoalSummary,
   PushTokenRegistration,
   ReviewLoopSummary,
+  HealthCheckResult,
 } from '@lifeos/contracts';
 import { InboxListResponseSchema, ReviewLoopSummarySchema } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
@@ -228,6 +229,29 @@ class ReviewNamespace {
     );
 
     return ReviewLoopSummarySchema.parse(response.data);
+  }
+}
+
+/**
+ * UX namespace.
+ */
+class UxNamespace {
+  constructor(private config: SDKConfig) {}
+
+  async healthCheck(): Promise<HealthCheckResult[]> {
+    const response = await sendHttpRequest<HealthCheckResult[]>(
+      {
+        url: `${this.config.baseUrl}/api/ux/health`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      {
+        ...this.config,
+        timeout: 3000,
+      },
+    );
+
+    return response.data;
   }
 }
 
@@ -886,6 +910,7 @@ export class LifeOSClient {
   readonly notifications: NotificationsNamespace;
   readonly devices: DevicesNamespace;
   readonly review: ReviewNamespace;
+  readonly ux: UxNamespace;
   readonly household: HouseholdNamespace;
 
   constructor(config: SDKConfig) {
@@ -902,6 +927,7 @@ export class LifeOSClient {
     this.notifications = new NotificationsNamespace(effectiveConfig);
     this.devices = new DevicesNamespace(effectiveConfig);
     this.review = new ReviewNamespace(effectiveConfig);
+    this.ux = new UxNamespace(effectiveConfig);
     this.household = new HouseholdNamespace(effectiveConfig);
   }
 }

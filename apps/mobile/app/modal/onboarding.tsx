@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -16,7 +17,7 @@ import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
-import type { CaptureResult } from '@lifeos/contracts';
+import type { CaptureResult, HealthCheckResult } from '@lifeos/contracts';
 
 import { sdk } from '../../lib/sdk';
 import { markOnboardingComplete, ONBOARDING_COMPLETE_KEY, useSessionStore } from '../../lib/session';
@@ -28,6 +29,22 @@ type AssistantStyle = 'concise' | 'detailed' | 'conversational';
 type ServiceKey = 'calendar' | 'tasks' | 'email' | 'contacts' | 'files';
 type PermissionKey = 'notifications' | 'microphone' | 'storage' | 'background';
 type PermissionDecision = 'idle' | 'allowed' | 'not-now';
+type ProbeStatus = 'loading' | 'pass' | 'warn' | 'fail' | 'unavailable';
+
+const explainerSlides: Array<{ headline: string; body: string }> = [
+  {
+    headline: 'Capture anything',
+    body: "A thought, task, reminder, or question. LifeOS holds it until you're ready to decide.",
+  },
+  {
+    headline: "Triage when you're ready",
+    body: 'Your inbox turns raw captures into tasks, plans, reminders, or notes - one decision at a time.',
+  },
+  {
+    headline: 'Review and close loops',
+    body: "A 2-minute daily review keeps you clear on what finished, what's open, and what matters tomorrow.",
+  },
+];
 
 const setupOptions: Array<{ key: SetupStyle; title: string; description: string }> = [
   {
@@ -123,11 +140,22 @@ export default function OnboardingModal() {
     storage: 'idle',
     background: 'idle',
   });
+  const [showExplainer, setShowExplainer] = useState(false);
+  const [explainerSlide, setExplainerSlide] = useState<0 | 1 | 2>(0);
+  const [modelProbeStatus, setModelProbeStatus] = useState<ProbeStatus>('loading');
+  const [eventBusProbeStatus, setEventBusProbeStatus] = useState<ProbeStatus>('loading');
+  const [modelRepairAction, setModelRepairAction] = useState<HealthCheckResult['repairAction']>(null);
+  const [eventBusRepairAction, setEventBusRepairAction] = useState<HealthCheckResult['repairAction']>(null);
 
   useEffect(() => {
     if (step !== 7) {
       return;
     }
+
+    setModelProbeStatus('loading');
+    setEventBusProbeStatus('loading');
+    setModelRepairAction(null);
+    setEventBusRepairAction(null);
 
     let cancelled = false;
 
@@ -145,6 +173,31 @@ export default function OnboardingModal() {
       setNotificationsOk(
         notificationPermission.status === 'fulfilled' && notificationPermission.value.status === 'granted',
       );
+
+      try {
+        const results = await sdk.ux.healthCheck();
+
+        if (cancelled) {
+          return;
+        }
+
+        const modelResult = results.find((result) => result.key === 'model');
+        const eventBusResult = results.find((result) => result.key === 'eventBus');
+
+        setModelProbeStatus(modelResult?.status ?? 'unavailable');
+        setEventBusProbeStatus(eventBusResult?.status ?? 'unavailable');
+        setModelRepairAction(modelResult?.repairAction ?? null);
+        setEventBusRepairAction(eventBusResult?.repairAction ?? null);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+
+        setModelProbeStatus('unavailable');
+        setEventBusProbeStatus('unavailable');
+        setModelRepairAction(null);
+        setEventBusRepairAction(null);
+      }
     })();
 
     return () => {
@@ -167,6 +220,40 @@ export default function OnboardingModal() {
   );
 
   const previewTitle = captureResult?.content || 'Review the note you just captured';
+
+  function getProbeLabel(status: ProbeStatus): 'Checking...' | 'Pass' | 'Warn' | 'Fail' | 'Unavailable' {
+    if (status === 'loading') {
+      return 'Checking...';
+    }
+    if (status === 'pass') {
+      return 'Pass';
+    }
+    if (status === 'warn') {
+      return 'Warn';
+    }
+    if (status === 'fail') {
+      return 'Fail';
+    }
+    return 'Unavailable';
+  }
+
+  function handleRepairAction(action: string) {
+    switch (action) {
+      case 'check-ollama':
+      case 'check-nats':
+      case 'open-settings':
+      case 'set-jwt-secret':
+        router.push('/modal/settings');
+        return;
+      case 'configure-notifications':
+        setStep(6);
+        return;
+      default:
+        // Fallback to settings so repair links never become a no-op.
+        router.push('/modal/settings');
+        return;
+    }
+  }
 
   function toggleUseCase(useCase: UseCase) {
     setSelectedUseCases((current) => {
@@ -318,7 +405,13 @@ export default function OnboardingModal() {
             >
               <Text style={[styles.primaryButtonText, { color: palette.background.primary }]}>Get started</Text>
             </Pressable>
-            <Pressable style={styles.secondaryButton}>
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => {
+                setExplainerSlide(0);
+                setShowExplainer(true);
+              }}
+            >
               <Text style={[styles.secondaryButtonText, { color: palette.text.secondary }]}>See how it works</Text>
             </Pressable>
             <Text style={[styles.footerNote, { color: palette.text.muted }]}>Designed to work locally. You stay in control.</Text>
@@ -574,15 +667,51 @@ export default function OnboardingModal() {
                   {notificationsOk ? 'Granted' : 'Skipped'}
                 </Text>
               </View>
-              <View style={styles.statusRow}>
-                <Text style={styles.statusIcon}>✅</Text>
-                <Text style={[styles.statusLabel, { color: palette.text.primary }]}>AI assistant</Text>
-                <Text style={[styles.statusValue, { color: palette.text.secondary }]}>Pass</Text>
+              <View>
+                <View style={styles.statusRow}>
+                  {modelProbeStatus === 'loading' ? (
+                    <ActivityIndicator size="small" color={palette.accent.brand} />
+                  ) : (
+                    <Text style={styles.statusIcon}>{modelProbeStatus === 'pass' ? '✅' : '⚠️'}</Text>
+                  )}
+                  <Text style={[styles.statusLabel, { color: palette.text.primary }]}>AI assistant</Text>
+                  <Text style={[styles.statusValue, { color: palette.text.secondary }]}>
+                    {getProbeLabel(modelProbeStatus)}
+                  </Text>
+                </View>
+                {modelRepairAction && modelProbeStatus !== 'pass' && modelProbeStatus !== 'loading' ? (
+                  <Pressable
+                    style={styles.repairLink}
+                    onPress={() => {
+                      handleRepairAction(modelRepairAction.action);
+                    }}
+                  >
+                    <Text style={[styles.linkText, { color: palette.accent.brand }]}>{modelRepairAction.label}</Text>
+                  </Pressable>
+                ) : null}
               </View>
-              <View style={styles.statusRow}>
-                <Text style={styles.statusIcon}>✅</Text>
-                <Text style={[styles.statusLabel, { color: palette.text.primary }]}>Sync engine</Text>
-                <Text style={[styles.statusValue, { color: palette.text.secondary }]}>Pass</Text>
+              <View>
+                <View style={styles.statusRow}>
+                  {eventBusProbeStatus === 'loading' ? (
+                    <ActivityIndicator size="small" color={palette.accent.brand} />
+                  ) : (
+                    <Text style={styles.statusIcon}>{eventBusProbeStatus === 'pass' ? '✅' : '⚠️'}</Text>
+                  )}
+                  <Text style={[styles.statusLabel, { color: palette.text.primary }]}>Sync engine</Text>
+                  <Text style={[styles.statusValue, { color: palette.text.secondary }]}>
+                    {getProbeLabel(eventBusProbeStatus)}
+                  </Text>
+                </View>
+                {eventBusRepairAction && eventBusProbeStatus !== 'pass' && eventBusProbeStatus !== 'loading' ? (
+                  <Pressable
+                    style={styles.repairLink}
+                    onPress={() => {
+                      handleRepairAction(eventBusRepairAction.action);
+                    }}
+                  >
+                    <Text style={[styles.linkText, { color: palette.accent.brand }]}>{eventBusRepairAction.label}</Text>
+                  </Pressable>
+                ) : null}
               </View>
             </View>
             <Pressable
@@ -711,6 +840,55 @@ export default function OnboardingModal() {
           </View>
         ) : null}
       </ScrollView>
+
+      <Modal
+        visible={showExplainer}
+        animationType="slide"
+        transparent={false}
+        onRequestClose={() => setShowExplainer(false)}
+      >
+        <SafeAreaView style={[styles.container, { backgroundColor: palette.background.primary }]}>
+          <View style={styles.content}>
+            <Pressable style={styles.explainerDismiss} onPress={() => setShowExplainer(false)}>
+              <Text style={[styles.explainerDismissText, { color: palette.text.secondary }]}>X</Text>
+            </Pressable>
+            <View style={styles.stepWrap}>
+              <Text style={[styles.title, { color: palette.text.primary }]}>{explainerSlides[explainerSlide].headline}</Text>
+              <Text style={[styles.bodyText, { color: palette.text.secondary }]}>{explainerSlides[explainerSlide].body}</Text>
+              <View style={styles.dotsRow}>
+                {[0, 1, 2].map((index) => (
+                  <View
+                    key={index}
+                    style={[
+                      styles.dot,
+                      {
+                        width: explainerSlide === index ? 24 : 10,
+                        backgroundColor:
+                          explainerSlide === index ? palette.accent.brand : palette.border.default,
+                      },
+                    ]}
+                  />
+                ))}
+              </View>
+              <Pressable
+                style={[styles.primaryButton, { backgroundColor: palette.accent.brand }]}
+                onPress={() => {
+                  if (explainerSlide < 2) {
+                    setExplainerSlide((explainerSlide + 1) as 0 | 1 | 2);
+                    return;
+                  }
+
+                  setShowExplainer(false);
+                }}
+              >
+                <Text style={[styles.primaryButtonText, { color: palette.background.primary }]}>
+                  {explainerSlide < 2 ? 'Next' : 'Done'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </SafeAreaView>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -828,6 +1006,9 @@ const styles = StyleSheet.create({
   linkText: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
+  },
+  repairLink: {
+    marginLeft: spacing[6],
   },
   permissionCard: {
     borderWidth: 1,
@@ -957,6 +1138,15 @@ const styles = StyleSheet.create({
   secondaryButtonText: {
     fontSize: typography.fontSize.sm,
     fontWeight: typography.fontWeight.medium,
+  },
+  explainerDismiss: {
+    position: 'absolute',
+    top: spacing[4],
+    right: spacing[4],
+    zIndex: 1,
+  },
+  explainerDismissText: {
+    fontSize: typography.fontSize.xl,
   },
   errorText: {
     fontSize: typography.fontSize.sm,
