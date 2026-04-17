@@ -106,6 +106,108 @@ test('processRequest returns Ollama model names for settings_models', async () =
   }
 });
 
+test('processRequest executes new inbox/review/plan commands', async () => {
+  const cases: Array<{ command: string; args: Record<string, unknown>; assertResult: (value: unknown) => void }> = [
+    {
+      command: 'plan_from_capture',
+      args: { captureId: 'capture-1', title: 'Garage cleanup plan' },
+      assertResult: (value) => {
+        const result = value as { id?: string };
+        assert.equal(result.id, 'mock-plan-capture-1');
+      },
+    },
+    {
+      command: 'note_create',
+      args: { captureId: 'capture-2', title: 'Follow-up notes' },
+      assertResult: (value) => {
+        const result = value as { id?: string };
+        assert.equal(result.id, 'mock-note-capture-2');
+      },
+    },
+    {
+      command: 'inbox_defer',
+      args: { captureId: 'capture-3' },
+      assertResult: (value) => {
+        const result = value as { id?: string; deferred?: boolean };
+        assert.equal(result.id, 'capture-3');
+        assert.equal(result.deferred, true);
+      },
+    },
+    {
+      command: 'inbox_delete',
+      args: { captureId: 'capture-4' },
+      assertResult: (value) => {
+        const result = value as { id?: string; deleted?: boolean };
+        assert.equal(result.id, 'capture-4');
+        assert.equal(result.deleted, true);
+      },
+    },
+    {
+      command: 'review_close_day',
+      args: { tomorrowNote: 'Start with invoice follow-up' },
+      assertResult: (value) => {
+        const result = value as { closedAt?: string; tomorrowNote?: string | null };
+        assert.equal(typeof result.closedAt, 'string');
+        assert.equal(result.tomorrowNote, 'Start with invoice follow-up');
+      },
+    },
+    {
+      command: 'review_move_open',
+      args: {},
+      assertResult: (value) => {
+        const result = value as { movedCount?: number };
+        assert.equal(result.movedCount, 2);
+      },
+    },
+    {
+      command: 'review_archive',
+      args: {},
+      assertResult: (value) => {
+        const result = value as { archivedCount?: number };
+        assert.equal(result.archivedCount, 2);
+      },
+    },
+    {
+      command: 'plan_block',
+      args: { planId: 'plan-1', reason: 'Waiting on dependency' },
+      assertResult: (value) => {
+        const result = value as { id?: string; blocked?: boolean };
+        assert.equal(result.id, 'plan-1');
+        assert.equal(result.blocked, true);
+      },
+    },
+    {
+      command: 'plan_alternatives',
+      args: { planId: 'plan-2' },
+      assertResult: (value) => {
+        const result = value as { alternatives?: string[] };
+        assert.deepEqual(result.alternatives, ['Alt A', 'Alt B']);
+      },
+    },
+    {
+      command: 'plan_split',
+      args: { planId: 'plan-3' },
+      assertResult: (value) => {
+        const result = value as { subPlans?: Array<{ id: string; title: string }> };
+        assert.deepEqual(result.subPlans, [
+          { id: 'mock-sub-1', title: 'Part 1' },
+          { id: 'mock-sub-2', title: 'Part 2' },
+        ]);
+      },
+    },
+  ];
+
+  for (const item of cases) {
+    const response = await processRequest(
+      JSON.stringify({ id: `${item.command}-1`, command: item.command, args: item.args }),
+    );
+
+    assert.equal(response.id, `${item.command}-1`);
+    assert.equal(response.error, undefined);
+    item.assertResult(response.result);
+  }
+});
+
 test('processRequest returns empty settings_models result when Ollama is unreachable', async () => {
   const originalFetch = globalThis.fetch;
 

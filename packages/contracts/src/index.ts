@@ -153,12 +153,16 @@ export {
   ReminderInboxPayloadSchema,
   InboxItemDataSchema,
   InboxItemSchema,
+  InboxActionRequestSchema,
+  ReviewCloseDayRequestSchema,
   type ApprovalRequest,
   type ApprovalResult,
   type InboxItemType,
   type ReminderInboxPayload,
   type InboxItemData,
   type InboxItem,
+  type InboxActionRequest,
+  type ReviewCloseDayRequest,
 } from './inbox';
 
 export {
@@ -167,11 +171,15 @@ export {
   PlanTaskSchema,
   PlanSchema,
   PlanningSuggestionSchema,
+  PlanBlockedRequestSchema,
+  PlanAlternativesResponseSchema,
   type PlanPriority,
   type PlanTaskStatus,
   type PlanTask,
   type Plan,
   type PlanningSuggestion,
+  type PlanBlockedRequest,
+  type PlanAlternativesResponse,
 } from './plan';
 
 export {

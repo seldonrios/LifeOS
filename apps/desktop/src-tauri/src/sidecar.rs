@@ -15,9 +15,19 @@ const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
     "inbox_list",
     "task_create",
     "reminder_schedule",
+    "plan_from_capture",
+    "note_create",
+    "inbox_defer",
+    "inbox_delete",
     "task_list",
     "task_complete",
     "review_daily",
+    "review_close_day",
+    "review_move_open",
+    "review_archive",
+    "plan_block",
+    "plan_alternatives",
+    "plan_split",
     "modules_list",
     "module_enable",
     "module_disable",
@@ -229,6 +239,26 @@ mod tests {
     #[test]
     fn allowlist_includes_goal_list() {
         assert!(ALLOWED_SIDECAR_COMMANDS.contains(&"goal_list"));
+    }
+
+    #[test]
+    fn allowlist_includes_new_ux_e2_commands() {
+        let expected = [
+            "plan_from_capture",
+            "note_create",
+            "inbox_defer",
+            "inbox_delete",
+            "review_close_day",
+            "review_move_open",
+            "review_archive",
+            "plan_block",
+            "plan_alternatives",
+            "plan_split",
+        ];
+
+        for command in expected {
+            assert!(ALLOWED_SIDECAR_COMMANDS.contains(&command));
+        }
     }
 
     #[test]

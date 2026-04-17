@@ -20,8 +20,19 @@ export const ApprovalResultSchema = z.object({
 });
 export type ApprovalResult = z.infer<typeof ApprovalResultSchema>;
 
-export const InboxItemTypeSchema = z.enum(['approval', 'notification', 'reminder']);
+export const InboxItemTypeSchema = z.enum(['approval', 'notification', 'reminder', 'capture']);
 export type InboxItemType = z.infer<typeof InboxItemTypeSchema>;
+
+export const InboxActionRequestSchema = z.object({
+  captureId: z.string().min(1),
+  action: z.enum(['defer', 'delete', 'make-plan', 'save-note']),
+});
+export type InboxActionRequest = z.infer<typeof InboxActionRequestSchema>;
+
+export const ReviewCloseDayRequestSchema = z.object({
+  tomorrowNote: z.string().optional(),
+});
+export type ReviewCloseDayRequest = z.infer<typeof ReviewCloseDayRequestSchema>;
 
 export const ReminderInboxPayloadSchema = z.object({
   dueDate: z.string().min(1),

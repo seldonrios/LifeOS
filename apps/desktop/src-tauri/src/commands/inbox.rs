@@ -18,6 +18,32 @@ fn reminder_schedule_payload(capture_id: String, title: String) -> serde_json::V
     })
 }
 
+fn plan_from_capture_payload(capture_id: String, title: String) -> serde_json::Value {
+    json!({
+        "captureId": capture_id,
+        "title": title,
+    })
+}
+
+fn note_create_payload(capture_id: String, title: String) -> serde_json::Value {
+    json!({
+        "captureId": capture_id,
+        "title": title,
+    })
+}
+
+fn inbox_defer_payload(capture_id: String) -> serde_json::Value {
+    json!({
+        "captureId": capture_id,
+    })
+}
+
+fn inbox_delete_payload(capture_id: String) -> serde_json::Value {
+    json!({
+        "captureId": capture_id,
+    })
+}
+
 #[tauri::command]
 pub async fn inbox_list() -> Result<serde_json::Value, String> {
     crate::sidecar::invoke_sidecar("inbox_list", inbox_list_payload())
@@ -36,9 +62,38 @@ pub async fn reminder_schedule(capture_id: String, title: String) -> Result<serd
     )
 }
 
+#[tauri::command]
+pub async fn plan_from_capture(
+    capture_id: String,
+    title: String,
+) -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar(
+        "plan_from_capture",
+        plan_from_capture_payload(capture_id, title),
+    )
+}
+
+#[tauri::command]
+pub async fn note_create(capture_id: String, title: String) -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("note_create", note_create_payload(capture_id, title))
+}
+
+#[tauri::command]
+pub async fn inbox_defer(capture_id: String) -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("inbox_defer", inbox_defer_payload(capture_id))
+}
+
+#[tauri::command]
+pub async fn inbox_delete(capture_id: String) -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("inbox_delete", inbox_delete_payload(capture_id))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{inbox_list_payload, reminder_schedule_payload, task_create_payload};
+    use super::{
+        inbox_defer_payload, inbox_delete_payload, inbox_list_payload, note_create_payload,
+        plan_from_capture_payload, reminder_schedule_payload, task_create_payload,
+    };
 
     #[test]
     fn inbox_list_payload_is_empty_object() {
@@ -59,5 +114,34 @@ mod tests {
         let payload = reminder_schedule_payload("capture-1".to_string(), "Call dentist".to_string());
         assert_eq!(payload["captureId"], "capture-1");
         assert_eq!(payload["title"], "Call dentist");
+    }
+
+    #[test]
+    fn plan_from_capture_payload_uses_capture_and_title() {
+        let payload = plan_from_capture_payload(
+            "capture-1".to_string(),
+            "Weekend garage cleanup".to_string(),
+        );
+        assert_eq!(payload["captureId"], "capture-1");
+        assert_eq!(payload["title"], "Weekend garage cleanup");
+    }
+
+    #[test]
+    fn note_create_payload_uses_capture_and_title() {
+        let payload = note_create_payload("capture-2".to_string(), "Project notes".to_string());
+        assert_eq!(payload["captureId"], "capture-2");
+        assert_eq!(payload["title"], "Project notes");
+    }
+
+    #[test]
+    fn inbox_defer_payload_uses_capture_id() {
+        let payload = inbox_defer_payload("capture-3".to_string());
+        assert_eq!(payload["captureId"], "capture-3");
+    }
+
+    #[test]
+    fn inbox_delete_payload_uses_capture_id() {
+        let payload = inbox_delete_payload("capture-4".to_string());
+        assert_eq!(payload["captureId"], "capture-4");
     }
 }

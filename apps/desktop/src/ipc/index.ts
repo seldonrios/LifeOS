@@ -375,6 +375,46 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     ] as T;
   }
 
+  if (command === 'plan_from_capture') {
+    return { id: 'mock-plan-' + Date.now() } as T;
+  }
+
+  if (command === 'note_create') {
+    return { id: 'mock-note-' + Date.now() } as T;
+  }
+
+  if (command === 'inbox_defer') {
+    return { id: payload?.captureId, deferred: true } as T;
+  }
+
+  if (command === 'inbox_delete') {
+    return { id: payload?.captureId, deleted: true } as T;
+  }
+
+  if (command === 'review_close_day') {
+    return { closedAt: new Date().toISOString(), tomorrowNote: payload?.tomorrowNote ?? null } as T;
+  }
+
+  if (command === 'review_move_open') {
+    return { movedCount: 2 } as T;
+  }
+
+  if (command === 'review_archive') {
+    return { archivedCount: 2 } as T;
+  }
+
+  if (command === 'plan_block') {
+    return { id: payload?.planId, blocked: true } as T;
+  }
+
+  if (command === 'plan_alternatives') {
+    return { alternatives: ['Alt A', 'Alt B'] } as T;
+  }
+
+  if (command === 'plan_split') {
+    return { subPlans: [{ id: 'mock-sub-1', title: 'Part 1' }, { id: 'mock-sub-2', title: 'Part 2' }] } as T;
+  }
+
   throw new Error(`No mock available for command: ${command}`);
 }
 
@@ -473,4 +513,44 @@ export async function getUXHealth(): Promise<HealthCheckResult[]> {
 
   const payload = await response.json() as unknown;
   return Array.isArray(payload) ? payload as HealthCheckResult[] : [];
+}
+
+export async function makePlanFromCapture(captureId: string, title: string): Promise<{ id: string }> {
+  return invokeOrMock<{ id: string }>('plan_from_capture', { captureId, title });
+}
+
+export async function saveAsNote(captureId: string, title: string): Promise<{ id: string }> {
+  return invokeOrMock<{ id: string }>('note_create', { captureId, title });
+}
+
+export async function deferInboxItem(captureId: string): Promise<{ id: string; deferred: boolean }> {
+  return invokeOrMock<{ id: string; deferred: boolean }>('inbox_defer', { captureId });
+}
+
+export async function deleteInboxItem(captureId: string): Promise<{ id: string; deleted: boolean }> {
+  return invokeOrMock<{ id: string; deleted: boolean }>('inbox_delete', { captureId });
+}
+
+export async function closeDay(tomorrowNote?: string): Promise<{ closedAt: string; tomorrowNote: string | null }> {
+  return invokeOrMock<{ closedAt: string; tomorrowNote: string | null }>('review_close_day', { tomorrowNote });
+}
+
+export async function moveAllOpenToTomorrow(): Promise<{ movedCount: number }> {
+  return invokeOrMock<{ movedCount: number }>('review_move_open');
+}
+
+export async function archiveCompleted(): Promise<{ archivedCount: number }> {
+  return invokeOrMock<{ archivedCount: number }>('review_archive');
+}
+
+export async function markPlanBlocked(planId: string, reason?: string): Promise<{ id: string; blocked: boolean }> {
+  return invokeOrMock<{ id: string; blocked: boolean }>('plan_block', { planId, reason });
+}
+
+export async function requestPlanAlternatives(planId: string): Promise<{ alternatives: string[] }> {
+  return invokeOrMock<{ alternatives: string[] }>('plan_alternatives', { planId });
+}
+
+export async function splitPlan(planId: string): Promise<{ subPlans: Array<{ id: string; title: string }> }> {
+  return invokeOrMock<{ subPlans: Array<{ id: string; title: string }> }>('plan_split', { planId });
 }

@@ -42,3 +42,14 @@ export const PlanningSuggestionSchema = z.object({
   actions: z.array(z.string().min(1)).min(1),
 });
 export type PlanningSuggestion = z.infer<typeof PlanningSuggestionSchema>;
+
+export const PlanBlockedRequestSchema = z.object({
+  planId: z.string().min(1),
+  reason: z.string().min(1).optional(),
+});
+export type PlanBlockedRequest = z.infer<typeof PlanBlockedRequestSchema>;
+
+export const PlanAlternativesResponseSchema = z.object({
+  alternatives: z.array(z.string().min(1)),
+});
+export type PlanAlternativesResponse = z.infer<typeof PlanAlternativesResponseSchema>;

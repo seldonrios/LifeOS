@@ -25,9 +25,19 @@ type RpcCommand =
   | 'inbox_list'
   | 'task_create'
   | 'reminder_schedule'
+  | 'plan_from_capture'
+  | 'note_create'
+  | 'inbox_defer'
+  | 'inbox_delete'
   | 'task_list'
   | 'task_complete'
   | 'review_daily'
+  | 'review_close_day'
+  | 'review_move_open'
+  | 'review_archive'
+  | 'plan_block'
+  | 'plan_alternatives'
+  | 'plan_split'
   | 'modules_list'
   | 'module_enable'
   | 'module_disable'
@@ -126,9 +136,19 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'inbox_list',
   'task_create',
   'reminder_schedule',
+  'plan_from_capture',
+  'note_create',
+  'inbox_defer',
+  'inbox_delete',
   'task_list',
   'task_complete',
   'review_daily',
+  'review_close_day',
+  'review_move_open',
+  'review_archive',
+  'plan_block',
+  'plan_alternatives',
+  'plan_split',
   'modules_list',
   'module_enable',
   'module_disable',
@@ -222,6 +242,55 @@ function normalizeCaptureId(value: unknown): string {
     throw new Error('Invalid capture id.');
   }
   return captureId;
+}
+
+function normalizePlanId(value: unknown): string {
+  const planId = String(value ?? '').trim();
+  if (!planId || planId.length > MAX_MODULE_ID_LENGTH || /[^a-zA-Z0-9._:-]/.test(planId)) {
+    throw new Error('Invalid plan id.');
+  }
+  return planId;
+}
+
+function normalizeTitle(value: unknown): string {
+  const title = String(value ?? '').trim();
+  if (!title) {
+    throw new Error('Title is required.');
+  }
+  if (title.length > MAX_GOAL_LENGTH) {
+    throw new Error(`Title exceeds ${MAX_GOAL_LENGTH} characters.`);
+  }
+  return title;
+}
+
+function normalizeOptionalReason(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const reason = String(value).trim();
+  if (!reason) {
+    throw new Error('Reason cannot be empty.');
+  }
+  if (reason.length > MAX_GOAL_LENGTH) {
+    throw new Error(`Reason exceeds ${MAX_GOAL_LENGTH} characters.`);
+  }
+  return reason;
+}
+
+function normalizeOptionalTomorrowNote(value: unknown): string | undefined {
+  if (value === undefined || value === null) {
+    return undefined;
+  }
+
+  const note = String(value).trim();
+  if (!note) {
+    throw new Error('Tomorrow note cannot be empty.');
+  }
+  if (note.length > MAX_GOAL_LENGTH) {
+    throw new Error(`Tomorrow note exceeds ${MAX_GOAL_LENGTH} characters.`);
+  }
+  return note;
 }
 
 function reminderScheduleAtIso(): string {
@@ -807,6 +876,28 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       return { id: reminder.id };
     }
 
+    case 'plan_from_capture': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      normalizeTitle(request.args?.title);
+      return { id: `mock-plan-${captureId}` };
+    }
+
+    case 'note_create': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      normalizeTitle(request.args?.title);
+      return { id: `mock-note-${captureId}` };
+    }
+
+    case 'inbox_defer': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      return { id: captureId, deferred: true };
+    }
+
+    case 'inbox_delete': {
+      const captureId = normalizeCaptureId(request.args?.captureId);
+      return { id: captureId, deleted: true };
+    }
+
     case 'task_list': {
       const output = await runCapture((dependencies) =>
         runTaskCommand(
@@ -862,6 +953,43 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       }
       const result = parseJsonOutput<{ loopSummary?: unknown }>(output.stdout);
       return result.loopSummary;
+    }
+
+    case 'review_close_day': {
+      const tomorrowNote = normalizeOptionalTomorrowNote(request.args?.tomorrowNote);
+      return {
+        closedAt: new Date().toISOString(),
+        tomorrowNote: tomorrowNote ?? null,
+      };
+    }
+
+    case 'review_move_open': {
+      return { movedCount: 2 };
+    }
+
+    case 'review_archive': {
+      return { archivedCount: 2 };
+    }
+
+    case 'plan_block': {
+      const planId = normalizePlanId(request.args?.planId);
+      normalizeOptionalReason(request.args?.reason);
+      return { id: planId, blocked: true };
+    }
+
+    case 'plan_alternatives': {
+      normalizePlanId(request.args?.planId);
+      return { alternatives: ['Alt A', 'Alt B'] };
+    }
+
+    case 'plan_split': {
+      normalizePlanId(request.args?.planId);
+      return {
+        subPlans: [
+          { id: 'mock-sub-1', title: 'Part 1' },
+          { id: 'mock-sub-2', title: 'Part 2' },
+        ],
+      };
     }
 
     case 'modules_list': {
