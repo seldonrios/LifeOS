@@ -236,6 +236,7 @@ export interface CaptureCommandOptions {
 }
 export interface InboxCommandOptions {
   action: 'list' | 'triage';
+  includeAllCaptures?: boolean;
   captureId?: string;
   triageAction?: 'task' | 'note' | 'defer';
   tag?: string[];

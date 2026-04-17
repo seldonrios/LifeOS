@@ -13,11 +13,13 @@ export {
   CaptureRequestSchema,
   CaptureStatusSchema,
   CaptureResultSchema,
+  CaptureListItemSchema,
   type CaptureType,
   type CaptureRequest,
   type CaptureRequestMetadata,
   type CaptureStatus,
   type CaptureResult,
+  type CaptureListItem,
 } from './capture';
 
 export {

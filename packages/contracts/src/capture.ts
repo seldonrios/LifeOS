@@ -40,3 +40,14 @@ export const CaptureResultSchema = z.object({
   error: z.string().min(1).optional(),
 });
 export type CaptureResult = z.infer<typeof CaptureResultSchema>;
+
+export const CaptureListItemSchema = z.object({
+  id: z.string().min(1),
+  content: z.string().min(1),
+  type: z.string().min(1),
+  capturedAt: z.string().min(1),
+  source: z.string().min(1),
+  tags: z.array(z.string()),
+  status: z.string().min(1),
+});
+export type CaptureListItem = z.infer<typeof CaptureListItemSchema>;

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 
 import {
+  type CaptureListItem,
   CaptureRequestSchema,
   CaptureResultSchema,
   HouseholdVoiceCaptureCreatedSchema,
@@ -30,6 +31,17 @@ interface CaptureLifeGraphClient {
       targetHint?: 'shopping' | 'chore' | 'reminder' | 'note' | 'unknown';
     };
   }): Promise<void>;
+  loadGraph(): Promise<{
+    captureEntries?: Array<{
+      id: string;
+      content: string;
+      type: string;
+      capturedAt: string;
+      source: string;
+      tags: string[];
+      status: string;
+    }>;
+  }>;
 }
 
 async function publishHouseholdEvent<T extends Record<string, unknown>>(
@@ -76,6 +88,41 @@ export function registerCaptureRoutes(
   eventBus: ManagedEventBus,
   lifeGraph: CaptureLifeGraphClient,
 ): void {
+  app.get('/api/captures', async (request, reply) => {
+    const callerUserId = await extractCallerUserId(request);
+    if (!callerUserId) {
+      reply.status(401).send({ error: 'Unauthorized' });
+      return;
+    }
+
+    const queryString = request.url.includes('?') ? request.url.slice(request.url.indexOf('?') + 1) : '';
+    const queryParams = new URLSearchParams(queryString);
+
+    const q = queryParams.get('q')?.trim() ?? '';
+    const limitParam = queryParams.get('limit');
+    const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : Number.NaN;
+    const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+
+    const graph = await lifeGraph.loadGraph();
+    const entries = graph.captureEntries ?? [];
+
+    const filtered = q
+      ? entries.filter((entry) => entry.content.toLowerCase().includes(q.toLowerCase()))
+      : entries;
+
+    const results: CaptureListItem[] = filtered.slice(0, limit).map((entry) => ({
+      id: entry.id,
+      content: entry.content,
+      capturedAt: entry.capturedAt,
+      type: entry.type,
+      source: entry.source,
+      tags: entry.tags,
+      status: entry.status,
+    }));
+
+    reply.status(200).send(results);
+  });
+
   app.post('/api/capture', async (request, reply) => {
     try {
       const callerUserId = await extractCallerUserId(request);

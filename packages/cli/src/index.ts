@@ -4755,13 +4755,14 @@ export async function runInboxCommand(
   try {
     if (options.action === 'list') {
       const graph = await client.loadGraph();
-      const pendingCaptures = (graph.captureEntries ?? []).filter(
-        (entry) => entry.status === 'pending',
-      );
+      const allCaptures = graph.captureEntries ?? [];
+      const captures = options.includeAllCaptures
+        ? allCaptures
+        : allCaptures.filter((entry) => entry.status === 'pending');
 
       if (options.outputJson) {
-        writeStdout(`${JSON.stringify(pendingCaptures, null, 2)}\n`);
-      } else if (pendingCaptures.length === 0) {
+        writeStdout(`${JSON.stringify(captures, null, 2)}\n`);
+      } else if (captures.length === 0) {
         writeStdout(`${chalk.green('✓ Inbox is clear')}\n`);
       } else {
         const table = new Table({
@@ -4773,7 +4774,7 @@ export async function runInboxCommand(
         const truncateContent = (content: string): string =>
           content.length > 50 ? `${content.slice(0, 47)}...` : content;
 
-        for (const entry of pendingCaptures) {
+        for (const entry of captures) {
           table.push([entry.id.slice(0, 8), truncateContent(entry.content), entry.capturedAt]);
         }
 

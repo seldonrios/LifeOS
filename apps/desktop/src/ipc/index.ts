@@ -53,6 +53,22 @@ export interface CaptureInput {
   text: string;
 }
 
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  capturedAt: string;
+  type: string;
+  tags: string[];
+}
+
+export interface IntegrationStatus {
+  id: string;
+  label: string;
+  connected: boolean;
+  expiresAt: string | null;
+  cliCommand: string;
+}
+
 export interface ModuleRow {
   id: string;
   tier: string;
@@ -264,6 +280,51 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       modules: [],
       recentDecisions: [],
     } as T;
+  }
+
+  if (command === 'memory_list') {
+    return [
+      {
+        id: 'memory-typed-1',
+        content: 'Remember to pick up compost bags from the hardware store this weekend.',
+        capturedAt: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+        type: 'text',
+        tags: ['household', 'shopping'],
+      },
+      {
+        id: 'memory-voice-1',
+        content: 'Voice note: ask Alex about rescheduling the Thursday dentist appointment.',
+        capturedAt: new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString(),
+        type: 'voice',
+        tags: ['health', 'follow-up'],
+      },
+      {
+        id: 'memory-note-1',
+        content: 'Plan spring garden prep: seed trays, soil refresh, and watering schedule.',
+        capturedAt: new Date(Date.now() - 27 * 60 * 60 * 1000).toISOString(),
+        type: 'note',
+        tags: ['homesteading', 'planning'],
+      },
+    ] as T;
+  }
+
+  if (command === 'integrations_status') {
+    return [
+      {
+        id: 'google',
+        label: 'Google',
+        connected: true,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        cliCommand: 'lifeos module authorize google-bridge',
+      },
+      {
+        id: 'home-assistant',
+        label: 'Home Assistant',
+        connected: false,
+        expiresAt: null,
+        cliCommand: 'lifeos module authorize home-state',
+      },
+    ] as T;
   }
 
   if (command === 'task_complete') {
@@ -487,6 +548,20 @@ export async function createCapture(text: string): Promise<{ id: string }> {
 
 export async function listInboxItems(): Promise<InboxItem[]> {
   return invokeOrMock<InboxItem[]>('inbox_list');
+}
+
+export async function listMemory(limit?: number): Promise<MemoryEntry[]> {
+  return invokeOrMock<MemoryEntry[]>('memory_list', { limit: limit ?? 50 });
+}
+
+export async function searchMemory(query: string): Promise<MemoryEntry[]> {
+  const entries = await listMemory();
+  const loweredQuery = query.toLowerCase();
+  return entries.filter((entry) => entry.content.toLowerCase().includes(loweredQuery));
+}
+
+export async function listIntegrations(): Promise<IntegrationStatus[]> {
+  return invokeOrMock<IntegrationStatus[]>('integrations_status', {});
 }
 
 export async function listGoals(): Promise<GoalSummary[]> {

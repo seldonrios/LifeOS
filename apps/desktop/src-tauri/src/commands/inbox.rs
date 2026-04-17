@@ -4,6 +4,16 @@ fn inbox_list_payload() -> serde_json::Value {
     json!({})
 }
 
+fn memory_list_payload(limit: Option<u32>) -> serde_json::Value {
+    json!({
+        "limit": limit.unwrap_or(50),
+    })
+}
+
+fn integrations_status_payload() -> serde_json::Value {
+    json!({})
+}
+
 fn task_create_payload(capture_id: String, title: String) -> serde_json::Value {
     json!({
         "captureId": capture_id,
@@ -50,6 +60,16 @@ pub async fn inbox_list() -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
+pub async fn memory_list(limit: Option<u32>) -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("memory_list", memory_list_payload(limit))
+}
+
+#[tauri::command]
+pub async fn integrations_status() -> Result<serde_json::Value, String> {
+    crate::sidecar::invoke_sidecar("integrations_status", integrations_status_payload())
+}
+
+#[tauri::command]
 pub async fn task_create(capture_id: String, title: String) -> Result<serde_json::Value, String> {
     crate::sidecar::invoke_sidecar("task_create", task_create_payload(capture_id, title))
 }
@@ -91,13 +111,33 @@ pub async fn inbox_delete(capture_id: String) -> Result<serde_json::Value, Strin
 #[cfg(test)]
 mod tests {
     use super::{
-        inbox_defer_payload, inbox_delete_payload, inbox_list_payload, note_create_payload,
-        plan_from_capture_payload, reminder_schedule_payload, task_create_payload,
+        inbox_defer_payload, inbox_delete_payload, inbox_list_payload, integrations_status_payload,
+        memory_list_payload, note_create_payload, plan_from_capture_payload,
+        reminder_schedule_payload, task_create_payload,
     };
 
     #[test]
     fn inbox_list_payload_is_empty_object() {
         let payload = inbox_list_payload();
+        assert!(payload.as_object().is_some());
+        assert_eq!(payload.as_object().map(|value| value.len()), Some(0));
+    }
+
+    #[test]
+    fn memory_list_payload_defaults_limit_to_fifty() {
+        let payload = memory_list_payload(None);
+        assert_eq!(payload["limit"], 50);
+    }
+
+    #[test]
+    fn memory_list_payload_uses_provided_limit() {
+        let payload = memory_list_payload(Some(120));
+        assert_eq!(payload["limit"], 120);
+    }
+
+    #[test]
+    fn integrations_status_payload_is_empty_object() {
+        let payload = integrations_status_payload();
         assert!(payload.as_object().is_some());
         assert_eq!(payload.as_object().map(|value| value.len()), Some(0));
     }

@@ -5,8 +5,8 @@ use commands::capture::capture_create;
 use commands::goal::{goal_list, goal_run, task_complete, task_list};
 use commands::graph::graph_summary;
 use commands::inbox::{
-    inbox_defer, inbox_delete, inbox_list, note_create, plan_from_capture, reminder_schedule,
-    task_create,
+    inbox_defer, inbox_delete, inbox_list, integrations_status, memory_list, note_create,
+    plan_from_capture, reminder_schedule, task_create,
 };
 use commands::marketplace::marketplace_list;
 use commands::modules::{module_disable, module_enable, modules_list};
@@ -26,6 +26,8 @@ pub fn run() {
             goal_run,
             capture_create,
             inbox_list,
+            memory_list,
+            integrations_status,
             task_create,
             reminder_schedule,
             plan_from_capture,

@@ -45,7 +45,9 @@ type RpcCommand =
   | 'settings_read'
   | 'settings_write'
   | 'settings_models'
-  | 'trust_status';
+  | 'trust_status'
+  | 'memory_list'
+  | 'integrations_status';
 
 interface RpcRequest {
   id?: string;
@@ -73,6 +75,14 @@ interface CaptureListItem {
   source?: string;
   status?: string;
   tags?: string[];
+}
+
+interface IntegrationStatusRow {
+  id: string;
+  label: string;
+  connected: boolean;
+  expiresAt: string | null;
+  cliCommand: string;
 }
 
 interface ModulePermissionSummary {
@@ -157,6 +167,8 @@ const VALID_COMMANDS: ReadonlySet<RpcCommand> = new Set([
   'settings_write',
   'settings_models',
   'trust_status',
+  'memory_list',
+  'integrations_status',
 ]);
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> {
@@ -805,6 +817,32 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
       return mapCaptureRowsToInboxItems(rows);
     }
 
+    case 'memory_list': {
+      const limitRaw = request.args?.limit;
+      const limit = limitRaw === undefined ? 50 : Number(limitRaw);
+      if (!Number.isInteger(limit) || limit <= 0 || limit > 200) {
+        throw new Error('Limit must be a positive integer less than or equal to 200.');
+      }
+
+      const output = await runCapture((dependencies) =>
+        runInboxCommand(
+          {
+            action: 'list',
+            includeAllCaptures: true,
+            outputJson: true,
+            graphPath: '',
+          },
+          dependencies,
+        ),
+      );
+      if (output.exitCode !== 0) {
+        throw new Error(output.stderr || 'memory_list failed');
+      }
+
+      const rows = parseJsonOutput<CaptureListItem[]>(output.stdout);
+      return rows.slice(0, limit);
+    }
+
     case 'task_create': {
       const captureId = normalizeCaptureId(request.args?.captureId);
       const output = await runCapture((dependencies) =>
@@ -1106,6 +1144,48 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         throw new Error(output.stderr || 'trust_status failed');
       }
       return parseJsonOutput(output.stdout);
+    }
+
+    case 'integrations_status': {
+      const googleTokenPath = join(homedir(), '.lifeos', 'secrets', 'google.json');
+      let googleConnected = false;
+      let googleExpiresAt: string | null = null;
+
+      try {
+        const raw = await readFile(googleTokenPath, 'utf8');
+        const parsed = JSON.parse(raw) as { expiry_date?: unknown };
+        const expiryDateMs =
+          typeof parsed.expiry_date === 'number'
+            ? parsed.expiry_date
+            : Number(parsed.expiry_date);
+
+        if (Number.isFinite(expiryDateMs) && expiryDateMs > Date.now()) {
+          googleConnected = true;
+          googleExpiresAt = new Date(expiryDateMs).toISOString();
+        }
+      } catch {
+        googleConnected = false;
+        googleExpiresAt = null;
+      }
+
+      const integrations: IntegrationStatusRow[] = [
+        {
+          id: 'google',
+          label: 'Google',
+          connected: googleConnected,
+          expiresAt: googleExpiresAt,
+          cliCommand: 'lifeos module authorize google-bridge',
+        },
+        {
+          id: 'home-assistant',
+          label: 'Home Assistant',
+          connected: false,
+          expiresAt: null,
+          cliCommand: 'lifeos module authorize home-state',
+        },
+      ];
+
+      return integrations;
     }
 
     default:

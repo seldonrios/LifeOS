@@ -9,6 +9,7 @@ import type {
   DeviceInfo,
   CaptureRequest,
   CaptureResult,
+  CaptureListItem,
   TimelineEntry,
   GoalSummary,
   PushTokenRegistration,
@@ -103,10 +104,19 @@ class CaptureNamespace {
     return response.data;
   }
 
-  async search(query: string): Promise<CaptureResult[]> {
-    void this.config;
-    void query;
-    return [];
+  async search(query: string): Promise<CaptureListItem[]> {
+    const trimmedQuery = query.trim();
+    const querySuffix = trimmedQuery.length > 0 ? `?q=${encodeURIComponent(trimmedQuery)}` : '';
+    const response = await sendHttpRequest<CaptureListItem[]>(
+      {
+        url: `${this.config.baseUrl}/api/captures${querySuffix}`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
   }
 }
 

@@ -36,6 +36,8 @@ const ALLOWED_SIDECAR_COMMANDS: &[&str] = &[
     "settings_write",
     "settings_models",
     "trust_status",
+    "memory_list",
+    "integrations_status",
 ];
 
 fn sidecar_error(code: &str, detail: impl AsRef<str>) -> String {
@@ -255,6 +257,15 @@ mod tests {
             "plan_alternatives",
             "plan_split",
         ];
+
+        for command in expected {
+            assert!(ALLOWED_SIDECAR_COMMANDS.contains(&command));
+        }
+    }
+
+    #[test]
+    fn allowlist_includes_rg1_commands() {
+        let expected = ["memory_list", "integrations_status"];
 
         for command in expected {
             assert!(ALLOWED_SIDECAR_COMMANDS.contains(&command));
