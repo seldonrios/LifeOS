@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { InboxItem } from '@lifeos/contracts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FeatureTour } from '../components/FeatureTour';
+import { usePageTour } from '../hooks/usePageTour';
 import { createTask, listInboxItems, scheduleReminder } from '../ipc';
+import { inboxTourSteps } from '../tours';
 
 type InboxTab = 'all' | 'needs-triage' | 'converted' | 'deferred';
 
@@ -42,6 +45,8 @@ function typeBadgeLabel(item: InboxItem): string {
 interface InboxCardProps {
   item: InboxItem;
   isPending: boolean;
+  badgeId?: string;
+  badgeDescribedBy?: string;
   onMakeTask: (item: InboxItem) => void;
   onScheduleReminder: (item: InboxItem) => void;
   onMakePlan: (item: InboxItem) => void;
@@ -53,6 +58,8 @@ interface InboxCardProps {
 function InboxCard({
   item,
   isPending,
+  badgeId,
+  badgeDescribedBy,
   onMakeTask,
   onScheduleReminder,
   onMakePlan,
@@ -68,7 +75,9 @@ function InboxCard({
       <div className="inbox-card-body">
         <p className="card-text">{item.title}</p>
         <div className="card-meta">
-          <span className="badge">{typeBadgeLabel(item)}</span>
+          <span className="badge" id={badgeId} aria-describedby={badgeDescribedBy}>
+            {typeBadgeLabel(item)}
+          </span>
           <span className="muted">{timeAgo(item.createdAt)}</span>
         </div>
         <div className="inbox-actions-row">
@@ -101,7 +110,11 @@ function InboxCard({
   );
 }
 
-export function Inbox(): JSX.Element {
+interface Props {
+  onResetTour?: (resetTour: (() => void) | null) => void;
+}
+
+export function Inbox({ onResetTour }: Props): JSX.Element {
   const [activeTab, setActiveTab] = useState<InboxTab>('all');
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -110,6 +123,15 @@ export function Inbox(): JSX.Element {
 
   const inboxQuery = useQuery({ queryKey: ['inbox'], queryFn: listInboxItems });
   const items = inboxQuery.data ?? [];
+  const { tourActive, currentStep, advance, dismiss, reset } = usePageTour(
+    'inbox',
+    !inboxQuery.isPending && !inboxQuery.isError && items.length > 0,
+  );
+
+  useEffect(() => {
+    onResetTour?.(reset);
+    return () => onResetTour?.(null);
+  }, [onResetTour, reset]);
 
   const setTransientMessage = (message: string): void => {
     setActionMessage(message);
@@ -175,7 +197,11 @@ export function Inbox(): JSX.Element {
 
   return (
     <div className="screen-grid">
-      <div className="inbox-tabs">
+      <div
+        className="inbox-tabs"
+        id="inbox-header"
+        aria-describedby={tourActive && currentStep === 0 ? `coachmark-${currentStep + 1}` : undefined}
+      >
         {(
           [
             { id: 'all', label: 'All' },
@@ -195,7 +221,11 @@ export function Inbox(): JSX.Element {
         ))}
       </div>
 
-      <div className="batch-bar card">
+      <div
+        className="batch-bar card"
+        id="inbox-batch-bar"
+        aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
+      >
         <span>Triage mode: review 5 at a time</span>
         <button
           className="ghost-btn"
@@ -239,11 +269,13 @@ export function Inbox(): JSX.Element {
         </div>
       )}
 
-      {filteredItems.map((item) => (
+      {filteredItems.map((item, index) => (
         <InboxCard
           key={item.id}
           item={item}
           isPending={pendingActionId === item.id}
+          badgeId={index === 0 ? 'inbox-type-badge' : undefined}
+          badgeDescribedBy={tourActive && currentStep === 1 && index === 0 ? `coachmark-${currentStep + 1}` : undefined}
           onMakeTask={handleMakeTask}
           onScheduleReminder={handleScheduleReminder}
           onMakePlan={() => handleStubAction('make plan')}
@@ -252,6 +284,13 @@ export function Inbox(): JSX.Element {
           onDelete={() => handleStubAction('delete')}
         />
       ))}
+      <FeatureTour
+        steps={inboxTourSteps}
+        tourActive={tourActive}
+        currentStep={currentStep}
+        onAdvance={advance}
+        onSkip={dismiss}
+      />
     </div>
   );
 }

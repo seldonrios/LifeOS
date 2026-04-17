@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { HelpPanel } from './components/HelpPanel';
 import { QuickCaptureOverlay } from './components/QuickCaptureOverlay';
@@ -52,6 +52,7 @@ export function App(): JSX.Element {
   const [activeScreen, setActiveScreen] = useState<ScreenId>('today');
   const [captureOpen, setCaptureOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const resetTourRef = useRef<(() => void) | null>(null);
   const { isFirstRun, markComplete, resetOnboarding } = useFirstRun();
   const graphQuery = useGraph();
   const { modulesQuery } = useModules();
@@ -140,7 +141,11 @@ export function App(): JSX.Element {
           lastSyncLabel={lastSyncLabel}
         />
 
-        <main className="screen-area">{renderScreen(activeScreen, setActiveScreen)}</main>
+        <main className="screen-area">
+          {renderScreen(activeScreen, setActiveScreen, (resetTour) => {
+            resetTourRef.current = resetTour;
+          })}
+        </main>
 
         <StatusBar model={activeModel} graphSummary={graphSummary} modulesSummary={modulesSummary} />
       </div>
@@ -150,6 +155,9 @@ export function App(): JSX.Element {
         open={helpOpen}
         onClose={() => setHelpOpen(false)}
         activeScreen={activeScreen}
+        onShowWalkthrough={() => {
+          resetTourRef.current?.();
+        }}
         onReplayOnboarding={() => {
           resetOnboarding();
           setHelpOpen(false);
@@ -165,24 +173,31 @@ export function App(): JSX.Element {
   );
 }
 
-function renderScreen(screen: ScreenId, onNavigate: (screen: ScreenId) => void): JSX.Element {
+function renderScreen(
+  screen: ScreenId,
+  onNavigate: (screen: ScreenId) => void,
+  onResetTour: (resetTour: (() => void) | null) => void,
+): JSX.Element {
   if (screen === 'today') {
-    return <Today onNavigate={onNavigate} />;
+    return <Today onNavigate={onNavigate} onResetTour={onResetTour} />;
   }
   if (screen === 'inbox') {
-    return <Inbox />;
+    return <Inbox onResetTour={onResetTour} />;
   }
   if (screen === 'plans') {
-    return <Plans />;
+    return <Plans onResetTour={onResetTour} />;
   }
   if (screen === 'review') {
-    return <Review />;
+    return <Review onResetTour={onResetTour} />;
   }
   if (screen === 'memory') {
+    onResetTour(null);
     return <Memory />;
   }
   if (screen === 'integrations') {
+    onResetTour(null);
     return <Integrations />;
   }
+  onResetTour(null);
   return <Settings />;
 }

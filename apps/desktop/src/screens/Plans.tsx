@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { GoalSummary } from '@lifeos/contracts';
 import { useQuery } from '@tanstack/react-query';
+import { FeatureTour } from '../components/FeatureTour';
 import { useGoal } from '../hooks/useGoal';
+import { usePageTour } from '../hooks/usePageTour';
 import { listGoals, readSettings } from '../ipc';
+import { plansTourSteps } from '../tours';
 
 type PlanTab = 'active' | 'waiting' | 'done' | 'stalled';
 
@@ -75,13 +78,22 @@ function PlanItem({ plan, isActive, onClick }: PlanItemProps): JSX.Element {
   );
 }
 
-export function Plans(): JSX.Element {
+interface Props {
+  onResetTour?: (resetTour: (() => void) | null) => void;
+}
+
+export function Plans({ onResetTour }: Props): JSX.Element {
   const [activeTab, setActiveTab] = useState<PlanTab>('active');
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
 
   const goalsQuery = useQuery({ queryKey: ['goals'], queryFn: listGoals });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings, staleTime: 30_000 });
   const goalMutation = useGoal();
+  const hasTourData = (goalsQuery.data ?? []).some((plan) => isPlanActiveForDate(plan, new Date()));
+  const { tourActive, currentStep, advance, dismiss, reset } = usePageTour(
+    'plans',
+    !goalsQuery.isLoading && !goalsQuery.isError && hasTourData,
+  );
 
   const model = settingsQuery.data?.model ?? 'llama3.1:8b';
   const allGoals = goalsQuery.data ?? [];
@@ -109,6 +121,11 @@ export function Plans(): JSX.Element {
     { id: 'stalled', label: 'Stalled' },
   ];
 
+  useEffect(() => {
+    onResetTour?.(reset);
+    return () => onResetTour?.(null);
+  }, [onResetTour, reset]);
+
   if (goalsQuery.isError) {
     return (
       <section className="card card-wide">
@@ -127,7 +144,11 @@ export function Plans(): JSX.Element {
   return (
     <div className="plans-layout">
       {/* List pane */}
-      <div className="plans-list-pane">
+      <div
+        className="plans-list-pane"
+        id="plans-list-pane"
+        aria-describedby={tourActive && currentStep === 0 ? `coachmark-${currentStep + 1}` : undefined}
+      >
         <h2 style={{ margin: '0 0 16px', fontSize: '16px', fontWeight: 600 }}>Plans</h2>
         <div className="tab-row" style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '16px' }}>
           {tabs.map((tab) => (
@@ -165,6 +186,24 @@ export function Plans(): JSX.Element {
           <section className="card card-wide empty-state">
             <h3>No active plans yet.</h3>
             <div style={{ display: 'flex', gap: '10px', marginTop: '12px' }}>
+              <button
+                id="plans-generate-btn"
+                className="primary-btn"
+                type="button"
+                disabled
+                aria-describedby={tourActive && currentStep === 1 ? `coachmark-${currentStep + 1}` : undefined}
+              >
+                Generate steps
+              </button>
+              <button
+                id="plans-blocked-btn"
+                className="ghost-btn"
+                type="button"
+                disabled
+                aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
+              >
+                Mark blocked
+              </button>
               <button
                 className="primary-btn"
                 type="button"
@@ -215,9 +254,11 @@ export function Plans(): JSX.Element {
 
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '24px' }}>
               <button
+                id="plans-generate-btn"
                 className="primary-btn"
                 type="button"
                 disabled={goalMutation.isPending}
+                aria-describedby={tourActive && currentStep === 1 ? `coachmark-${currentStep + 1}` : undefined}
                 onClick={() => {
                   void goalMutation.mutateAsync({ goal: selectedPlan.title, model });
                 }}
@@ -232,8 +273,10 @@ export function Plans(): JSX.Element {
                 Reorder
               </button>
               <button
+                id="plans-blocked-btn"
                 className="ghost-btn"
                 type="button"
+                aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
                 onClick={() => { console.log('Coming soon: Mark blocked'); }}
               >
                 Mark blocked
@@ -255,6 +298,13 @@ export function Plans(): JSX.Element {
             </div>
           </>
         ) : null}
+        <FeatureTour
+          steps={plansTourSteps}
+          tourActive={tourActive}
+          currentStep={currentStep}
+          onAdvance={advance}
+          onSkip={dismiss}
+        />
       </div>
     </div>
   );

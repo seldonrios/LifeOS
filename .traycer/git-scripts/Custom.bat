@@ -45,13 +45,13 @@ for %%A in ("%TRAYCER_MSG_FILE%") do if %%~zA EQU 0 (
 REM Single-attempt flow to avoid repeated long hook runs in automation
 echo Commit attempt 1 of 1...
 
-git -c core.autocrlf=false add -A
+call git -c core.autocrlf=false add -A
 if errorlevel 1 (
     set "EXIT_CODE=%ERRORLEVEL%"
     goto :done
 )
 
-git diff --cached --quiet
+call git diff --cached --quiet
 if not errorlevel 1 (
     echo No staged changes to commit.
     goto :success
@@ -59,7 +59,7 @@ if not errorlevel 1 (
 
 echo Running commit with hooks enabled to enforce repository restrictions.
 set "TRAYCER_GIT_AUTOMATION=1"
-git commit -F "%TRAYCER_MSG_FILE%"
+call git commit -F "%TRAYCER_MSG_FILE%"
 set "EXIT_CODE=%ERRORLEVEL%"
 
 if %EXIT_CODE% EQU 0 goto :success

@@ -1,7 +1,10 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { FeatureTour } from '../components/FeatureTour';
+import { usePageTour } from '../hooks/usePageTour';
 import { createCapture, completeTask, getDailyReview, getGraphSummary, listTasks } from '../ipc';
+import { todayTourSteps } from '../tours';
 import type { ScreenId } from '../types';
 
 function getGreeting(): string {
@@ -14,9 +17,10 @@ function getGreeting(): string {
 
 interface Props {
   onNavigate: (screen: ScreenId) => void;
+  onResetTour?: (resetTour: (() => void) | null) => void;
 }
 
-export function Today({ onNavigate }: Props): JSX.Element {
+export function Today({ onNavigate, onResetTour }: Props): JSX.Element {
   const [captureText, setCaptureText] = useState('');
   const [captureConfirmed, setCaptureConfirmed] = useState(false);
   const captureRef = useRef<HTMLInputElement>(null);
@@ -52,8 +56,22 @@ export function Today({ onNavigate }: Props): JSX.Element {
     unacknowledgedReminders === 0 &&
     activeGoals.length === 0;
 
+  const { tourActive, currentStep, advance, dismiss, reset } = usePageTour(
+    'today',
+    hasResolvedTodayData && !isAllClear,
+  );
+
+  useEffect(() => {
+    onResetTour?.(reset);
+    return () => onResetTour?.(null);
+  }, [onResetTour, reset]);
+
   const greetingBlock = (
-    <div className="greeting-block">
+    <div
+      className="greeting-block"
+      id="today-greeting"
+      aria-describedby={tourActive && currentStep === 0 ? `coachmark-${currentStep + 1}` : undefined}
+    >
       <h2>{getGreeting()}</h2>
       <p className="summary-line">
         {tasks.length} priority items · {unacknowledgedReminders} reminders today ·{' '}
@@ -71,6 +89,7 @@ export function Today({ onNavigate }: Props): JSX.Element {
   const quickCapture = (
     <div className="card card-wide">
       <input
+        id="today-capture"
         ref={captureRef}
         className="capture-input"
         type="text"
@@ -80,6 +99,7 @@ export function Today({ onNavigate }: Props): JSX.Element {
         onChange={(e) => setCaptureText(e.target.value)}
         onKeyDown={handleCaptureKeyDown}
         aria-label="Quick capture"
+        aria-describedby={tourActive && currentStep === 1 ? `coachmark-${currentStep + 1}` : undefined}
       />
       {captureConfirmed && <span className="capture-confirm">Captured ✓</span>}
     </div>
@@ -116,7 +136,12 @@ export function Today({ onNavigate }: Props): JSX.Element {
             <button type="button" onClick={() => onNavigate('plans')}>
               Plan a goal
             </button>
-            <button type="button" onClick={() => onNavigate('review')}>
+            <button
+              id="today-review-link"
+              type="button"
+              onClick={() => onNavigate('review')}
+              aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
+            >
               Start a review
             </button>
           </div>
@@ -216,6 +241,24 @@ export function Today({ onNavigate }: Props): JSX.Element {
       {planCard}
       {remindersCard}
       {quickCapture}
+      <div className="card card-wide">
+        <button
+          id="today-review-link"
+          type="button"
+          className="ghost-btn"
+          onClick={() => onNavigate('review')}
+          aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
+        >
+          Start a review
+        </button>
+      </div>
+      <FeatureTour
+        steps={todayTourSteps}
+        tourActive={tourActive}
+        currentStep={currentStep}
+        onAdvance={advance}
+        onSkip={dismiss}
+      />
     </div>
   );
 }

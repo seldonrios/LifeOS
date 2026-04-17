@@ -1,10 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { FeatureTour } from '../components/FeatureTour';
+import { usePageTour } from '../hooks/usePageTour';
 import { getDailyReview } from '../ipc';
+import { reviewTourSteps } from '../tours';
 
 type ReviewTab = 'daily' | 'weekly';
 
-export function Review(): JSX.Element {
+interface Props {
+  onResetTour?: (resetTour: (() => void) | null) => void;
+}
+
+export function Review({ onResetTour }: Props): JSX.Element {
   const [activeTab, setActiveTab] = useState<ReviewTab>('daily');
   const [tomorrowNote, setTomorrowNote] = useState('');
   const reviewQuery = useQuery({ queryKey: ['daily-review'], queryFn: getDailyReview });
@@ -49,6 +56,16 @@ export function Review(): JSX.Element {
     reviewData.pendingCaptures === 0 &&
     reviewData.unacknowledgedReminders === 0;
 
+  const { tourActive, currentStep, advance, dismiss, reset } = usePageTour(
+    'review',
+    reviewQuery.isSuccess && !isEmpty,
+  );
+
+  useEffect(() => {
+    onResetTour?.(reset);
+    return () => onResetTour?.(null);
+  }, [onResetTour, reset]);
+
   if (isEmpty) {
     return (
       <div className="screen-grid">
@@ -70,7 +87,11 @@ export function Review(): JSX.Element {
 
   return (
     <div className="screen-grid">
-      <section className="card card-wide">
+      <section
+        className="card card-wide"
+        id="review-header"
+        aria-describedby={tourActive && currentStep === 0 ? `coachmark-${currentStep + 1}` : undefined}
+      >
         <h2 style={{ margin: 0 }}>Review</h2>
         <p className="muted" style={{ marginTop: '6px' }}>
           {subtitle}
@@ -164,10 +185,12 @@ export function Review(): JSX.Element {
           <section className="card card-wide" style={{ border: '1px solid #2d4a7a' }}>
             <p style={{ marginTop: 0 }}>What should matter tomorrow?</p>
             <textarea
+              id="review-tomorrow-note"
               value={tomorrowNote}
               onChange={(e) => setTomorrowNote(e.target.value)}
               placeholder="Add a note for tomorrow…"
               aria-label="Tomorrow note"
+              aria-describedby={tourActive && currentStep === 1 ? `coachmark-${currentStep + 1}` : undefined}
               rows={3}
               style={{ width: '100%', resize: 'vertical' }}
             />
@@ -175,8 +198,10 @@ export function Review(): JSX.Element {
 
           <div className="card card-wide" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <button
+              id="review-close-day"
               className="primary-btn"
               type="button"
+              aria-describedby={tourActive && currentStep === 2 ? `coachmark-${currentStep + 1}` : undefined}
               onClick={() => {
                 console.log('Coming soon: close day');
               }}
@@ -204,6 +229,13 @@ export function Review(): JSX.Element {
           </div>
         </>
       )}
+      <FeatureTour
+        steps={reviewTourSteps}
+        tourActive={tourActive}
+        currentStep={currentStep}
+        onAdvance={advance}
+        onSkip={dismiss}
+      />
     </div>
   );
 }

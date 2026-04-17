@@ -18,6 +18,9 @@ import {
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 import { ErrorBanner } from '../../components/ErrorBanner';
+import { MobileFeatureTour } from '../../components/MobileFeatureTour';
+import { usePageTour } from '../../hooks/usePageTour';
+import { mobileInboxTourSteps } from '../../lib/tours';
 import { queryClient } from '../../lib/query-client';
 import { sdk, completeAction } from '../../lib/sdk';
 
@@ -121,6 +124,10 @@ export default function InboxScreen() {
   });
 
   const items = useMemo(() => data ?? [], [data]);
+  const { tourActive, currentStep, advance, dismiss } = usePageTour(
+    'inbox',
+    !isLoading && !isError && items.length > 0,
+  );
   const filteredItems = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     if (!term) {
@@ -389,6 +396,13 @@ export default function InboxScreen() {
             </Text>
           </View>
         }
+      />
+      <MobileFeatureTour
+        steps={mobileInboxTourSteps}
+        tourActive={tourActive}
+        currentStep={currentStep}
+        onAdvance={advance}
+        onSkip={dismiss}
       />
     </SafeAreaView>
   );

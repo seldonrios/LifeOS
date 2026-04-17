@@ -6,6 +6,7 @@ interface HelpPanelProps {
   onClose: () => void;
   onReplayOnboarding: () => void;
   activeScreen: ScreenId;
+  onShowWalkthrough: () => void;
 }
 
 type HelpView = 'menu' | 'shortcuts' | 'about';
@@ -25,7 +26,13 @@ const ABOUT_SLIDES = [
   },
 ];
 
-export function HelpPanel({ open, onClose, onReplayOnboarding, activeScreen }: HelpPanelProps): JSX.Element | null {
+export function HelpPanel({
+  open,
+  onClose,
+  onReplayOnboarding,
+  activeScreen,
+  onShowWalkthrough,
+}: HelpPanelProps): JSX.Element | null {
   const [view, setView] = useState<HelpView>('menu');
   const [aboutSlide, setAboutSlide] = useState(0);
 
@@ -72,7 +79,8 @@ export function HelpPanel({ open, onClose, onReplayOnboarding, activeScreen }: H
               className="help-entry-btn"
               aria-label="Help"
               onClick={() => {
-                console.info('coachmarks armed for', activeScreen);
+                onShowWalkthrough();
+                onClose();
               }}
             >
               <span className="nav-icon" aria-hidden="true">◎</span>

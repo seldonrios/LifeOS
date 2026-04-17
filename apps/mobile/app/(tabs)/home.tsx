@@ -17,8 +17,11 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { HouseholdHomeView } from '../../components/HouseholdHomeView';
+import { MobileFeatureTour } from '../../components/MobileFeatureTour';
 import { sdk, getDailyReview } from '../../lib/sdk';
 import { useSessionStore } from '../../lib/session';
+import { mobileTodayTourSteps } from '../../lib/tours';
+import { usePageTour } from '../../hooks/usePageTour';
 
 type ReminderItemData = {
   actionId?: string;
@@ -138,6 +141,29 @@ export default function HomeScreen() {
   const unreadApprovalCount = useMemo(
     () => (inbox ?? []).filter((item) => item.type === 'approval' && !item.read).length,
     [inbox],
+  );
+
+  const hasReviewSignals =
+    (review?.pendingCaptures ?? 0) > 0 ||
+    (review?.actionsDueToday ?? 0) > 0 ||
+    (review?.unacknowledgedReminders ?? 0) > 0 ||
+    (review?.completedActions.length ?? 0) > 0;
+
+  const hasTourData =
+    openTasks.length > 0 ||
+    unreadApprovalCount > 0 ||
+    (goals ?? []).length > 0 ||
+    hasReviewSignals;
+
+  const { tourActive, currentStep, advance, dismiss } = usePageTour(
+    'today',
+    !isInboxLoading &&
+      !isGoalsLoading &&
+      !isReviewLoading &&
+      !isInboxError &&
+      !isGoalsError &&
+      !isReviewError &&
+      hasTourData,
   );
 
   useEffect(() => {
@@ -514,6 +540,13 @@ export default function HomeScreen() {
           <HouseholdHomeView householdId={householdId} />
         ) : null}
       </ScrollView>
+      <MobileFeatureTour
+        steps={mobileTodayTourSteps}
+        tourActive={tourActive}
+        currentStep={currentStep}
+        onAdvance={advance}
+        onSkip={dismiss}
+      />
     </SafeAreaView>
   );
 }

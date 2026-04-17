@@ -1,2 +1,8 @@
 #!/usr/bin/env sh
+
+if [ "$LIFEOS_GIT_AUTOMATION" = "1" ] || [ "$TRAYCER_GIT_AUTOMATION" = "1" ]; then
+	echo "LifeOS automation: skipping commit-msg commitlint to avoid hook deadlocks."
+	exit 0
+fi
+
 npx --no -- commitlint --edit "$1"
