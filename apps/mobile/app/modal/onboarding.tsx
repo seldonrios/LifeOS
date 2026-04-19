@@ -17,10 +17,15 @@ import { Audio } from 'expo-av';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
-import type { CaptureResult, HealthCheckResult } from '@lifeos/contracts';
+import type { CaptureResult } from '@lifeos/contracts';
 
 import { sdk } from '../../lib/sdk';
 import { markOnboardingComplete, ONBOARDING_COMPLETE_KEY, useSessionStore, SETUP_STYLE_KEY, USE_CASES_KEY, ASSISTANT_STYLE_KEY } from '../../lib/session';
+
+type RepairAction = {
+  label: string;
+  action: string;
+} | null;
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type SetupStyle = 'recommended' | 'private' | 'builder';
@@ -144,8 +149,8 @@ export default function OnboardingModal() {
   const [explainerSlide, setExplainerSlide] = useState<0 | 1 | 2>(0);
   const [modelProbeStatus, setModelProbeStatus] = useState<ProbeStatus>('loading');
   const [eventBusProbeStatus, setEventBusProbeStatus] = useState<ProbeStatus>('loading');
-  const [modelRepairAction, setModelRepairAction] = useState<HealthCheckResult['repairAction']>(null);
-  const [eventBusRepairAction, setEventBusRepairAction] = useState<HealthCheckResult['repairAction']>(null);
+  const [modelRepairAction, setModelRepairAction] = useState<RepairAction>(null);
+  const [eventBusRepairAction, setEventBusRepairAction] = useState<RepairAction>(null);
 
   useEffect(() => {
     if (step !== 7) {
@@ -218,6 +223,13 @@ export default function OnboardingModal() {
       }),
     [palette.accent.brand, palette.border.default, step],
   );
+
+  const currentExplainerSlide =
+    explainerSlides[explainerSlide] ??
+    ({
+      headline: 'Capture anything',
+      body: "A thought, task, reminder, or question. LifeOS holds it until you're ready to decide.",
+    } satisfies (typeof explainerSlides)[number]);
 
   const previewTitle = captureResult?.content || 'Review the note you just captured';
 
@@ -858,8 +870,8 @@ export default function OnboardingModal() {
               <Text style={[styles.explainerDismissText, { color: palette.text.secondary }]}>X</Text>
             </Pressable>
             <View style={styles.stepWrap}>
-              <Text style={[styles.title, { color: palette.text.primary }]}>{explainerSlides[explainerSlide].headline}</Text>
-              <Text style={[styles.bodyText, { color: palette.text.secondary }]}>{explainerSlides[explainerSlide].body}</Text>
+              <Text style={[styles.title, { color: palette.text.primary }]}>{currentExplainerSlide.headline}</Text>
+              <Text style={[styles.bodyText, { color: palette.text.secondary }]}>{currentExplainerSlide.body}</Text>
               <View style={styles.dotsRow}>
                 {[0, 1, 2].map((index) => (
                   <View

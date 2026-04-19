@@ -102,6 +102,9 @@ export function registerCaptureRoutes(
     const limitParam = queryParams.get('limit');
     const parsedLimit = limitParam ? Number.parseInt(limitParam, 10) : Number.NaN;
     const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 200) : 50;
+    const offsetParam = queryParams.get('offset');
+    const parsedOffset = offsetParam ? Number.parseInt(offsetParam, 10) : Number.NaN;
+    const offset = Number.isFinite(parsedOffset) && parsedOffset >= 0 ? parsedOffset : 0;
 
     const graph = await lifeGraph.loadGraph();
     const entries = graph.captureEntries ?? [];
@@ -110,7 +113,7 @@ export function registerCaptureRoutes(
       ? entries.filter((entry) => entry.content.toLowerCase().includes(q.toLowerCase()))
       : entries;
 
-    const results: CaptureListItem[] = filtered.slice(0, limit).map((entry) => ({
+    const results: CaptureListItem[] = filtered.slice(offset, offset + limit).map((entry) => ({
       id: entry.id,
       content: entry.content,
       capturedAt: entry.capturedAt,

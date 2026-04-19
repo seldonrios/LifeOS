@@ -3,6 +3,17 @@ import type { ReviewLoopSummary } from '@lifeos/contracts';
 import { LifeOSClient } from '@lifeos/sdk';
 import { sidecarGetDailyReview, sidecarCompleteAction } from './sidecar-bridge';
 
+type UxHealthCheckResult = {
+  key: 'storage' | 'model' | 'eventBus' | 'notifications' | 'sync' | 'auth';
+  status: 'pass' | 'warn' | 'fail';
+  title: string;
+  detail: string;
+  repairAction: {
+    label: string;
+    action: string;
+  } | null;
+};
+
 type HouseholdCaptureStatusResponse = {
   status: 'pending' | 'resolved' | 'unresolved';
   resolvedAction?: string;
@@ -108,6 +119,9 @@ type CalendarEventRow = {
 };
 
 type MobileSdkClient = LifeOSClient & {
+  ux: {
+    healthCheck(): Promise<UxHealthCheckResult[]>;
+  };
   household: {
     listMembers(householdId: string): Promise<HouseholdMemberRow[]>;
     createHousehold(name: string): Promise<HouseholdRow>;

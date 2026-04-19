@@ -22,6 +22,10 @@ import { sendHttpRequest } from './http';
 
 type HouseholdRole = 'Admin' | 'Adult' | 'Teen' | 'Child' | 'Guest';
 type ShoppingItemStatus = 'added' | 'in_cart' | 'purchased';
+type CaptureSearchOptions = {
+  limit?: number;
+  offset?: number;
+};
 type HouseholdCaptureStatusResponse = {
   status: 'pending' | 'resolved' | 'unresolved';
   resolvedAction?: string;
@@ -104,9 +108,23 @@ class CaptureNamespace {
     return response.data;
   }
 
-  async search(query: string): Promise<CaptureListItem[]> {
+  async search(query: string, options?: CaptureSearchOptions): Promise<CaptureListItem[]> {
     const trimmedQuery = query.trim();
-    const querySuffix = trimmedQuery.length > 0 ? `?q=${encodeURIComponent(trimmedQuery)}` : '';
+    const params = new URLSearchParams();
+
+    if (trimmedQuery.length > 0) {
+      params.set('q', trimmedQuery);
+    }
+
+    if (typeof options?.limit === 'number' && Number.isFinite(options.limit) && options.limit > 0) {
+      params.set('limit', String(Math.floor(options.limit)));
+    }
+
+    if (typeof options?.offset === 'number' && Number.isFinite(options.offset) && options.offset >= 0) {
+      params.set('offset', String(Math.floor(options.offset)));
+    }
+
+    const querySuffix = params.toString().length > 0 ? `?${params.toString()}` : '';
     const response = await sendHttpRequest<CaptureListItem[]>(
       {
         url: `${this.config.baseUrl}/api/captures${querySuffix}`,

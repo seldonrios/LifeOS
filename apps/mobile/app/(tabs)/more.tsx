@@ -14,7 +14,6 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 type MoreRow = {
   label: string;
   onPress: () => void;
-  comingSoon?: boolean;
 };
 
 export default function MoreScreen() {
@@ -29,23 +28,19 @@ export default function MoreScreen() {
     },
     {
       label: 'Memory',
-      onPress: () => { /* stub */ },
-      comingSoon: true,
+      onPress: () => router.push('/more/memory'),
     },
     {
       label: 'Integrations',
-      onPress: () => { /* stub */ },
-      comingSoon: true,
+      onPress: () => router.push('/more/integrations'),
     },
     {
       label: 'Diagnostics',
-      onPress: () => { /* stub */ },
-      comingSoon: true,
+      onPress: () => router.push('/more/diagnostics'),
     },
     {
       label: 'Export',
-      onPress: () => { /* stub */ },
-      comingSoon: true,
+      onPress: () => router.push('/more/export'),
     },
   ];
 
@@ -73,21 +68,11 @@ export default function MoreScreen() {
               onPress={row.onPress}
             >
               <Text style={[styles.labelText, { color: palette.text.primary }]}>{row.label}</Text>
-              {row.comingSoon ? (
-                <View
-                  style={[styles.comingSoonBadge, { backgroundColor: palette.background.secondary }]}
-                >
-                  <Text style={[styles.comingSoonText, { color: palette.text.muted }]}>
-                    Coming soon
-                  </Text>
-                </View>
-              ) : (
-                <Ionicons
-                  name="chevron-forward"
-                  size={typography.fontSize.base}
-                  color={palette.text.muted}
-                />
-              )}
+              <Ionicons
+                name="chevron-forward"
+                size={typography.fontSize.base}
+                color={palette.text.muted}
+              />
             </Pressable>
           ))}
         </View>
@@ -123,14 +108,5 @@ const styles = StyleSheet.create({
   labelText: {
     fontSize: typography.fontSize.base,
     fontWeight: typography.fontWeight.regular,
-  },
-  comingSoonBadge: {
-    borderRadius: spacing[1],
-    paddingHorizontal: spacing[2],
-    paddingVertical: spacing[1],
-  },
-  comingSoonText: {
-    fontSize: typography.fontSize.xs,
-    fontWeight: typography.fontWeight.medium,
   },
 });
