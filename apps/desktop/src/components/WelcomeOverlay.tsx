@@ -106,7 +106,7 @@ export function WelcomeOverlay({ onComplete, onSkip }: WelcomeOverlayProps): JSX
   }
 
   return (
-    <div className="welcome-overlay-backdrop" role="presentation">
+    <div className="welcome-overlay-backdrop" role="presentation" data-testid="welcome-overlay">
       <div className="welcome-card card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
         <div className="capture-overlay-header">
           <h3>Welcome to LifeOS</h3>

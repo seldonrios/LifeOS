@@ -59,7 +59,7 @@ export function Memory(): JSX.Element {
     <div className="screen-memory">
       <div className="memory-search-bar">
         <input
-          data-element-id="memory-search"
+          data-testid="memory-search"
           placeholder="Search your captures…"
           type="search"
           value={query}

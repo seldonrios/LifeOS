@@ -33,7 +33,7 @@ export function Integrations(): JSX.Element {
 
   return (
     <div className="integrations-layout">
-      <section data-testid="service-connections-section">
+      <section data-testid="integrations-service-connections">
         <h2>Service Connections</h2>
         {isLoading && <Spinner label="Loading connections..." />}
         {isError && (
@@ -81,7 +81,7 @@ export function Integrations(): JSX.Element {
           </ul>
         )}
       </section>
-      <section data-testid="marketplace-section">
+      <section>
         <h2>Module Marketplace</h2>
         <Marketplace />
       </section>

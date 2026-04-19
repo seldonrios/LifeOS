@@ -33,6 +33,7 @@ export function Sidebar({ active, onSelect, onHelpOpen }: SidebarProps): JSX.Ele
       {NAV_ITEMS.map((item) => (
         <button
           key={item.id}
+          data-testid={`nav-${item.id}`}
           className={`nav-item ${active === item.id ? 'active' : ''}`}
           onClick={() => onSelect(item.id)}
           type="button"
