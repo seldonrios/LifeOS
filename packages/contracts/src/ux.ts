@@ -37,6 +37,8 @@ export const UXPreferencesSchema = z.object({
   localOnlyMode: z.boolean(),
   proactiveSuggestions: z.boolean(),
   tutorialsEnabled: z.boolean(),
+  setupStyle: z.enum(['recommended', 'private', 'builder']).optional(),
+  useCases: z.array(z.string()).optional(),
 });
 export type UXPreferences = z.infer<typeof UXPreferencesSchema>;
 

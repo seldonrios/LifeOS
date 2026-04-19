@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { HealthCheckResult } from '@lifeos/contracts';
-import { createCapture, getUXHealth } from '../ipc';
+import { createCapture, getUXHealth, writeSettings } from '../ipc';
 
 interface WelcomeOverlayProps {
   onComplete: () => void;
@@ -88,6 +88,17 @@ export function WelcomeOverlay({ onComplete, onSkip }: WelcomeOverlayProps): JSX
     setCaptureSubmitting(true);
     try {
       await createCapture(captureText.trim());
+
+      let settingsPayload: Parameters<typeof writeSettings>[0];
+      if (setupStyle === 'private') {
+        settingsPayload = { setupStyle, useCases, localOnlyMode: true, cloudAssistEnabled: false };
+      } else if (setupStyle === 'builder') {
+        settingsPayload = { setupStyle, useCases, transparencyTipsEnabled: true, trustAuditEnabled: true };
+      } else {
+        settingsPayload = { setupStyle, useCases };
+      }
+
+      await writeSettings(settingsPayload);
       onComplete();
     } finally {
       setCaptureSubmitting(false);

@@ -15,6 +15,8 @@ pub struct DesktopSettings {
     pub cloud_assist_enabled: bool,
     pub trust_audit_enabled: bool,
     pub transparency_tips_enabled: bool,
+    pub setup_style: Option<String>,
+    pub use_cases: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -28,6 +30,8 @@ pub struct SettingsUpdate {
     pub cloud_assist_enabled: Option<bool>,
     pub trust_audit_enabled: Option<bool>,
     pub transparency_tips_enabled: Option<bool>,
+    pub setup_style: Option<String>,
+    pub use_cases: Option<Vec<String>>,
 }
 
 fn default_settings() -> DesktopSettings {
@@ -40,6 +44,8 @@ fn default_settings() -> DesktopSettings {
         cloud_assist_enabled: false,
         trust_audit_enabled: true,
         transparency_tips_enabled: true,
+        setup_style: None,
+        use_cases: None,
     }
 }
 
@@ -65,6 +71,8 @@ fn merge_settings(current: DesktopSettings, update: SettingsUpdate) -> DesktopSe
         transparency_tips_enabled: update
             .transparency_tips_enabled
             .unwrap_or(current.transparency_tips_enabled),
+        setup_style: update.setup_style.or(current.setup_style),
+        use_cases: update.use_cases.or(current.use_cases),
     };
 
     if merged.local_only_mode {
@@ -85,6 +93,8 @@ struct DesktopSettingsPartial {
     cloud_assist_enabled: Option<bool>,
     trust_audit_enabled: Option<bool>,
     transparency_tips_enabled: Option<bool>,
+    setup_style: Option<String>,
+    use_cases: Option<Vec<String>>,
 }
 
 fn normalize_settings_partial(partial: DesktopSettingsPartial) -> DesktopSettings {
@@ -110,6 +120,8 @@ fn normalize_settings_partial(partial: DesktopSettingsPartial) -> DesktopSetting
         transparency_tips_enabled: partial
             .transparency_tips_enabled
             .unwrap_or(defaults.transparency_tips_enabled),
+        setup_style: partial.setup_style,
+        use_cases: partial.use_cases,
     };
 
     if normalized.local_only_mode {
@@ -228,8 +240,8 @@ pub async fn settings_models() -> Result<serde_json::Value, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        default_settings, merge_settings, sanitize_http_url, sanitize_model, sanitize_nats_url,
-        DesktopSettings, SettingsUpdate,
+        default_settings, merge_settings, normalize_settings_partial, sanitize_http_url,
+        sanitize_model, sanitize_nats_url, DesktopSettings, DesktopSettingsPartial, SettingsUpdate,
     };
 
     #[test]
@@ -283,6 +295,8 @@ mod tests {
             cloud_assist_enabled: false,
             trust_audit_enabled: true,
             transparency_tips_enabled: true,
+            setup_style: None,
+            use_cases: None,
         };
         let update = SettingsUpdate {
             model: Some("mistral:7b".to_string()),
@@ -293,6 +307,8 @@ mod tests {
             cloud_assist_enabled: Some(true),
             trust_audit_enabled: Some(false),
             transparency_tips_enabled: Some(false),
+            setup_style: None,
+            use_cases: None,
         };
 
         let merged = merge_settings(current, update);
@@ -318,10 +334,22 @@ mod tests {
             cloud_assist_enabled: Some(true),
             trust_audit_enabled: None,
             transparency_tips_enabled: None,
+            setup_style: None,
+            use_cases: None,
         };
 
         let merged = merge_settings(current, update);
         assert!(merged.local_only_mode);
         assert!(!merged.cloud_assist_enabled);
+    }
+
+    #[test]
+    fn normalize_settings_partial_handles_missing_setup_style_and_use_cases() {
+        let raw = r#"{"model":"llama3.1:8b","ollamaHost":"http://127.0.0.1:11434","natsUrl":"nats://127.0.0.1:4222","voiceEnabled":true,"localOnlyMode":true,"cloudAssistEnabled":false,"trustAuditEnabled":true,"transparencyTipsEnabled":true}"#;
+        let partial: DesktopSettingsPartial =
+            serde_json::from_str(raw).expect("should deserialize without setupStyle/useCases");
+        let normalized = normalize_settings_partial(partial);
+        assert!(normalized.setup_style.is_none());
+        assert!(normalized.use_cases.is_none());
     }
 }

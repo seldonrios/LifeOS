@@ -18,6 +18,9 @@ type SessionState = {
   onboardingComplete: boolean;
   biometricEnabled: boolean;
   biometricAvailable: boolean;
+  setupStyle: string | null;
+  useCases: string[] | null;
+  assistantStyle: string | null;
   restoreSession: () => Promise<void>;
   setOnboardingComplete: (completed: boolean) => void;
   setHouseholdId: (id: string) => Promise<void>;
@@ -32,6 +35,9 @@ const REFRESH_TOKEN_KEY = 'lifeos.refresh_token';
 const HOUSEHOLD_ID_KEY = 'lifeos.household_id';
 const BIOMETRIC_ENABLED_KEY = 'lifeos.biometric_enabled';
 export const ONBOARDING_COMPLETE_KEY = 'lifeos.onboarding_complete';
+export const SETUP_STYLE_KEY = 'lifeos.setup_style';
+export const USE_CASES_KEY = 'lifeos.use_cases';
+export const ASSISTANT_STYLE_KEY = 'lifeos.assistant_style';
 
 export async function isOnboardingComplete(): Promise<boolean> {
   const storedValue = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
@@ -58,6 +64,9 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   onboardingComplete: false,
   biometricEnabled: false,
   biometricAvailable: false,
+  setupStyle: null,
+  useCases: null,
+  assistantStyle: null,
   async restoreSession() {
     let nextStatus: SessionStatus = 'unauthenticated';
     let nextAccessToken: string | null = null;

@@ -20,7 +20,7 @@ import { darkColors, lightColors, spacing, typography } from '@lifeos/ui';
 import type { CaptureResult, HealthCheckResult } from '@lifeos/contracts';
 
 import { sdk } from '../../lib/sdk';
-import { markOnboardingComplete, ONBOARDING_COMPLETE_KEY, useSessionStore } from '../../lib/session';
+import { markOnboardingComplete, ONBOARDING_COMPLETE_KEY, useSessionStore, SETUP_STYLE_KEY, USE_CASES_KEY, ASSISTANT_STYLE_KEY } from '../../lib/session';
 
 type OnboardingStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 type SetupStyle = 'recommended' | 'private' | 'builder';
@@ -355,6 +355,11 @@ export default function OnboardingModal() {
     setError(null);
 
     try {
+      await Promise.all([
+        AsyncStorage.setItem(SETUP_STYLE_KEY, setupStyle),
+        AsyncStorage.setItem(USE_CASES_KEY, JSON.stringify([...selectedUseCases])),
+        AsyncStorage.setItem(ASSISTANT_STYLE_KEY, assistantStyle),
+      ]);
       await markOnboardingComplete();
       setOnboardingComplete(true);
       router.replace('/(tabs)/home');

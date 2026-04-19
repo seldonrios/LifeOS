@@ -102,6 +102,8 @@ export interface LifeOsSettings {
   cloudAssistEnabled: boolean;
   trustAuditEnabled: boolean;
   transparencyTipsEnabled: boolean;
+  setupStyle?: string;
+  useCases?: string[];
 }
 
 export interface TrustModuleSummary {
@@ -238,6 +240,8 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       cloudAssistEnabled: false,
       trustAuditEnabled: true,
       transparencyTipsEnabled: true,
+      setupStyle: undefined,
+      useCases: undefined,
     } as T;
   }
 
@@ -251,6 +255,8 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       cloudAssistEnabled: Boolean(payload?.cloudAssistEnabled ?? false),
       trustAuditEnabled: Boolean(payload?.trustAuditEnabled ?? true),
       transparencyTipsEnabled: Boolean(payload?.transparencyTipsEnabled ?? true),
+      setupStyle: payload?.setupStyle as string | undefined,
+      useCases: payload?.useCases as string[] | undefined,
     } as T;
   }
 

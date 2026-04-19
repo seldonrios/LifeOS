@@ -124,6 +124,8 @@ interface DesktopSettings {
   cloudAssistEnabled: boolean;
   trustAuditEnabled: boolean;
   transparencyTipsEnabled: boolean;
+  setupStyle?: string;
+  useCases?: string[];
 }
 
 const SETTINGS_PATH = join(homedir(), '.lifeos', 'init.json');
@@ -591,6 +593,8 @@ async function readSettingsFile(): Promise<DesktopSettings> {
       trustAuditEnabled: typeof parsed.trustAuditEnabled === 'boolean' ? parsed.trustAuditEnabled : true,
       transparencyTipsEnabled:
         typeof parsed.transparencyTipsEnabled === 'boolean' ? parsed.transparencyTipsEnabled : true,
+      setupStyle: typeof parsed.setupStyle === 'string' ? parsed.setupStyle : undefined,
+      useCases: Array.isArray(parsed.useCases) ? parsed.useCases : undefined,
     };
   } catch {
     return {
@@ -627,6 +631,8 @@ async function writeSettingsFile(update: Partial<DesktopSettings>): Promise<Desk
       typeof update.transparencyTipsEnabled === 'boolean'
         ? update.transparencyTipsEnabled
         : base.transparencyTipsEnabled,
+    setupStyle: update.setupStyle ?? base.setupStyle,
+    useCases: update.useCases ?? base.useCases,
   };
   if (merged.localOnlyMode) {
     merged.cloudAssistEnabled = false;
@@ -1119,6 +1125,8 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         cloudAssistEnabled: request.args?.cloudAssistEnabled as boolean | undefined,
         trustAuditEnabled: request.args?.trustAuditEnabled as boolean | undefined,
         transparencyTipsEnabled: request.args?.transparencyTipsEnabled as boolean | undefined,
+        setupStyle: request.args?.setupStyle as string | undefined,
+        useCases: request.args?.useCases as string[] | undefined,
       });
     }
 
