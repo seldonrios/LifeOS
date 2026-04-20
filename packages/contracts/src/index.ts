@@ -264,6 +264,8 @@ export {
   OnboardingStageSchema,
   OnboardingProgressSchema,
   TourProgressSchema,
+  AssistantProfileInputSchema,
+  AssistantProfileSchema,
   type HealthCheckKey,
   type HealthCheckStatus,
   type RepairAction,
@@ -272,6 +274,8 @@ export {
   type OnboardingStage,
   type OnboardingProgress,
   type TourProgress,
+  type AssistantProfileInput,
+  type AssistantProfile,
 } from './ux';
 
 export type { SDKConfig } from './sdk';

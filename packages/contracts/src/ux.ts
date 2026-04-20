@@ -4,6 +4,21 @@
 
 import { z } from 'zod';
 
+const GraphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+function isSingleEmojiGraphemeOrEmpty(value: string): boolean {
+  if (value.length === 0) {
+    return true;
+  }
+
+  const graphemeCount = [...GraphemeSegmenter.segment(value)].length;
+  if (graphemeCount !== 1) {
+    return false;
+  }
+
+  return /\p{Extended_Pictographic}|\p{Regional_Indicator}/u.test(value);
+}
+
 export const HealthCheckKeySchema = z.enum([
   'storage',
   'model',
@@ -70,3 +85,18 @@ export const TourProgressSchema = z.object({
   completedAt: z.string().nullable(),
 });
 export type TourProgress = z.infer<typeof TourProgressSchema>;
+
+export const AssistantProfileInputSchema = z.object({
+  assistantName: z.string().trim().min(1).max(32).default('LifeOS'),
+  wakePhrase: z.string().trim().min(1).max(64).default('Hey LifeOS'),
+  assistantTone: z.enum(['concise', 'detailed', 'conversational']).default('concise'),
+  useCases: z.array(z.string().max(32)).max(10).default([]),
+  avatarEmoji: z.string().refine(isSingleEmojiGraphemeOrEmpty).default('🤖'),
+});
+export type AssistantProfileInput = z.infer<typeof AssistantProfileInputSchema>;
+
+export const AssistantProfileSchema = AssistantProfileInputSchema.extend({
+  userId: z.string(),
+  updatedAt: z.string(),
+});
+export type AssistantProfile = z.infer<typeof AssistantProfileSchema>;

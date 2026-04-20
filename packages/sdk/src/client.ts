@@ -15,6 +15,8 @@ import type {
   PushTokenRegistration,
   ReviewLoopSummary,
   HealthCheckResult,
+  AssistantProfile,
+  AssistantProfileInput,
 } from '@lifeos/contracts';
 import { InboxListResponseSchema, ReviewLoopSummarySchema } from '@lifeos/contracts';
 import { AuthClientImpl, type AuthClient } from './auth';
@@ -928,6 +930,40 @@ class HouseholdNamespace {
 }
 
 /**
+ * Assistant profile namespace.
+ */
+class AssistantProfileNamespace {
+  constructor(private config: SDKConfig) {}
+
+  async get(): Promise<AssistantProfile> {
+    const response = await sendHttpRequest<AssistantProfile>(
+      {
+        url: `${this.config.baseUrl}/api/assistant-profile`,
+        method: 'GET',
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+
+  async upsert(profile: Partial<AssistantProfileInput>): Promise<AssistantProfile> {
+    const response = await sendHttpRequest<AssistantProfile>(
+      {
+        url: `${this.config.baseUrl}/api/assistant-profile`,
+        method: 'PUT',
+        body: profile,
+      },
+      this.config.getAccessToken,
+      this.config,
+    );
+
+    return response.data;
+  }
+}
+
+/**
  * Main LifeOS SDK client.
  */
 export class LifeOSClient {
@@ -940,6 +976,7 @@ export class LifeOSClient {
   readonly review: ReviewNamespace;
   readonly ux: UxNamespace;
   readonly household: HouseholdNamespace;
+  readonly assistantProfile: AssistantProfileNamespace;
 
   constructor(config: SDKConfig) {
     // Apply default timeout if not specified
@@ -957,5 +994,6 @@ export class LifeOSClient {
     this.review = new ReviewNamespace(effectiveConfig);
     this.ux = new UxNamespace(effectiveConfig);
     this.household = new HouseholdNamespace(effectiveConfig);
+    this.assistantProfile = new AssistantProfileNamespace(effectiveConfig);
   }
 }

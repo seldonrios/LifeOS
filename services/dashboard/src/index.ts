@@ -6,6 +6,7 @@ import { createLifeGraphClient, getDefaultLifeGraphPath } from '@lifeos/life-gra
 import { registerCaptureRoutes } from './routes/capture';
 import { registerHouseholdRoutes } from './routes/household';
 import { registerUxRoutes } from './routes/ux';
+import { registerAssistantProfileRoutes } from './routes/assistant-profile';
 
 startService({
   serviceName: "dashboard-service",
@@ -27,6 +28,7 @@ startService({
     registerHouseholdRoutes(app, householdGraphClient, eventBus);
     registerCaptureRoutes(app, householdGraphClient, eventBus, lifeGraphClient);
     registerUxRoutes(app);
+    registerAssistantProfileRoutes(app, (householdGraphClient as unknown as { db: { exec(sql: string): void; prepare(sql: string): { run(...params: unknown[]): void; get(...params: unknown[]): unknown } } }).db);
 
     app.addHook('onClose', async () => {
       await eventBus.close();
