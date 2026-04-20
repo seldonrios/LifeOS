@@ -432,7 +432,7 @@ export interface LifeGraphSummary {
 }
 
 export interface LifeGraphStorageInfo {
-  backend: 'sqlite';
+  backend: 'sqlite' | 'json-file';
   graphPath: string;
   dbPath: string;
   migrationBackupPath: string | null;

@@ -13,6 +13,7 @@ import {
   runGraphMigrations,
   saveGraphAtomic,
 } from './store';
+import { LifeGraphManager } from './manager';
 
 function samplePlan(title: string): Record<string, unknown> {
   return {
@@ -283,4 +284,87 @@ test('runGraphMigrations applies migration metadata and writes backup', async ()
   assert.equal((graph.system?.meta?.migrationHistory ?? []).length, 1);
   assert.equal(graph.system?.meta?.migrationHistory?.[0]?.fromVersion, '1.0.0');
   assert.equal(graph.system?.meta?.migrationHistory?.[0]?.toVersion, '2.0.0');
+});
+
+// ---------------------------------------------------------------------------
+// JSON-file adapter tests (forces the fallback path via forceJsonAdapter)
+// ---------------------------------------------------------------------------
+
+test('json-adapter: loadGraph returns empty versioned document when no data exists', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-json-adapter-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const manager = new LifeGraphManager({ forceJsonAdapter: true });
+  const graph = await manager.load(graphPath);
+  assert.equal(graph.version, '0.1.0');
+  assert.equal(graph.plans.length, 0);
+  assert.match(graph.updatedAt, /^\d{4}-\d{2}-\d{2}T/);
+});
+
+test('json-adapter: appendPlan persists plan and increments count', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-json-adapter-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const manager = new LifeGraphManager({ forceJsonAdapter: true });
+
+  const { record: first } = await manager.appendPlan(
+    { input: 'First json goal', plan: samplePlan('First JSON Plan') },
+    graphPath,
+  );
+  const { record: second } = await manager.appendPlan(
+    { input: 'Second json goal', plan: samplePlan('Second JSON Plan') },
+    graphPath,
+  );
+
+  const graph = await manager.load(graphPath);
+  assert.equal(graph.plans.length, 2);
+  assert.equal(graph.plans[0]?.id, first.id);
+  assert.equal(graph.plans[1]?.id, second.id);
+});
+
+test('json-adapter: save and load round-trips graph without data loss', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-json-adapter-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const manager = new LifeGraphManager({ forceJsonAdapter: true });
+
+  await manager.appendPlan({ input: 'Roundtrip goal', plan: samplePlan('Roundtrip Plan') }, graphPath);
+
+  const graph = await manager.load(graphPath);
+  assert.equal(graph.plans.length, 1);
+  assert.equal(graph.plans[0]?.title, 'Roundtrip Plan');
+  assert.equal(graph.plans[0]?.tasks.length, 1);
+});
+
+test('json-adapter: getStorageInfo reports json-file backend', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-json-adapter-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const manager = new LifeGraphManager({ forceJsonAdapter: true });
+  await manager.load(graphPath);
+
+  const info = await manager.getStorageInfo(graphPath);
+  assert.equal(info.backend, 'json-file');
+  assert.equal(info.migrationBackupPath, null);
+});
+
+test('json-adapter: persists to disk and survives new manager instance', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-json-adapter-'));
+  const graphPath = join(tempDir, '.lifeos', 'life-graph.json');
+  await mkdir(join(tempDir, '.lifeos'), { recursive: true });
+
+  const manager1 = new LifeGraphManager({ forceJsonAdapter: true });
+  await manager1.appendPlan(
+    { input: 'Persistent goal', plan: samplePlan('Persisted Plan') },
+    graphPath,
+  );
+
+  const manager2 = new LifeGraphManager({ forceJsonAdapter: true });
+  const graph = await manager2.load(graphPath);
+  assert.equal(graph.plans.length, 1);
+  assert.equal(graph.plans[0]?.title, 'Persisted Plan');
 });

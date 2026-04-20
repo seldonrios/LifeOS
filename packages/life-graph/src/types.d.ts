@@ -351,7 +351,7 @@ export interface LifeGraphSummary {
     activeGoals: LifeGraphActiveGoalSummary[];
 }
 export interface LifeGraphStorageInfo {
-    backend: 'sqlite';
+    backend: 'sqlite' | 'json-file';
     graphPath: string;
     dbPath: string;
     migrationBackupPath: string | null;

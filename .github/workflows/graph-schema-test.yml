@@ -16,3 +16,16 @@ jobs:
       - uses: pnpm/action-setup@v5
       - run: pnpm install --frozen-lockfile
       - run: pnpm run test:graph
+
+  arm64-validate:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20.19.0'
+      - uses: pnpm/action-setup@v5
+      - name: Install native build tools
+        run: sudo apt-get update && sudo apt-get install -y python3 make g++
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run test:graph

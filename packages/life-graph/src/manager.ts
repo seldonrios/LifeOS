@@ -1,6 +1,6 @@
-import Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, readFile, rename } from 'node:fs/promises';
+import { writeFileSync } from 'node:fs';
+import { mkdir, readFile, rename } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 import {
@@ -21,7 +21,14 @@ import type {
   LifeGraphTask,
 } from './types';
 
-export type LifeGraphManagerOptions = LifeGraphPathOptions;
+export type LifeGraphManagerOptions = LifeGraphPathOptions & {
+  /**
+   * Force the JSON-file storage adapter regardless of whether better-sqlite3
+   * is available. Intended for testing and ARM64 environments where the native
+   * addon cannot be compiled.
+   */
+  forceJsonAdapter?: boolean;
+};
 
 export interface AppendPlanInput<TPlan = Record<string, unknown>> {
   input: string;
@@ -30,10 +37,230 @@ export interface AppendPlanInput<TPlan = Record<string, unknown>> {
   createdAt?: string;
 }
 
+// ---------------------------------------------------------------------------
+// Storage adapter abstraction
+// ---------------------------------------------------------------------------
+
+interface PreparedStatement {
+  get(...params: unknown[]): unknown;
+  all(...params: unknown[]): unknown[];
+  run(...params: unknown[]): void;
+}
+
+interface DbAdapter {
+  pragma(sql: string): unknown;
+  exec(sql: string): unknown;
+  prepare(sql: string): PreparedStatement;
+  transaction<TArgs extends unknown[]>(fn: (...args: TArgs) => void): (...args: TArgs) => void;
+}
+
+// ---------------------------------------------------------------------------
+// JSON-file adapter (fallback when better-sqlite3 native addon is unavailable)
+// ---------------------------------------------------------------------------
+
+type Row = Record<string, unknown>;
+
+class JsonFileAdapterStore {
+  private readonly tables = new Map<string, Map<string, Row>>();
+
+  dirty = false;
+
+  getTable(name: string): Map<string, Row> {
+    return this.tables.get(name.toLowerCase()) ?? new Map<string, Row>();
+  }
+
+  getOrCreateTable(name: string): Map<string, Row> {
+    const lower = name.toLowerCase();
+    if (!this.tables.has(lower)) {
+      this.tables.set(lower, new Map<string, Row>());
+    }
+    return this.tables.get(lower)!;
+  }
+
+  clearTable(name: string): void {
+    this.tables.set(name.toLowerCase(), new Map<string, Row>());
+    this.dirty = true;
+  }
+
+  serialize(): Record<string, Row[]> {
+    const out: Record<string, Row[]> = {};
+    for (const [name, rows] of this.tables) {
+      out[name] = [...rows.values()];
+    }
+    return out;
+  }
+
+  static deserialize(data: Record<string, Row[]>): JsonFileAdapterStore {
+    const store = new JsonFileAdapterStore();
+    for (const [name, rows] of Object.entries(data)) {
+      const table = store.getOrCreateTable(name);
+      for (const row of rows) {
+        const pk = Object.keys(row)[0];
+        if (pk !== undefined) {
+          table.set(row[pk] as string, row);
+        }
+      }
+    }
+    return store;
+  }
+}
+
+class JsonFileAdapterStatement implements PreparedStatement {
+  constructor(
+    private readonly sql: string,
+    private readonly store: JsonFileAdapterStore,
+  ) {}
+
+  get(...params: unknown[]): unknown {
+    const sql = this.sql.trim();
+
+    // SELECT COUNT(*) as count FROM {table}
+    const countMatch = /^SELECT\s+COUNT\(\*\)\s+as\s+count\s+FROM\s+(\w+)/i.exec(sql);
+    if (countMatch) {
+      return { count: this.store.getTable(countMatch[1]!).size };
+    }
+
+    // SELECT value FROM meta WHERE key = ?
+    if (/^SELECT\s+value\s+FROM\s+meta\s+WHERE\s+key\s*=\s*\?/i.test(sql)) {
+      const key = params[0] as string;
+      const row = this.store.getTable('meta').get(key);
+      return row !== undefined ? { value: row['value'] } : undefined;
+    }
+
+    return undefined;
+  }
+
+  all(..._params: unknown[]): unknown[] {
+    const sql = this.sql.trim();
+
+    // SELECT key, value FROM meta WHERE key IN ('a', 'b', ...)
+    const metaKeyIn =
+      /^SELECT\s+key,\s*value\s+FROM\s+meta\s+WHERE\s+key\s+IN\s*\(([^)]+)\)/i.exec(sql);
+    if (metaKeyIn) {
+      const keys = metaKeyIn[1]!.split(',').map((k) => k.trim().replace(/^'|'$/g, ''));
+      const table = this.store.getTable('meta');
+      return keys.flatMap((k) => {
+        const row = table.get(k);
+        return row !== undefined ? [{ key: k, value: row['value'] }] : [];
+      });
+    }
+
+    // SELECT ... FROM {table} [ORDER BY rowid ASC]
+    const selectFrom = /^SELECT\s+.+?\s+FROM\s+(\w+)(?:\s+ORDER\s+BY\s+rowid\s+ASC)?/i.exec(sql);
+    if (selectFrom) {
+      return [...this.store.getTable(selectFrom[1]!.toLowerCase()).values()];
+    }
+
+    return [];
+  }
+
+  run(...params: unknown[]): void {
+    const sql = this.sql.trim();
+
+    // INSERT OR REPLACE INTO {table} ({cols}) VALUES (...)
+    const insertMatch =
+      /^INSERT\s+OR\s+REPLACE\s+INTO\s+(\w+)\s*\(([^)]+)\)\s*VALUES/i.exec(sql);
+    if (insertMatch) {
+      const tableName = insertMatch[1]!.toLowerCase();
+      const cols = insertMatch[2]!.split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+      const row: Row = {};
+      cols.forEach((col, i) => {
+        row[col] = params[i];
+      });
+      const pkCol = cols[0];
+      if (pkCol === undefined) return;
+      const table = this.store.getOrCreateTable(tableName);
+      table.set(row[pkCol] as string, row);
+      this.store.dirty = true;
+    }
+  }
+}
+
+class JsonFileAdapter implements DbAdapter {
+  constructor(
+    private readonly store: JsonFileAdapterStore,
+    private readonly persistPath: string,
+  ) {}
+
+  pragma(_sql: string): unknown {
+    return undefined;
+  }
+
+  exec(sql: string): unknown {
+    for (const raw of sql.split(';')) {
+      const stmt = raw.trim();
+      if (!stmt) continue;
+      const deleteMatch = /^DELETE\s+FROM\s+(\w+)/i.exec(stmt);
+      if (deleteMatch) {
+        this.store.clearTable(deleteMatch[1]!);
+        continue;
+      }
+      const createMatch = /^CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+(\w+)/i.exec(stmt);
+      if (createMatch) {
+        this.store.getOrCreateTable(createMatch[1]!);
+      }
+    }
+    return this;
+  }
+
+  prepare(sql: string): PreparedStatement {
+    return new JsonFileAdapterStatement(sql.trim(), this.store);
+  }
+
+  transaction<TArgs extends unknown[]>(fn: (...args: TArgs) => void): (...args: TArgs) => void {
+    return (...args: TArgs) => {
+      fn(...args);
+      if (this.store.dirty) {
+        writeFileSync(this.persistPath, JSON.stringify(this.store.serialize(), null, 2), 'utf8');
+        this.store.dirty = false;
+      }
+    };
+  }
+}
+
+async function loadJsonStore(persistPath: string): Promise<JsonFileAdapterStore> {
+  try {
+    const raw = await readFile(persistPath, 'utf8');
+    const data = JSON.parse(raw) as Record<string, Row[]>;
+    return JsonFileAdapterStore.deserialize(data);
+  } catch {
+    return new JsonFileAdapterStore();
+  }
+}
+
+function isBetterSqliteUnavailableError(error: unknown): boolean {
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? String((error as { code?: unknown }).code ?? '')
+      : '';
+  const message = error instanceof Error ? error.message : String(error ?? '');
+
+  if (code === 'ERR_MODULE_NOT_FOUND' || code === 'MODULE_NOT_FOUND') {
+    return true;
+  }
+
+  const lower = message.toLowerCase();
+  if (!lower.includes('better-sqlite3')) {
+    return false;
+  }
+
+  return (
+    lower.includes('could not locate the bindings file') ||
+    lower.includes('cannot find module') ||
+    lower.includes('dlopen') ||
+    lower.includes('invalid elf header') ||
+    lower.includes('shared object file') ||
+    lower.includes('was compiled against a different node.js version') ||
+    lower.includes('is not a valid win32 application')
+  );
+}
+
+// ---------------------------------------------------------------------------
+
 interface DbContext {
   graphPath: string;
   dbPath: string;
-  db: Database.Database;
+  db: DbAdapter;
 }
 
 function stripUtf8Bom(content: string): string {
@@ -263,7 +490,7 @@ function toSerializableGraph(graph: LifeGraphDocument): LifeGraphDocument {
   };
 }
 
-function hasExistingGraphData(db: Database.Database): boolean {
+function hasExistingGraphData(db: DbAdapter): boolean {
   const metaCount = db.prepare('SELECT COUNT(*) as count FROM meta').get() as { count: number };
   if (metaCount.count > 0) {
     return true;
@@ -274,7 +501,11 @@ function hasExistingGraphData(db: Database.Database): boolean {
 }
 
 export class LifeGraphManager {
-  private readonly dbByPath = new Map<string, Database.Database>();
+  private readonly dbByPath = new Map<string, DbAdapter>();
+
+  private readonly dbCreationByPath = new Map<string, Promise<DbAdapter>>();
+
+  private readonly jsonAdapterPaths = new Set<string>();
 
   private readonly initializationByPath = new Map<string, Promise<void>>();
 
@@ -288,20 +519,63 @@ export class LifeGraphManager {
     return resolvedPath;
   }
 
-  private getDb(dbPath: string): Database.Database {
+  private getOrCreateDb(dbPath: string): Promise<DbAdapter> {
     const existing = this.dbByPath.get(dbPath);
-    if (existing) {
-      return existing;
-    }
+    if (existing) return Promise.resolve(existing);
 
-    const db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    this.dbByPath.set(dbPath, db);
-    return db;
+    const pending = this.dbCreationByPath.get(dbPath);
+    if (pending) return pending;
+
+    const creation = (async (): Promise<DbAdapter> => {
+      let db: DbAdapter;
+      if (!this.options.forceJsonAdapter) {
+        let BetterSqlite3: (new (path: string) => DbAdapter) | undefined;
+        try {
+          ({ default: BetterSqlite3 } = await import('better-sqlite3') as {
+            default: new (path: string) => DbAdapter;
+          });
+        } catch (error) {
+          if (!isBetterSqliteUnavailableError(error)) {
+            throw error;
+          }
+          const persistPath = `${dbPath}.json`;
+          const store = await loadJsonStore(persistPath);
+          db = new JsonFileAdapter(store, persistPath);
+          this.jsonAdapterPaths.add(dbPath);
+          this.dbByPath.set(dbPath, db);
+          return db;
+        }
+
+        try {
+          const sqliteDb = new BetterSqlite3!(dbPath);
+          sqliteDb.pragma('journal_mode = WAL');
+          sqliteDb.pragma('foreign_keys = ON');
+          db = sqliteDb;
+        } catch (error) {
+          if (!isBetterSqliteUnavailableError(error)) {
+            throw error;
+          }
+          const persistPath = `${dbPath}.json`;
+          const store = await loadJsonStore(persistPath);
+          db = new JsonFileAdapter(store, persistPath);
+          this.jsonAdapterPaths.add(dbPath);
+        }
+      } else {
+        const persistPath = `${dbPath}.json`;
+        const store = await loadJsonStore(persistPath);
+        db = new JsonFileAdapter(store, persistPath);
+        this.jsonAdapterPaths.add(dbPath);
+      }
+      this.dbByPath.set(dbPath, db);
+      return db;
+    })();
+
+    this.dbCreationByPath.set(dbPath, creation);
+    void creation.finally(() => this.dbCreationByPath.delete(dbPath));
+    return creation;
   }
 
-  private initializeSchema(db: Database.Database): void {
+  private initializeSchema(db: DbAdapter): void {
     db.exec(`
       CREATE TABLE IF NOT EXISTS meta (
         key TEXT PRIMARY KEY,
@@ -385,7 +659,7 @@ export class LifeGraphManager {
     `);
   }
 
-  private writeGraphToDb(db: Database.Database, graph: LifeGraphDocument): void {
+  private writeGraphToDb(db: DbAdapter, graph: LifeGraphDocument): void {
     const document = toSerializableGraph(graph);
 
     const transaction = db.transaction((doc: LifeGraphDocument) => {
@@ -481,7 +755,7 @@ export class LifeGraphManager {
     transaction(document);
   }
 
-  private readGraphFromDb(db: Database.Database): LifeGraphDocument {
+  private readGraphFromDb(db: DbAdapter): LifeGraphDocument {
     const metaRows = db
       .prepare(
         "SELECT key, value FROM meta WHERE key IN ('version', 'updatedAt', 'system', 'captureEntries', 'plannedActions', 'reminderEvents')",
@@ -598,9 +872,10 @@ export class LifeGraphManager {
     return LifeGraphDocumentSchema.parse(candidate) as LifeGraphDocument;
   }
 
-  private async migrateFromJsonIfNeeded(db: Database.Database, graphPath: string): Promise<void> {
+  private async migrateFromJsonIfNeeded(db: DbAdapter, graphPath: string): Promise<void> {
+    let raw: string;
     try {
-      await access(graphPath);
+      raw = await readFile(graphPath, 'utf8');
     } catch {
       return;
     }
@@ -610,7 +885,6 @@ export class LifeGraphManager {
       return;
     }
 
-    const raw = await readFile(graphPath, 'utf8');
     const parsed = JSON.parse(stripUtf8Bom(raw)) as unknown;
     const graph = normalizeDocument(parsed, new Date());
     this.writeGraphToDb(db, graph);
@@ -628,7 +902,7 @@ export class LifeGraphManager {
     const dbPath = toDbPath(resolvedGraphPath);
     await mkdir(dirname(dbPath), { recursive: true });
 
-    const db = this.getDb(dbPath);
+    const db = await this.getOrCreateDb(dbPath);
 
     const inFlight = this.initializationByPath.get(dbPath);
     if (inFlight) {
@@ -667,6 +941,14 @@ export class LifeGraphManager {
 
   async getStorageInfo(graphPath?: string): Promise<LifeGraphStorageInfo> {
     const context = await this.getContext(graphPath);
+    if (this.jsonAdapterPaths.has(context.dbPath)) {
+      return {
+        backend: 'json-file',
+        graphPath: context.graphPath,
+        dbPath: `${context.dbPath}.json`,
+        migrationBackupPath: null,
+      };
+    }
     const row = context.db
       .prepare('SELECT value FROM meta WHERE key = ?')
       .get('migrationBackupPath') as { value?: string } | undefined;

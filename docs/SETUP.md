@@ -174,6 +174,41 @@ What next:
 - run `pnpm lifeos task list` to inspect generated task state
 - run `pnpm lifeos trust status` to inspect local-first trust posture
 
+## ARM64
+
+`@lifeos/life-graph` bundles `better-sqlite3`, a C++ native addon compiled via `node-gyp`. On ARM64 hosts the addon must be compiled from source, which requires system build tools. If those tools are absent, the package falls back automatically to a **JSON-file storage adapter** that requires no native build.
+
+### Enabling the SQLite backend on ARM64
+
+Install the required build tools before running `pnpm install`:
+
+**Debian / Ubuntu (including GitHub Actions `ubuntu-24.04-arm`)**
+
+```bash
+sudo apt-get update && sudo apt-get install -y python3 make g++
+```
+
+**macOS (Apple Silicon)**
+
+```bash
+xcode-select --install
+```
+
+After installing the tools, re-run `pnpm install` to compile `better-sqlite3`.
+
+### JSON-file adapter (automatic fallback)
+
+When `better-sqlite3` cannot be loaded (native addon missing or failed to compile), `LifeGraphManager` automatically selects the **JSON-file adapter**. The adapter stores the entire life-graph document in a single `.db.json` file beside the usual `.db` path.
+
+Characteristics of the JSON-file adapter:
+
+- **No ACID guarantees** — writes are atomic at the Node.js `writeFileSync` level only.
+- **Lower throughput** — the whole store is serialised on every write.
+- **Full API compatibility** — all `LifeGraphManager` methods (`load`, `save`, `appendPlan`, `getStorageInfo`) behave identically from the caller's perspective.
+- **`getStorageInfo()` returns `backend: 'json-file'`** — callers can surface a warning if the SQLite backend is preferred.
+
+The JSON-file adapter is suitable for development and contributor use. For production or long-running personal-OS deployments, install build tools to enable the SQLite backend.
+
 ## Troubleshooting
 
 | Symptom                                                                                 | Cause                                                            | Fix                                                                                                                                                     |
