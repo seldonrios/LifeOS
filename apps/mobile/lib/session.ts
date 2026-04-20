@@ -21,9 +21,11 @@ type SessionState = {
   setupStyle: string | null;
   useCases: string[] | null;
   assistantStyle: string | null;
+  assistantName: string;
   restoreSession: () => Promise<void>;
   setOnboardingComplete: (completed: boolean) => void;
   setHouseholdId: (id: string) => Promise<void>;
+  setAssistantName: (name: string) => Promise<void>;
   loadBiometricPreference: () => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   requireBiometric: () => Promise<void>;
@@ -38,6 +40,8 @@ export const ONBOARDING_COMPLETE_KEY = 'lifeos.onboarding_complete';
 export const SETUP_STYLE_KEY = 'lifeos.setup_style';
 export const USE_CASES_KEY = 'lifeos.use_cases';
 export const ASSISTANT_STYLE_KEY = 'lifeos.assistant_style';
+export const ASSISTANT_NAME_KEY = 'lifeos.assistant_name';
+export const WAKE_PHRASE_KEY = 'lifeos.wake_phrase';
 
 export async function isOnboardingComplete(): Promise<boolean> {
   const storedValue = await AsyncStorage.getItem(ONBOARDING_COMPLETE_KEY);
@@ -67,6 +71,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   setupStyle: null,
   useCases: null,
   assistantStyle: null,
+  assistantName: 'LifeOS',
   async restoreSession() {
     let nextStatus: SessionStatus = 'unauthenticated';
     let nextAccessToken: string | null = null;
@@ -106,6 +111,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       } catch {
         set({ biometricAvailable: false, biometricEnabled: false });
       }
+      try {
+        const storedName = await AsyncStorage.getItem(ASSISTANT_NAME_KEY);
+        set({ assistantName: storedName ?? 'LifeOS' });
+      } catch {
+        set({ assistantName: 'LifeOS' });
+      }
     }
   },
   async setHouseholdId(id) {
@@ -114,6 +125,12 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   },
   setOnboardingComplete(completed) {
     set({ onboardingComplete: completed });
+  },
+  async setAssistantName(name) {
+    const trimmed = name.trim();
+    const sanitized = trimmed.length >= 1 && trimmed.length <= 32 ? trimmed : 'LifeOS';
+    await AsyncStorage.setItem(ASSISTANT_NAME_KEY, sanitized);
+    set({ assistantName: sanitized });
   },
   async loadBiometricPreference() {
     const [hasHardware, isEnrolled, storedValue] = await Promise.all([

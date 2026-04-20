@@ -10,6 +10,8 @@ pub struct DesktopSettings {
     pub model: String,
     pub ollama_host: String,
     pub nats_url: String,
+    pub assistant_name: Option<String>,
+    pub wake_phrase: Option<String>,
     pub voice_enabled: bool,
     pub local_only_mode: bool,
     pub cloud_assist_enabled: bool,
@@ -25,6 +27,8 @@ pub struct SettingsUpdate {
     pub model: Option<String>,
     pub ollama_host: Option<String>,
     pub nats_url: Option<String>,
+    pub assistant_name: Option<String>,
+    pub wake_phrase: Option<String>,
     pub voice_enabled: Option<bool>,
     pub local_only_mode: Option<bool>,
     pub cloud_assist_enabled: Option<bool>,
@@ -39,6 +43,8 @@ fn default_settings() -> DesktopSettings {
         model: "llama3.1:8b".to_string(),
         ollama_host: "http://127.0.0.1:11434".to_string(),
         nats_url: "nats://127.0.0.1:4222".to_string(),
+        assistant_name: Some("LifeOS".to_string()),
+        wake_phrase: Some("Hey LifeOS".to_string()),
         voice_enabled: true,
         local_only_mode: true,
         cloud_assist_enabled: false,
@@ -60,6 +66,14 @@ fn merge_settings(current: DesktopSettings, update: SettingsUpdate) -> DesktopSe
             update.nats_url.unwrap_or(current.nats_url).as_str(),
             "nats://127.0.0.1:4222",
         ),
+        assistant_name: update
+            .assistant_name
+            .map(|value| sanitize_assistant_name(value.as_str()))
+            .or(current.assistant_name),
+        wake_phrase: update
+            .wake_phrase
+            .map(|value| sanitize_wake_phrase(value.as_str()))
+            .or(current.wake_phrase),
         voice_enabled: update.voice_enabled.unwrap_or(current.voice_enabled),
         local_only_mode: update.local_only_mode.unwrap_or(current.local_only_mode),
         cloud_assist_enabled: update
@@ -88,6 +102,8 @@ struct DesktopSettingsPartial {
     model: Option<String>,
     ollama_host: Option<String>,
     nats_url: Option<String>,
+    assistant_name: Option<String>,
+    wake_phrase: Option<String>,
     voice_enabled: Option<bool>,
     local_only_mode: Option<bool>,
     cloud_assist_enabled: Option<bool>,
@@ -109,6 +125,18 @@ fn normalize_settings_partial(partial: DesktopSettingsPartial) -> DesktopSetting
             partial.nats_url.unwrap_or(defaults.nats_url).as_str(),
             "nats://127.0.0.1:4222",
         ),
+        assistant_name: Some(sanitize_assistant_name(
+            partial
+                .assistant_name
+                .unwrap_or_else(|| defaults.assistant_name.clone().unwrap())
+                .as_str(),
+        )),
+        wake_phrase: Some(sanitize_wake_phrase(
+            partial
+                .wake_phrase
+                .unwrap_or_else(|| defaults.wake_phrase.clone().unwrap())
+                .as_str(),
+        )),
         voice_enabled: partial.voice_enabled.unwrap_or(defaults.voice_enabled),
         local_only_mode: partial.local_only_mode.unwrap_or(defaults.local_only_mode),
         cloud_assist_enabled: partial
@@ -184,6 +212,24 @@ fn sanitize_nats_url(value: &str, fallback: &str) -> String {
     fallback.to_string()
 }
 
+fn sanitize_assistant_name(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 32 {
+        return "LifeOS".to_string();
+    }
+
+    trimmed.to_string()
+}
+
+fn sanitize_wake_phrase(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() || trimmed.len() > 64 {
+        return "Hey LifeOS".to_string();
+    }
+
+    trimmed.to_string()
+}
+
 fn settings_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or_else(|| "Unable to resolve home directory".to_string())?;
     Ok(home.join(".lifeos").join("init.json"))
@@ -241,7 +287,8 @@ pub async fn settings_models() -> Result<serde_json::Value, String> {
 mod tests {
     use super::{
         default_settings, merge_settings, normalize_settings_partial, sanitize_http_url,
-        sanitize_model, sanitize_nats_url, DesktopSettings, DesktopSettingsPartial, SettingsUpdate,
+        sanitize_model, sanitize_nats_url, sanitize_assistant_name, sanitize_wake_phrase,
+        DesktopSettings, DesktopSettingsPartial, SettingsUpdate,
     };
 
     #[test]
@@ -250,6 +297,8 @@ mod tests {
         assert_eq!(encoded["model"], "llama3.1:8b");
         assert_eq!(encoded["ollamaHost"], "http://127.0.0.1:11434");
         assert_eq!(encoded["natsUrl"], "nats://127.0.0.1:4222");
+        assert_eq!(encoded["assistantName"], "LifeOS");
+        assert_eq!(encoded["wakePhrase"], "Hey LifeOS");
         assert_eq!(encoded["voiceEnabled"], true);
         assert_eq!(encoded["localOnlyMode"], true);
         assert_eq!(encoded["cloudAssistEnabled"], false);
@@ -285,11 +334,27 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_assistant_name_uses_fallback_for_empty_whitespace_or_too_long_values() {
+        assert_eq!(sanitize_assistant_name(""), "LifeOS");
+        assert_eq!(sanitize_assistant_name("    \t"), "LifeOS");
+        assert_eq!(sanitize_assistant_name("123456789012345678901234567890123"), "LifeOS");
+        assert_eq!(sanitize_assistant_name("Aria"), "Aria");
+    }
+
+    #[test]
+    fn sanitize_wake_phrase_uses_fallback_for_empty_values() {
+        assert_eq!(sanitize_wake_phrase(""), "Hey LifeOS");
+        assert_eq!(sanitize_wake_phrase("Hey Aria"), "Hey Aria");
+    }
+
+    #[test]
     fn merge_settings_applies_partial_update_and_sanitization() {
         let current = DesktopSettings {
             model: "llama3.1:8b".to_string(),
             ollama_host: "http://127.0.0.1:11434".to_string(),
             nats_url: "nats://127.0.0.1:4222".to_string(),
+            assistant_name: Some("LifeOS".to_string()),
+            wake_phrase: Some("Hey LifeOS".to_string()),
             voice_enabled: true,
             local_only_mode: true,
             cloud_assist_enabled: false,
@@ -302,6 +367,8 @@ mod tests {
             model: Some("mistral:7b".to_string()),
             ollama_host: Some("https://localhost:11434/".to_string()),
             nats_url: Some("invalid-url".to_string()),
+            assistant_name: Some("Aria".to_string()),
+            wake_phrase: Some("Hey Aria".to_string()),
             voice_enabled: Some(false),
             local_only_mode: Some(false),
             cloud_assist_enabled: Some(true),
@@ -315,6 +382,8 @@ mod tests {
         assert_eq!(merged.model, "mistral:7b");
         assert_eq!(merged.ollama_host, "https://localhost:11434");
         assert_eq!(merged.nats_url, "nats://127.0.0.1:4222");
+        assert_eq!(merged.assistant_name, Some("Aria".to_string()));
+        assert_eq!(merged.wake_phrase, Some("Hey Aria".to_string()));
         assert!(!merged.voice_enabled);
         assert!(!merged.local_only_mode);
         assert!(merged.cloud_assist_enabled);
@@ -329,6 +398,8 @@ mod tests {
             model: None,
             ollama_host: None,
             nats_url: None,
+            assistant_name: None,
+            wake_phrase: None,
             voice_enabled: None,
             local_only_mode: Some(true),
             cloud_assist_enabled: Some(true),

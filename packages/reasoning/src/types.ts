@@ -63,6 +63,7 @@ export interface LifeState {
   timestamp: string;
   summary: string;
   signals: Record<string, unknown>;
+  assistantName?: string;
 }
 
 export interface PlannedAction {

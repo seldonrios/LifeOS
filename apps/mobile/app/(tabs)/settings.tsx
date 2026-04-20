@@ -8,6 +8,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   useColorScheme,
   View,
 } from 'react-native';
@@ -17,8 +18,9 @@ import * as Notifications from 'expo-notifications';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import type { DeviceInfo } from '@lifeos/contracts';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { useSessionStore } from '../../lib/session';
+import { useSessionStore, WAKE_PHRASE_KEY } from '../../lib/session';
 import { ErrorBanner } from '../../components/ErrorBanner';
 import { queryClient } from '../../lib/query-client';
 import { sdk } from '../../lib/sdk';
@@ -32,11 +34,16 @@ export default function SettingsScreen() {
   const biometricAvailable = useSessionStore((state) => state.biometricAvailable);
   const biometricEnabled = useSessionStore((state) => state.biometricEnabled);
   const setBiometricEnabled = useSessionStore((state) => state.setBiometricEnabled);
+  const assistantName = useSessionStore((state) => state.assistantName);
+  const setAssistantName = useSessionStore((state) => state.setAssistantName);
 
   const [notifStatus, setNotifStatus] = useState<'granted' | 'denied' | 'undetermined'>(
     'undetermined',
   );
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [draftAssistantName, setDraftAssistantName] = useState(assistantName);
+  const [draftWakePhrase, setDraftWakePhrase] = useState('Hey LifeOS');
+  const [assistantSaved, setAssistantSaved] = useState(false);
 
   const [notifError, setNotifError] = useState(false);
   const [revokeError, setRevokeError] = useState<string | null>(null);
@@ -45,6 +52,10 @@ export default function SettingsScreen() {
     queryKey: ['devices'],
     queryFn: () => sdk.devices.list(),
   });
+
+  useEffect(() => {
+    setDraftAssistantName(assistantName);
+  }, [assistantName]);
 
   useEffect(() => {
     const loadPermissionStatus = async () => {
@@ -57,6 +68,19 @@ export default function SettingsScreen() {
     };
 
     void loadPermissionStatus();
+  }, []);
+
+  useEffect(() => {
+    const loadWakePhrase = async () => {
+      try {
+        const storedWakePhrase = await AsyncStorage.getItem(WAKE_PHRASE_KEY);
+        setDraftWakePhrase(storedWakePhrase ?? 'Hey LifeOS');
+      } catch {
+        setDraftWakePhrase('Hey LifeOS');
+      }
+    };
+
+    void loadWakePhrase();
   }, []);
 
   const handleRequestPermissions = async () => {
@@ -73,6 +97,15 @@ export default function SettingsScreen() {
     setIsSigningOut(true);
     await signOut();
     setIsSigningOut(false);
+  };
+
+  const handleSaveAssistant = async () => {
+    await setAssistantName(draftAssistantName);
+    await AsyncStorage.setItem(WAKE_PHRASE_KEY, draftWakePhrase);
+    setAssistantSaved(true);
+    setTimeout(() => {
+      setAssistantSaved(false);
+    }, 2_000);
   };
 
   const appVersion = Constants.expoConfig?.version ?? '0.1.0';
@@ -131,6 +164,71 @@ export default function SettingsScreen() {
           <Text style={[styles.secondaryText, { color: palette.text.secondary }]}>
             {user?.email ?? 'No email'}
           </Text>
+        </View>
+
+        <View
+          style={[
+            styles.card,
+            {
+              backgroundColor: palette.background.card,
+              borderColor: palette.border.default,
+            },
+          ]}
+        >
+          <Text style={[styles.sectionLabel, { color: palette.text.muted }]}>ASSISTANT</Text>
+
+          <Text style={[styles.labelText, { color: palette.text.secondary }]}>Assistant name</Text>
+          <TextInput
+            value={draftAssistantName}
+            maxLength={32}
+            onChangeText={setDraftAssistantName}
+            placeholder="LifeOS"
+            placeholderTextColor={palette.text.muted}
+            style={[
+              styles.textInput,
+              {
+                color: palette.text.primary,
+                borderColor: palette.border.default,
+                backgroundColor: palette.background.secondary,
+              },
+            ]}
+          />
+          <Text style={[styles.hintText, { color: palette.text.muted }]}> 
+            Used in greetings. 1–32 characters.
+          </Text>
+
+          <Text style={[styles.labelText, { color: palette.text.secondary }]}>Wake phrase</Text>
+          <TextInput
+            value={draftWakePhrase}
+            maxLength={64}
+            onChangeText={setDraftWakePhrase}
+            placeholder="Hey LifeOS"
+            placeholderTextColor={palette.text.muted}
+            style={[
+              styles.textInput,
+              {
+                color: palette.text.primary,
+                borderColor: palette.border.default,
+                backgroundColor: palette.background.secondary,
+              },
+            ]}
+          />
+          <Text style={[styles.hintText, { color: palette.text.muted }]}> 
+            Stored for future use. Not active in push-to-talk mode.
+          </Text>
+
+          <Pressable
+            style={[styles.outlineButton, { borderColor: palette.accent.brand }]}
+            onPress={() => {
+              void handleSaveAssistant();
+            }}
+          >
+            <Text style={[styles.outlineButtonText, { color: palette.accent.brand }]}>Save</Text>
+          </Pressable>
+
+          {assistantSaved ? (
+            <Text style={[styles.savedText, { color: palette.accent.success }]}>Saved ✓</Text>
+          ) : null}
         </View>
 
         <View
@@ -376,5 +474,21 @@ const styles = StyleSheet.create({
   skeletonRow: {
     height: spacing[8],
     borderRadius: spacing[2],
+  },
+  textInput: {
+    borderWidth: 1,
+    borderRadius: spacing[2],
+    paddingHorizontal: spacing[3],
+    paddingVertical: spacing[2],
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.regular,
+  },
+  hintText: {
+    fontSize: typography.fontSize.xs,
+    fontWeight: typography.fontWeight.regular,
+  },
+  savedText: {
+    fontSize: typography.fontSize.sm,
+    fontWeight: typography.fontWeight.semibold,
   },
 });

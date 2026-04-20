@@ -119,6 +119,8 @@ interface DesktopSettings {
   model: string;
   ollamaHost: string;
   natsUrl: string;
+  assistantName?: string;
+  wakePhrase?: string;
   voiceEnabled: boolean;
   localOnlyMode: boolean;
   cloudAssistEnabled: boolean;
@@ -586,6 +588,14 @@ async function readSettingsFile(): Promise<DesktopSettings> {
       model: normalizeModel(parsed.model),
       ollamaHost: normalizeHttpUrl(parsed.ollamaHost, 'http://127.0.0.1:11434'),
       natsUrl: normalizeNatsUrl(parsed.natsUrl, 'nats://127.0.0.1:4222'),
+      assistantName:
+        typeof parsed.assistantName === 'string' && parsed.assistantName.trim().length > 0
+          ? parsed.assistantName.trim().slice(0, 32)
+          : 'LifeOS',
+      wakePhrase:
+        typeof parsed.wakePhrase === 'string' && parsed.wakePhrase.trim().length > 0
+          ? parsed.wakePhrase.trim().slice(0, 64)
+          : 'Hey LifeOS',
       voiceEnabled: typeof parsed.voiceEnabled === 'boolean' ? parsed.voiceEnabled : true,
       localOnlyMode: typeof parsed.localOnlyMode === 'boolean' ? parsed.localOnlyMode : true,
       cloudAssistEnabled:
@@ -601,6 +611,8 @@ async function readSettingsFile(): Promise<DesktopSettings> {
       model: 'llama3.1:8b',
       ollamaHost: 'http://127.0.0.1:11434',
       natsUrl: 'nats://127.0.0.1:4222',
+      assistantName: 'LifeOS',
+      wakePhrase: 'Hey LifeOS',
       voiceEnabled: true,
       localOnlyMode: true,
       cloudAssistEnabled: false,
@@ -610,12 +622,24 @@ async function readSettingsFile(): Promise<DesktopSettings> {
   }
 }
 
+function normalizeAssistantName(value: string | undefined): string {
+  const trimmed = (value ?? '').trim();
+  return trimmed.length >= 1 && trimmed.length <= 32 ? trimmed : 'LifeOS';
+}
+
+function normalizeWakePhrase(value: string | undefined): string {
+  const trimmed = (value ?? '').trim();
+  return trimmed.length >= 1 && trimmed.length <= 64 ? trimmed : 'Hey LifeOS';
+}
+
 async function writeSettingsFile(update: Partial<DesktopSettings>): Promise<DesktopSettings> {
   const base = await readSettingsFile();
   const merged: DesktopSettings = {
     model: normalizeModel(update.model ?? base.model),
     ollamaHost: normalizeHttpUrl(update.ollamaHost ?? base.ollamaHost, base.ollamaHost),
     natsUrl: normalizeNatsUrl(update.natsUrl ?? base.natsUrl, base.natsUrl),
+    assistantName: normalizeAssistantName(update.assistantName ?? base.assistantName),
+    wakePhrase: normalizeWakePhrase(update.wakePhrase ?? base.wakePhrase),
     voiceEnabled: typeof update.voiceEnabled === 'boolean' ? update.voiceEnabled : base.voiceEnabled,
     localOnlyMode:
       typeof update.localOnlyMode === 'boolean' ? update.localOnlyMode : base.localOnlyMode,
@@ -1120,6 +1144,8 @@ async function executeCommand(request: RpcRequest): Promise<unknown> {
         model: request.args?.model as string | undefined,
         ollamaHost: request.args?.ollamaHost as string | undefined,
         natsUrl: request.args?.natsUrl as string | undefined,
+        assistantName: request.args?.assistantName as string | undefined,
+        wakePhrase: request.args?.wakePhrase as string | undefined,
         voiceEnabled: request.args?.voiceEnabled as boolean | undefined,
         localOnlyMode: request.args?.localOnlyMode as boolean | undefined,
         cloudAssistEnabled: request.args?.cloudAssistEnabled as boolean | undefined,

@@ -45,6 +45,7 @@ export class VoiceModule implements LifeOSModule {
           type: 'voice.session.plan',
           payload: {
             summary: state.summary,
+            assistantName: state.assistantName ?? 'LifeOS',
           },
           priority: 6,
         },

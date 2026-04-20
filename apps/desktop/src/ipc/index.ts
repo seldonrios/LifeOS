@@ -97,6 +97,8 @@ export interface LifeOsSettings {
   model: string;
   ollamaHost: string;
   natsUrl: string;
+  assistantName: string;
+  wakePhrase: string;
   voiceEnabled: boolean;
   localOnlyMode: boolean;
   cloudAssistEnabled: boolean;
@@ -235,6 +237,8 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       model: 'llama3.1:8b',
       ollamaHost: 'http://127.0.0.1:11434',
       natsUrl: 'nats://127.0.0.1:4222',
+      assistantName: 'LifeOS',
+      wakePhrase: 'Hey LifeOS',
       voiceEnabled: true,
       localOnlyMode: true,
       cloudAssistEnabled: false,
@@ -250,6 +254,8 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
       model: String(payload?.model ?? 'llama3.1:8b'),
       ollamaHost: String(payload?.ollamaHost ?? 'http://127.0.0.1:11434'),
       natsUrl: String(payload?.natsUrl ?? 'nats://127.0.0.1:4222'),
+      assistantName: String(payload?.assistantName ?? 'LifeOS'),
+      wakePhrase: String(payload?.wakePhrase ?? 'Hey LifeOS'),
       voiceEnabled: Boolean(payload?.voiceEnabled ?? true),
       localOnlyMode: Boolean(payload?.localOnlyMode ?? true),
       cloudAssistEnabled: Boolean(payload?.cloudAssistEnabled ?? false),

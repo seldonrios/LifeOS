@@ -34,6 +34,8 @@ export type HealthCheckResult = z.infer<typeof HealthCheckResultSchema>;
 
 export const UXPreferencesSchema = z.object({
   assistantTone: z.enum(['concise', 'detailed', 'conversational']),
+  assistantName: z.string().min(1).max(32).optional(),
+  wakePhrase: z.string().min(1).max(64).optional(),
   localOnlyMode: z.boolean(),
   proactiveSuggestions: z.boolean(),
   tutorialsEnabled: z.boolean(),

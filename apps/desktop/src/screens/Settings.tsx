@@ -23,6 +23,8 @@ export function Settings(): JSX.Element {
   const [draftModel, setDraftModel] = useState('llama3.1:8b');
   const [draftHost, setDraftHost] = useState('http://127.0.0.1:11434');
   const [draftNats, setDraftNats] = useState('nats://127.0.0.1:4222');
+  const [draftAssistantName, setDraftAssistantName] = useState('LifeOS');
+  const [draftWakePhrase, setDraftWakePhrase] = useState('Hey LifeOS');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [localOnlyMode, setLocalOnlyMode] = useState(true);
   const [cloudAssistEnabled, setCloudAssistEnabled] = useState(false);
@@ -56,6 +58,8 @@ export function Settings(): JSX.Element {
     setDraftModel(current.model);
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
+    setDraftAssistantName(current.assistantName ?? 'LifeOS');
+    setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
     setVoiceEnabled(current.voiceEnabled);
     setLocalOnlyMode(current.localOnlyMode);
     setCloudAssistEnabled(current.cloudAssistEnabled);
@@ -73,6 +77,8 @@ export function Settings(): JSX.Element {
     setDraftModel(current.model);
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
+    setDraftAssistantName(current.assistantName ?? 'LifeOS');
+    setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
     setVoiceEnabled(current.voiceEnabled);
     setLocalOnlyMode(current.localOnlyMode);
     setCloudAssistEnabled(current.cloudAssistEnabled);
@@ -182,6 +188,36 @@ export function Settings(): JSX.Element {
           />
         </label>
 
+        <section className="settings-section">
+          <h3>ASSISTANT</h3>
+
+          <label htmlFor="settings-assistant-name">Assistant name</label>
+          <input
+            id="settings-assistant-name"
+            value={draftAssistantName}
+            maxLength={32}
+            onChange={(event) => {
+              setDraftAssistantName(event.target.value);
+              markDirty();
+            }}
+          />
+          <p className="muted">Used in greetings and voice responses. 1–32 characters.</p>
+
+          <label htmlFor="settings-wake-phrase">Wake phrase</label>
+          <input
+            id="settings-wake-phrase"
+            value={draftWakePhrase}
+            maxLength={64}
+            onChange={(event) => {
+              setDraftWakePhrase(event.target.value);
+              markDirty();
+            }}
+          />
+          <p className="muted">
+            Stored for future always-listening support. Not active in push-to-talk mode.
+          </p>
+        </section>
+
         <h3>OWNERSHIP & TRANSPARENCY</h3>
 
         <label className="row" htmlFor="settings-local-only">
@@ -258,6 +294,8 @@ export function Settings(): JSX.Element {
                 model: draftModel,
                 ollamaHost: draftHost,
                 natsUrl: draftNats,
+                assistantName: draftAssistantName,
+                wakePhrase: draftWakePhrase,
                 voiceEnabled,
                 localOnlyMode,
                 cloudAssistEnabled: localOnlyMode ? false : cloudAssistEnabled,
