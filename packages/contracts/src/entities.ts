@@ -4,20 +4,14 @@
 
 import type { z } from 'zod';
 
-import { CaptureResultSchema } from './capture';
-import { InboxItemSchema } from './inbox';
-import { PlanSchema } from './plan';
-import { ReminderSchema } from './reminder';
-import { ReviewReportSchema } from './review';
-
-const ReviewPayloadSchema = ReviewReportSchema;
+import { CaptureEntrySchema } from './loop/capture-entry';
+import { PlannedActionSchema } from './loop/planned-action';
+import { ReminderEventSchema } from './loop/reminder-event';
 
 export const HeroLoopEntitySchemas = {
-  capture: CaptureResultSchema,
-  inbox: InboxItemSchema,
-  plan: PlanSchema,
-  reminder: ReminderSchema,
-  review: ReviewPayloadSchema,
+  capture: CaptureEntrySchema,
+  action: PlannedActionSchema,
+  reminder: ReminderEventSchema,
 } as const;
 
 export type HeroLoopEntitySchemaMap = typeof HeroLoopEntitySchemas;

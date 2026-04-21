@@ -4,40 +4,52 @@
 
 import { z } from 'zod';
 
-import { CaptureResultSchema } from './capture';
-import { InboxItemSchema } from './inbox';
-import { PlanSchema } from './plan';
-import { ReminderSchema } from './reminder';
-import { ReviewReportSchema } from './review';
+import { ReminderEventSchema } from './loop/reminder-event';
+import { Topics } from './topics';
 
-const ReviewPayloadSchema = ReviewReportSchema;
+const RuntimeTaskCompletedPayloadSchema = z.object({
+  taskId: z.string().min(1),
+  title: z.string().min(1),
+  status: z.string().min(1),
+  completionSource: z.enum(['task', 'planned-action']),
+  goalId: z.string().min(1).optional(),
+  goalTitle: z.string().min(1).optional(),
+  sourceCapture: z.string().min(1).optional(),
+  completedAt: z.string().min(1),
+});
 
-export const HeroLoopEventSchema = z.discriminatedUnion('type', [
+const RuntimeTickOverduePayloadSchema = z.object({
+  checkedTasks: z.number().int().nonnegative(),
+  overdueTasks: z.array(
+    z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      goalTitle: z.string().min(1),
+      dueDate: z.string().min(1),
+    }),
+  ),
+  tickedAt: z.string().min(1),
+});
+
+export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal('lifeos.capture.recorded'),
-    timestamp: z.string().min(1),
-    payload: CaptureResultSchema,
+    type: z.literal(Topics.lifeos.reminderFollowupCreated),
+    payload: ReminderEventSchema.pick({ id: true, actionId: true, scheduledFor: true }),
   }),
   z.object({
-    type: z.literal('lifeos.inbox.item.created'),
-    timestamp: z.string().min(1),
-    payload: InboxItemSchema,
+    type: z.literal(Topics.lifeos.taskCompleted),
+    payload: RuntimeTaskCompletedPayloadSchema,
   }),
   z.object({
-    type: z.literal('lifeos.plan.created'),
-    timestamp: z.string().min(1),
-    payload: PlanSchema,
-  }),
-  z.object({
-    type: z.literal('lifeos.reminder.scheduled'),
-    timestamp: z.string().min(1),
-    payload: ReminderSchema,
-  }),
-  z.object({
-    type: z.literal('lifeos.review.generated'),
-    timestamp: z.string().min(1),
-    payload: ReviewPayloadSchema,
+    type: z.literal(Topics.lifeos.tickOverdue),
+    payload: RuntimeTickOverduePayloadSchema,
   }),
 ]);
 
-export type HeroLoopEvent = z.infer<typeof HeroLoopEventSchema>;
+export type RuntimeHeroLoopEvent = z.infer<typeof RuntimeHeroLoopEventSchema>;
+
+/** @deprecated Use RuntimeHeroLoopEventSchema. Will be removed in next cleanup pass. */
+export const HeroLoopEventSchema = RuntimeHeroLoopEventSchema;
+
+/** @deprecated Use RuntimeHeroLoopEvent. */
+export type HeroLoopEvent = RuntimeHeroLoopEvent;

@@ -25,8 +25,10 @@ import {
   HouseholdShoppingItemAddedSchema,
   HouseholdShoppingItemPurchasedSchema,
   HouseholdVoiceCaptureCreatedSchema,
+  HeroLoopEntitySchemas,
   HeroLoopEventSchema,
   PlanSchema,
+  RuntimeHeroLoopEventSchema,
   ReminderSchema,
   ReviewReportSchema,
   ShoppingItemStatusSchema,
@@ -89,29 +91,131 @@ test('hero-loop contract schemas parse valid payloads', () => {
   assert.equal(parsedCaptureResult.type, 'text');
 });
 
-test('hero-loop event envelope validates event type and payload pairing', () => {
-  const parsed = HeroLoopEventSchema.parse({
-    type: 'lifeos.review.generated',
-    timestamp: '2026-03-28T22:00:00.000Z',
+test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with runtime payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.reminder.followup.created',
     payload: {
-      period: 'weekly',
-      wins: ['Shipped baseline approvals flow'],
-      nextActions: ['Document mobile notification edge cases'],
-      loopSummary: {
-        pendingCaptures: 2,
-        actionsDueToday: 3,
-        unacknowledgedReminders: 1,
-        completedActions: ['Shipped baseline approvals flow (action_7)'],
-        suggestedNextActions: ['Follow up on overdue mobile QA'],
-      },
-      generatedAt: '2026-03-28T22:00:00.000Z',
-      source: 'llm',
+      id: 'rem_001',
+      actionId: 'action_001',
+      scheduledFor: '2026-04-01T09:00:00.000Z',
     },
   });
 
-  assert.equal(parsed.type, 'lifeos.review.generated');
-  assert.equal(parsed.payload.source, 'llm');
-  assert.equal(parsed.payload.loopSummary.suggestedNextActions?.length, 1);
+  assert.equal(parsed.type, 'lifeos.reminder.followup.created');
+});
+
+test('RuntimeHeroLoopEventSchema rejects lifeos.reminder.scheduled (non-runtime topic)', () => {
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.reminder.scheduled',
+      payload: {
+        id: 'rem_001',
+        actionId: 'action_001',
+        scheduledFor: '2026-04-01T09:00:00.000Z',
+      },
+    }),
+  );
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.task.completed with runtime payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.task.completed',
+    payload: {
+      taskId: 'task_001',
+      title: 'Ship schema alignment',
+      status: 'done',
+      completionSource: 'task',
+      goalId: 'goal_001',
+      goalTitle: 'Contracts hardening',
+      sourceCapture: 'cap_001',
+      completedAt: '2026-04-01T09:30:00.000Z',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.task.completed');
+  assert.equal(parsed.payload.taskId, 'task_001');
+});
+
+test('RuntimeHeroLoopEventSchema rejects lifeos.task.completed with invalid payload shape', () => {
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.task.completed',
+      payload: {
+        id: 'task_001',
+        status: 'done',
+      },
+    }),
+  );
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.tick.overdue with runtime payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.tick.overdue',
+    payload: {
+      checkedTasks: 12,
+      overdueTasks: [
+        {
+          id: 'task_001',
+          title: 'Draft update',
+          goalTitle: 'Weekly planning',
+          dueDate: '2026-04-01',
+        },
+      ],
+      tickedAt: '2026-04-01T10:00:00.000Z',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.tick.overdue');
+  assert.equal(parsed.payload.overdueTasks.length, 1);
+});
+
+test('RuntimeHeroLoopEventSchema rejects lifeos.tick.overdue with invalid payload shape', () => {
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.tick.overdue',
+      payload: {
+        actionId: 'task_001',
+        overdueAt: '2026-04-01T10:00:00.000Z',
+      },
+    }),
+  );
+});
+
+test('HeroLoopEventSchema deprecated alias parses the same runtime event', () => {
+  const parsed = HeroLoopEventSchema.parse({
+    type: 'lifeos.reminder.followup.created',
+    payload: {
+      id: 'rem_001',
+      actionId: 'action_001',
+      scheduledFor: '2026-04-01T09:00:00.000Z',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.reminder.followup.created');
+});
+
+test('HeroLoopEntitySchemas.capture parses CaptureEntry and rejects CaptureResult', () => {
+  const captureEntry = HeroLoopEntitySchemas.capture.parse({
+    id: 'cap_001',
+    content: 'test',
+    type: 'text',
+    capturedAt: '2026-04-01T09:00:00.000Z',
+    source: 'cli',
+    tags: [],
+    status: 'pending',
+  });
+
+  assert.equal(captureEntry.id, 'cap_001');
+
+  assert.throws(() =>
+    HeroLoopEntitySchemas.capture.parse({
+      id: 'cap_001',
+      type: 'text',
+      content: 'test',
+      processedAt: Date.now(),
+      status: 'success',
+    }),
+  );
 });
 
 test('reminder schema rejects unsupported status values', () => {

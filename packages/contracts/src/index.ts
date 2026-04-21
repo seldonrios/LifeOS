@@ -206,7 +206,12 @@ export {
   type ReviewReport,
 } from './review';
 
-export { HeroLoopEventSchema, type HeroLoopEvent } from './events';
+export {
+  RuntimeHeroLoopEventSchema,
+  type RuntimeHeroLoopEvent,
+  HeroLoopEventSchema,
+  type HeroLoopEvent,
+} from './events';
 
 export {
   CaptureCreateRequestSchema,
