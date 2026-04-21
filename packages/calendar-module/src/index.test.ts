@@ -23,6 +23,9 @@ function createContextMock() {
     updatedAt: '2026-03-23T00:00:00.000Z',
     plans: [],
     calendarEvents: [],
+    captureEntries: [],
+    plannedActions: [],
+    reminderEvents: [],
   };
 
   const context: ModuleRuntimeContext = {

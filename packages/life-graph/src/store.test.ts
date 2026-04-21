@@ -148,6 +148,9 @@ test('saveGraphAtomic creates directory and writes valid versioned graph', async
       version: '0.1.0',
       updatedAt: new Date('2026-03-21T12:00:00.000Z').toISOString(),
       plans: [],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
     },
     graphPath,
   );
@@ -199,6 +202,9 @@ test('legacy JSON migration does not overwrite existing SQLite graph', async () 
           createdAt: '2026-03-21T12:00:00.000Z',
         },
       ],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
     },
     graphPath,
   );
@@ -240,6 +246,9 @@ test('runGraphMigrations dry-run previews migration without mutating graph', asy
       version: '0.1.0',
       updatedAt: '2026-03-21T12:00:00.000Z',
       plans: [],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
     },
     graphPath,
   );
@@ -266,6 +275,9 @@ test('runGraphMigrations applies migration metadata and writes backup', async ()
       version: '0.1.0',
       updatedAt: '2026-03-21T12:00:00.000Z',
       plans: [],
+      captureEntries: [],
+      plannedActions: [],
+      reminderEvents: [],
     },
     graphPath,
   );

@@ -1,8 +1,11 @@
 # @lifeos/life-graph
 
-Life graph contracts for ontology-backed entity and relationship operations.
+Persistence and graph layer for LifeOS.
 
-The intended implementation uses a two-layer modular ontology model on top of Neo4j.
+## Storage Backends
+
+- Primary backend: SQLite via better-sqlite3. Graph persistence is initialized and managed through saveGraphAtomic and LifeGraphManager.
+- Fallback backend: JSON file storage using life-graph.json when SQLite is unavailable or when forceJsonAdapter: true is configured.
 
 ## Spec References
 

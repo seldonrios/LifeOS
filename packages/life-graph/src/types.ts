@@ -334,7 +334,10 @@ export interface LifeGraphMergeConflict {
     | 'emailDigests'
     | 'healthMetricEntries'
     | 'healthDailyStreaks'
-    | 'memory';
+    | 'memory'
+    | 'captureEntries'
+    | 'plannedActions'
+    | 'reminderEvents';
   id: string;
   reason: 'incoming_older' | 'incoming_invalid';
   existingTimestamp?: string;
@@ -385,9 +388,9 @@ export interface LifeGraphDocument {
   healthDailyStreaks?: LifeGraphHealthDailyStreak[];
   memory?: LifeGraphMemoryEntry[];
   system?: LifeGraphSystemNode;
-  captureEntries?: CaptureEntry[];
-  plannedActions?: PlannedAction[];
-  reminderEvents?: ReminderEvent[];
+  captureEntries: CaptureEntry[];
+  plannedActions: PlannedAction[];
+  reminderEvents: ReminderEvent[];
 }
 
 export type LifeGraphRiskStatus = 'green' | 'yellow' | 'red';
@@ -424,6 +427,11 @@ export interface LifeGraphSystemNode {
   meta?: LifeGraphSystemMeta;
 }
 
+/**
+ * Summary counters for plans and goals are aliases over the same GoalPlan entity.
+ * totalPlans and totalGoals both count GoalPlan records.
+ * activeGoals is derived from GoalPlan.tasks where at least one task is not done.
+ */
 export interface LifeGraphSummary {
   version: '0.1.0';
   totalPlans: number;

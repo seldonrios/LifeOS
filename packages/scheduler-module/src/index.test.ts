@@ -38,6 +38,9 @@ function createContextMock(initialGraph?: LifeGraphDocument) {
       },
     ],
     calendarEvents: [],
+    captureEntries: [],
+    plannedActions: [],
+    reminderEvents: [],
   };
 
   const context: ModuleRuntimeContext = {
@@ -219,6 +222,9 @@ test('scheduler module does not overwrite fresh reschedule suggestions', async (
       },
     ],
     calendarEvents: [],
+    captureEntries: [],
+    plannedActions: [],
+    reminderEvents: [],
   };
   const { context, subscriptions, published, getSavedGraph } = createContextMock(initialGraph);
   const module = createSchedulerModule();
