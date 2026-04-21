@@ -1,16 +1,39 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { listOllamaModels, readSettings, writeSettings } from '../ipc';
+import type { AssistantProfile } from '@lifeos/contracts';
+import {
+  listOllamaModels,
+  loadAssistantProfile,
+  readSettings,
+  saveAssistantProfile,
+  writeSettings,
+} from '../ipc';
 import { ErrorBanner } from '../components/ErrorBanner';
 import { Spinner } from '../components/Spinner';
 import { TrustCenter } from './TrustCenter';
 // TrustCenter folded into Settings per UX-A1 guardrail; will be surfaced as a dedicated Settings sub-section in UX-A6.
+
+const ASSISTANT_TONES = ['concise', 'detailed', 'conversational'] as const;
+const ASSISTANT_USE_CASE_OPTIONS = [
+  'Tasks & reminders',
+  'Planning projects',
+  'Daily reviews',
+  'Calendar awareness',
+  'Research & summaries',
+  'Voice capture',
+] as const;
+
+type AssistantTone = (typeof ASSISTANT_TONES)[number];
 
 export function Settings(): JSX.Element {
   const queryClient = useQueryClient();
   const settingsQuery = useQuery({
     queryKey: ['settings'],
     queryFn: readSettings,
+  });
+  const profileQuery = useQuery({
+    queryKey: ['assistant-profile'],
+    queryFn: loadAssistantProfile,
   });
   const current = settingsQuery.data;
   const modelsQuery = useQuery({
@@ -24,7 +47,11 @@ export function Settings(): JSX.Element {
   const [draftHost, setDraftHost] = useState('http://127.0.0.1:11434');
   const [draftNats, setDraftNats] = useState('nats://127.0.0.1:4222');
   const [draftAssistantName, setDraftAssistantName] = useState('LifeOS');
+  const [draftAvatarEmoji, setDraftAvatarEmoji] = useState('🤖');
   const [draftWakePhrase, setDraftWakePhrase] = useState('Hey LifeOS');
+  const [draftAssistantTone, setDraftAssistantTone] = useState<AssistantTone>('concise');
+  const [draftUseCases, setDraftUseCases] = useState<string[]>([]);
+  const [profileSaveStatus, setProfileSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [localOnlyMode, setLocalOnlyMode] = useState(true);
   const [cloudAssistEnabled, setCloudAssistEnabled] = useState(false);
@@ -43,6 +70,17 @@ export function Settings(): JSX.Element {
     },
   });
 
+  const profileSaveMutation = useMutation({
+    mutationFn: saveAssistantProfile,
+    onSuccess: () => {
+      setProfileSaveStatus('saved');
+      void queryClient.invalidateQueries({ queryKey: ['assistant-profile'] });
+    },
+    onError: () => {
+      setProfileSaveStatus('error');
+    },
+  });
+
   useEffect(() => {
     if (!current) {
       return;
@@ -58,8 +96,6 @@ export function Settings(): JSX.Element {
     setDraftModel(current.model);
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
-    setDraftAssistantName(current.assistantName ?? 'LifeOS');
-    setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
     setVoiceEnabled(current.voiceEnabled);
     setLocalOnlyMode(current.localOnlyMode);
     setCloudAssistEnabled(current.cloudAssistEnabled);
@@ -70,6 +106,28 @@ export function Settings(): JSX.Element {
     setHasUnsavedChanges(false);
   }, [current, hasUnsavedChanges]);
 
+  useEffect(() => {
+    if (!profileQuery.data) {
+      return;
+    }
+
+    setDraftAssistantName(profileQuery.data.assistantName ?? 'LifeOS');
+    setDraftAvatarEmoji(profileQuery.data.avatarEmoji ?? '🤖');
+    setDraftWakePhrase(profileQuery.data.wakePhrase ?? 'Hey LifeOS');
+    setDraftAssistantTone((profileQuery.data.assistantTone ?? 'concise') as AssistantTone);
+    setDraftUseCases(profileQuery.data.useCases ?? []);
+    setProfileSaveStatus('idle');
+  }, [profileQuery.data]);
+
+  useEffect(() => {
+    if (!profileQuery.isError || !current) {
+      return;
+    }
+
+    setDraftAssistantName(current.assistantName ?? 'LifeOS');
+    setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
+  }, [current, profileQuery.isError]);
+
   const applyCurrent = (): void => {
     if (!current) {
       return;
@@ -77,8 +135,6 @@ export function Settings(): JSX.Element {
     setDraftModel(current.model);
     setDraftHost(current.ollamaHost);
     setDraftNats(current.natsUrl);
-    setDraftAssistantName(current.assistantName ?? 'LifeOS');
-    setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
     setVoiceEnabled(current.voiceEnabled);
     setLocalOnlyMode(current.localOnlyMode);
     setCloudAssistEnabled(current.cloudAssistEnabled);
@@ -87,6 +143,27 @@ export function Settings(): JSX.Element {
     hasHydrated.current = true;
     lastHydratedSignature.current = JSON.stringify(current);
     setHasUnsavedChanges(false);
+  };
+
+  const applyProfileCurrent = (): void => {
+    if (profileQuery.data) {
+      setDraftAssistantName(profileQuery.data.assistantName ?? 'LifeOS');
+      setDraftAvatarEmoji(profileQuery.data.avatarEmoji ?? '🤖');
+      setDraftWakePhrase(profileQuery.data.wakePhrase ?? 'Hey LifeOS');
+      setDraftAssistantTone((profileQuery.data.assistantTone ?? 'concise') as AssistantTone);
+      setDraftUseCases(profileQuery.data.useCases ?? []);
+      setProfileSaveStatus('idle');
+      return;
+    }
+
+    if (current) {
+      setDraftAssistantName(current.assistantName ?? 'LifeOS');
+      setDraftWakePhrase(current.wakePhrase ?? 'Hey LifeOS');
+      setDraftAvatarEmoji('🤖');
+      setDraftAssistantTone('concise');
+      setDraftUseCases([]);
+      setProfileSaveStatus('idle');
+    }
   };
 
   const markDirty = (): void => {
@@ -115,6 +192,27 @@ export function Settings(): JSX.Element {
     : saveMutation.isSuccess
       ? 'Settings saved.'
       : null;
+
+  const toggleUseCase = (label: string): void => {
+    setProfileSaveStatus('idle');
+    setDraftUseCases((previous) => {
+      if (previous.includes(label)) {
+        return previous.filter((entry) => entry !== label);
+      }
+      if (previous.length >= 10) {
+        return previous;
+      }
+      return [...previous, label];
+    });
+  };
+
+  const getProfileDraftPayload = (): Partial<AssistantProfile> => ({
+    assistantName: draftAssistantName.trim() || 'LifeOS',
+    avatarEmoji: draftAvatarEmoji.trim() || '🤖',
+    wakePhrase: draftWakePhrase.trim() || 'Hey LifeOS',
+    assistantTone: draftAssistantTone,
+    useCases: draftUseCases,
+  });
 
   return (
     <div className="settings-layout">
@@ -188,8 +286,16 @@ export function Settings(): JSX.Element {
           />
         </label>
 
-        <section className="settings-section">
+        <section className="assistant-profile-card">
           <h3>ASSISTANT</h3>
+
+          <div className="assistant-profile-summary">
+            <div className="assistant-profile-avatar">{draftAvatarEmoji || '🤖'}</div>
+            <div className="assistant-profile-copy">
+              <strong>{draftAssistantName || 'LifeOS'}</strong>
+              <span className="muted">Your personal assistant</span>
+            </div>
+          </div>
 
           <label htmlFor="settings-assistant-name">Assistant name</label>
           <input
@@ -198,10 +304,21 @@ export function Settings(): JSX.Element {
             maxLength={32}
             onChange={(event) => {
               setDraftAssistantName(event.target.value);
-              markDirty();
+              setProfileSaveStatus('idle');
             }}
           />
-          <p className="muted">Used in greetings and voice responses. 1–32 characters.</p>
+
+          <label htmlFor="settings-avatar-emoji">Avatar emoji</label>
+          <input
+            id="settings-avatar-emoji"
+            className="assistant-emoji-input"
+            value={draftAvatarEmoji}
+            maxLength={2}
+            onChange={(event) => {
+              setDraftAvatarEmoji(event.target.value);
+              setProfileSaveStatus('idle');
+            }}
+          />
 
           <label htmlFor="settings-wake-phrase">Wake phrase</label>
           <input
@@ -210,12 +327,72 @@ export function Settings(): JSX.Element {
             maxLength={64}
             onChange={(event) => {
               setDraftWakePhrase(event.target.value);
-              markDirty();
+              setProfileSaveStatus('idle');
             }}
           />
           <p className="muted">
             Stored for future always-listening support. Not active in push-to-talk mode.
           </p>
+
+          <label>Assistant tone</label>
+          <div className="assistant-tone-group" role="tablist" aria-label="Assistant tone">
+            {ASSISTANT_TONES.map((tone) => (
+              <button
+                key={tone}
+                type="button"
+                className={`assistant-tone-btn${draftAssistantTone === tone ? ' active' : ''}`}
+                onClick={() => {
+                  setDraftAssistantTone(tone);
+                  setProfileSaveStatus('idle');
+                }}
+              >
+                {tone}
+              </button>
+            ))}
+          </div>
+
+          <label>Use cases</label>
+          <div className="assistant-use-case-grid">
+            {ASSISTANT_USE_CASE_OPTIONS.map((option) => {
+              const selected = draftUseCases.includes(option);
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  className={`assistant-use-case-chip${selected ? ' active' : ''}`}
+                  onClick={() => {
+                    toggleUseCase(option);
+                  }}
+                >
+                  {option}
+                </button>
+              );
+            })}
+          </div>
+
+          {profileSaveStatus === 'saved' ? (
+            <p className="muted" role="status" aria-live="polite">
+              Profile saved.
+            </p>
+          ) : null}
+          {profileSaveStatus === 'error' ? <ErrorBanner message="Unable to save profile." /> : null}
+
+          <div className="row gap-sm">
+            <button
+              className="primary-btn"
+              type="button"
+              disabled={profileSaveMutation.isPending}
+              onClick={() => {
+                setProfileSaveStatus('saving');
+                void profileSaveMutation.mutateAsync(getProfileDraftPayload());
+              }}
+            >
+              Save profile
+            </button>
+            <button className="secondary-btn" type="button" onClick={applyProfileCurrent}>
+              Revert
+            </button>
+          </div>
         </section>
 
         <h3>OWNERSHIP & TRANSPARENCY</h3>
@@ -294,8 +471,6 @@ export function Settings(): JSX.Element {
                 model: draftModel,
                 ollamaHost: draftHost,
                 natsUrl: draftNats,
-                assistantName: draftAssistantName,
-                wakePhrase: draftWakePhrase,
                 voiceEnabled,
                 localOnlyMode,
                 cloudAssistEnabled: localOnlyMode ? false : cloudAssistEnabled,

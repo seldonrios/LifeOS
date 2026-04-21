@@ -1,7 +1,136 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { InboxItem, GoalSummary, HealthCheckResult } from '@lifeos/contracts';
+import type { AssistantProfile, InboxItem, GoalSummary, HealthCheckResult } from '@lifeos/contracts';
 
 const UX_HEALTH_ENDPOINT = 'http://127.0.0.1:3000/api/ux/health';
+const ASSISTANT_PROFILE_ENDPOINT = 'http://127.0.0.1:3000/api/assistant-profile';
+const AUTH_REFRESH_ENDPOINT = 'http://127.0.0.1:3000/api/auth/refresh';
+const ACCESS_TOKEN_STORAGE_KEY = 'lifeos.access_token';
+const REFRESH_TOKEN_STORAGE_KEY = 'lifeos.refresh_token';
+
+function defaultAssistantProfile(): AssistantProfile {
+  return {
+    userId: 'local-user',
+    assistantName: 'LifeOS',
+    wakePhrase: 'Hey LifeOS',
+    assistantTone: 'concise',
+    useCases: [],
+    avatarEmoji: '🤖',
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+function readDesktopSessionValue(key: string): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
+  const localValue = window.localStorage.getItem(key);
+  if (localValue && localValue.trim().length > 0) {
+    return localValue.trim();
+  }
+
+  const sessionValue = window.sessionStorage.getItem(key);
+  if (sessionValue && sessionValue.trim().length > 0) {
+    return sessionValue.trim();
+  }
+
+  return null;
+}
+
+function writeDesktopAccessToken(token: string): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, token);
+  } catch {
+    // Ignore storage write failures and continue using in-memory token for this request.
+  }
+}
+
+async function refreshDesktopAccessToken(refreshToken: string): Promise<string | null> {
+  try {
+    const response = await fetch(AUTH_REFRESH_ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refreshToken }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const payload = await response.json() as { accessToken?: unknown };
+    const accessToken = typeof payload.accessToken === 'string' ? payload.accessToken.trim() : '';
+    if (!accessToken) {
+      return null;
+    }
+
+    writeDesktopAccessToken(accessToken);
+    return accessToken;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveDesktopAccessToken(): Promise<string | null> {
+  const existingToken = readDesktopSessionValue(ACCESS_TOKEN_STORAGE_KEY);
+  if (existingToken) {
+    return existingToken;
+  }
+
+  const refreshToken = readDesktopSessionValue(REFRESH_TOKEN_STORAGE_KEY);
+  if (!refreshToken) {
+    return null;
+  }
+
+  return refreshDesktopAccessToken(refreshToken);
+}
+
+async function fetchWithDesktopBearerAuth(
+  url: string,
+  init: RequestInit,
+): Promise<Response | null> {
+  const token = await resolveDesktopAccessToken();
+  if (!token) {
+    return null;
+  }
+
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+
+  let response = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  if (response.status !== 401) {
+    return response;
+  }
+
+  const refreshToken = readDesktopSessionValue(REFRESH_TOKEN_STORAGE_KEY);
+  if (!refreshToken) {
+    return null;
+  }
+
+  const refreshedToken = await refreshDesktopAccessToken(refreshToken);
+  if (!refreshedToken) {
+    return null;
+  }
+
+  const retryHeaders = new Headers(init.headers);
+  retryHeaders.set('Authorization', `Bearer ${refreshedToken}`);
+
+  response = await fetch(url, {
+    ...init,
+    headers: retryHeaders,
+  });
+
+  return response;
+}
 
 export interface GraphSummary {
   totalGoals: number;
@@ -448,6 +577,18 @@ function mockInvoke<T>(command: string, payload?: Record<string, unknown>): T {
     ] as T;
   }
 
+  if (command === 'assistant_profile_get') {
+    return defaultAssistantProfile() as T;
+  }
+
+  if (command === 'assistant_profile_save') {
+    return {
+      ...defaultAssistantProfile(),
+      ...(payload ?? {}),
+      updatedAt: new Date().toISOString(),
+    } as T;
+  }
+
   if (command === 'plan_from_capture') {
     return { id: 'mock-plan-' + Date.now() } as T;
   }
@@ -600,6 +741,60 @@ export async function getUXHealth(): Promise<HealthCheckResult[]> {
 
   const payload = await response.json() as unknown;
   return Array.isArray(payload) ? payload as HealthCheckResult[] : [];
+}
+
+export async function loadAssistantProfile(): Promise<AssistantProfile> {
+  if (isMockRuntime()) {
+    return mockInvoke<AssistantProfile>('assistant_profile_get');
+  }
+
+  const response = await fetchWithDesktopBearerAuth(ASSISTANT_PROFILE_ENDPOINT, { method: 'GET' });
+  if (!response) {
+    return defaultAssistantProfile();
+  }
+  if (!response.ok) {
+    if (response.status === 401) {
+      return defaultAssistantProfile();
+    }
+    throw new Error(`Failed to load assistant profile (${response.status})`);
+  }
+
+  return await response.json() as AssistantProfile;
+}
+
+export async function saveAssistantProfile(draft: Partial<AssistantProfile>): Promise<AssistantProfile> {
+  if (isMockRuntime()) {
+    return mockInvoke<AssistantProfile>('assistant_profile_save', draft as Record<string, unknown>);
+  }
+
+  const response = await fetchWithDesktopBearerAuth(ASSISTANT_PROFILE_ENDPOINT, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(draft),
+  });
+
+  if (!response) {
+    return {
+      ...defaultAssistantProfile(),
+      ...draft,
+      updatedAt: new Date().toISOString(),
+    };
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      return {
+        ...defaultAssistantProfile(),
+        ...draft,
+        updatedAt: new Date().toISOString(),
+      };
+    }
+    throw new Error(`Failed to save assistant profile (${response.status})`);
+  }
+
+  return await response.json() as AssistantProfile;
 }
 
 export async function makePlanFromCapture(captureId: string, title: string): Promise<{ id: string }> {

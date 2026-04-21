@@ -3,14 +3,14 @@
  */
 import { z } from 'zod';
 export declare const CaptureTypeSchema: z.ZodEnum<{
-    voice: "voice";
     text: "text";
+    voice: "voice";
 }>;
 export type CaptureType = z.infer<typeof CaptureTypeSchema>;
 export declare const CaptureRequestSchema: z.ZodObject<{
     type: z.ZodEnum<{
-        voice: "voice";
         text: "text";
+        voice: "voice";
     }>;
     content: z.ZodString;
     metadata: z.ZodOptional<z.ZodObject<{
@@ -23,12 +23,14 @@ export declare const CaptureRequestSchema: z.ZodObject<{
         }>>;
         sourceDeviceId: z.ZodOptional<z.ZodString>;
         targetHint: z.ZodOptional<z.ZodEnum<{
-            unknown: "unknown";
             shopping: "shopping";
             chore: "chore";
             reminder: "reminder";
             note: "note";
+            unknown: "unknown";
         }>>;
+        audioBase64: z.ZodOptional<z.ZodString>;
+        durationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     tags: z.ZodOptional<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>;
@@ -43,8 +45,8 @@ export type CaptureStatus = z.infer<typeof CaptureStatusSchema>;
 export declare const CaptureResultSchema: z.ZodObject<{
     id: z.ZodString;
     type: z.ZodEnum<{
-        voice: "voice";
         text: "text";
+        voice: "voice";
     }>;
     content: z.ZodString;
     processedAt: z.ZodNumber;
@@ -56,3 +58,14 @@ export declare const CaptureResultSchema: z.ZodObject<{
     error: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type CaptureResult = z.infer<typeof CaptureResultSchema>;
+export declare const CaptureListItemSchema: z.ZodObject<{
+    id: z.ZodString;
+    content: z.ZodString;
+    type: z.ZodString;
+    capturedAt: z.ZodString;
+    source: z.ZodString;
+    tags: z.ZodArray<z.ZodString>;
+    status: z.ZodString;
+}, z.core.$strip>;
+export type CaptureListItem = z.infer<typeof CaptureListItemSchema>;
+//# sourceMappingURL=capture.d.ts.map

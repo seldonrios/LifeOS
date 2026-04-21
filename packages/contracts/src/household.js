@@ -200,13 +200,22 @@ export const HouseholdHomeStateChangedSchema = z.object({
 export const HouseholdHomeStateConfigSchema = z.object({
     haIntegrationEnabled: z.boolean().optional(),
     haConsentedStateKeys: z.array(z.string().min(1)).optional(),
+    timeZone: z.string().optional(),
 });
 export const HouseholdUpdateConfigRequestSchema = z
     .object({
     haIntegrationEnabled: z.boolean().optional(),
     haConsentedStateKeys: z.array(z.string().min(1)).optional(),
+    timeZone: z
+        .string()
+        .optional()
+        .refine((value) => value === undefined || Intl.supportedValuesOf('timeZone').includes(value), {
+        message: 'Invalid IANA time zone',
+    }),
 })
-    .refine((value) => value.haIntegrationEnabled !== undefined || value.haConsentedStateKeys !== undefined, {
+    .refine((value) => value.haIntegrationEnabled !== undefined ||
+    value.haConsentedStateKeys !== undefined ||
+    value.timeZone !== undefined, {
     message: 'At least one config field is required',
 });
 export const HouseholdHaWebhookRequestSchema = z
@@ -424,3 +433,4 @@ export const HomeNodeDisplayFeedSchema = z
     generatedAt: IsoDateTimeSchema,
 })
     .strict();
+//# sourceMappingURL=household.js.map

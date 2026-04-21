@@ -20,8 +20,23 @@ export declare const InboxItemTypeSchema: z.ZodEnum<{
     reminder: "reminder";
     approval: "approval";
     notification: "notification";
+    capture: "capture";
 }>;
 export type InboxItemType = z.infer<typeof InboxItemTypeSchema>;
+export declare const InboxActionRequestSchema: z.ZodObject<{
+    captureId: z.ZodString;
+    action: z.ZodEnum<{
+        defer: "defer";
+        delete: "delete";
+        "make-plan": "make-plan";
+        "save-note": "save-note";
+    }>;
+}, z.core.$strip>;
+export type InboxActionRequest = z.infer<typeof InboxActionRequestSchema>;
+export declare const ReviewCloseDayRequestSchema: z.ZodObject<{
+    tomorrowNote: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export type ReviewCloseDayRequest = z.infer<typeof ReviewCloseDayRequestSchema>;
 export declare const ReminderInboxPayloadSchema: z.ZodObject<{
     dueDate: z.ZodString;
     actionId: z.ZodString;
@@ -47,6 +62,7 @@ export declare const InboxItemSchema: z.ZodObject<{
         reminder: "reminder";
         approval: "approval";
         notification: "notification";
+        capture: "capture";
     }>;
     title: z.ZodString;
     description: z.ZodOptional<z.ZodString>;
@@ -66,3 +82,4 @@ export declare const InboxItemSchema: z.ZodObject<{
     }, z.core.$strip>, z.ZodRecord<z.ZodString, z.ZodUnknown>]>;
 }, z.core.$strip>;
 export type InboxItem = z.infer<typeof InboxItemSchema>;
+//# sourceMappingURL=inbox.d.ts.map

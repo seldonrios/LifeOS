@@ -574,6 +574,85 @@ select {
   gap: 10px;
 }
 
+.assistant-profile-card {
+  border: 1px solid #d8e2e7;
+  border-radius: 12px;
+  background: #f8fbfd;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.assistant-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assistant-profile-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.assistant-profile-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.assistant-emoji-input {
+  width: 82px;
+}
+
+.assistant-tone-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assistant-tone-btn {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 12px;
+  background: #fff;
+  text-transform: capitalize;
+}
+
+.assistant-tone-btn.active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #fff;
+}
+
+.assistant-use-case-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assistant-use-case-chip {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 6px 10px;
+  background: #fff;
+  color: var(--ink);
+}
+
+.assistant-use-case-chip.active {
+  border-color: #2c6f5c;
+  background: #dff2ec;
+  color: #1d4f3f;
+}
+
 .trust-layout {
   display: grid;
   grid-template-columns: repeat(2, minmax(260px, 1fr));

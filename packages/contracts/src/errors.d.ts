@@ -17,3 +17,4 @@ export declare const LifeOSErrorSchema: z.ZodObject<{
     retryable: z.ZodBoolean;
 }, z.core.$strip>;
 export type LifeOSError = z.infer<typeof LifeOSErrorSchema>;
+//# sourceMappingURL=errors.d.ts.map

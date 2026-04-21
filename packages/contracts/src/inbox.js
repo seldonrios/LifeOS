@@ -14,7 +14,14 @@ export const ApprovalResultSchema = z.object({
     reason: z.string().min(1).optional(),
     timestamp: z.number().int().nonnegative(),
 });
-export const InboxItemTypeSchema = z.enum(['approval', 'notification', 'reminder']);
+export const InboxItemTypeSchema = z.enum(['approval', 'notification', 'reminder', 'capture']);
+export const InboxActionRequestSchema = z.object({
+    captureId: z.string().min(1),
+    action: z.enum(['defer', 'delete', 'make-plan', 'save-note']),
+});
+export const ReviewCloseDayRequestSchema = z.object({
+    tomorrowNote: z.string().optional(),
+});
 export const ReminderInboxPayloadSchema = z.object({
     dueDate: z.string().min(1),
     actionId: z.string().min(1),
@@ -38,3 +45,4 @@ export const InboxItemSchema = z.object({
     read: z.boolean(),
     data: InboxItemDataSchema,
 });
+//# sourceMappingURL=inbox.js.map

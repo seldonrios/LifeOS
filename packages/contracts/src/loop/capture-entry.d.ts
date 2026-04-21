@@ -3,8 +3,8 @@ export declare const CaptureEntrySchema: z.ZodObject<{
     id: z.ZodString;
     content: z.ZodString;
     type: z.ZodEnum<{
-        voice: "voice";
         text: "text";
+        voice: "voice";
     }>;
     capturedAt: z.ZodString;
     source: z.ZodString;
@@ -23,12 +23,13 @@ export declare const CaptureEntrySchema: z.ZodObject<{
         }>>;
         sourceDeviceId: z.ZodOptional<z.ZodString>;
         targetHint: z.ZodOptional<z.ZodEnum<{
-            unknown: "unknown";
             shopping: "shopping";
             chore: "chore";
             reminder: "reminder";
             note: "note";
+            unknown: "unknown";
         }>>;
     }, z.core.$strip>>;
 }, z.core.$strict>;
 export type CaptureEntry = z.infer<typeof CaptureEntrySchema>;
+//# sourceMappingURL=capture-entry.d.ts.map

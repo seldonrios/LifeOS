@@ -126,3 +126,4 @@ export function isOverdue(dueAt, now = new Date()) {
     }
     return dueDate.getTime() < now.getTime();
 }
+//# sourceMappingURL=recurrence.js.map

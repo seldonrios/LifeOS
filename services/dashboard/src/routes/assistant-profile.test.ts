@@ -39,6 +39,8 @@ async function bearerFor(userId: string): Promise<string> {
 
 function createHarness(): {
   app: FastifyInstance;
+  db: AssistantProfileDatabase;
+  householdClient: HouseholdGraphClient;
   cleanup: () => Promise<void>;
 } {
   const tempDir = mkdtempSync(join(tmpdir(), 'lifeos-dashboard-assistant-profile-'));
@@ -54,6 +56,8 @@ function createHarness(): {
 
   return {
     app,
+    db,
+    householdClient,
     cleanup: async () => {
       await app.close();
       householdClient.close();
@@ -332,6 +336,84 @@ test('PUT /api/assistant-profile rejects non-emoji single grapheme avatarEmoji',
       },
     });
     assert.equal(response.statusCode, 400, response.body);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/assistant-profile?userId=... returns target profile for same-household active member', async () => {
+  const { app, db, householdClient, cleanup } = createHarness();
+  try {
+    await app.ready();
+
+    const { household } = householdClient.createHouseholdWithCreator('Family Home', 'caller-user', 'Admin');
+    db.prepare(
+      `INSERT INTO household_members
+        (household_id, user_id, role, status, invited_by, joined_at, invite_token, invite_expires_at)
+       VALUES (?, ?, 'Adult', 'active', ?, ?, NULL, NULL)`,
+    ).run(household.id, 'target-user', 'caller-user', new Date().toISOString());
+
+    db.prepare(
+      `INSERT INTO assistant_profiles
+        (user_id, assistant_name, wake_phrase, assistant_tone, use_cases_json, avatar_emoji, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      'target-user',
+      'Target Profile',
+      'Hey Target',
+      'detailed',
+      JSON.stringify(['planning']),
+      '🎯',
+      new Date().toISOString(),
+    );
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/assistant-profile?userId=target-user',
+      headers: { authorization: await bearerFor('caller-user') },
+    });
+
+    assert.equal(response.statusCode, 200, response.body);
+    const body = response.json();
+    assert.equal(body.userId, 'target-user');
+    assert.equal(body.assistantName, 'Target Profile');
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/assistant-profile?userId=... rejects unauthorized cross-user access', async () => {
+  const { app, cleanup } = createHarness();
+  try {
+    await app.ready();
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/assistant-profile?userId=some-other-user',
+      headers: { authorization: await bearerFor('caller-user') },
+    });
+
+    assert.equal(response.statusCode, 403, response.body);
+  } finally {
+    await cleanup();
+  }
+});
+
+test('GET /api/assistant-profile?userId=... rejects cross-household profile access', async () => {
+  const { app, householdClient, cleanup } = createHarness();
+  try {
+    await app.ready();
+
+    householdClient.createHouseholdWithCreator('Caller Household', 'caller-user', 'Admin');
+    householdClient.createHouseholdWithCreator('Target Household', 'target-user', 'Admin');
+
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/assistant-profile?userId=target-user',
+      headers: { authorization: await bearerFor('caller-user') },
+    });
+
+    assert.equal(response.statusCode, 403, response.body);
   } finally {
     await cleanup();
   }

@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 
 import { AssistantProfileInputSchema, type AssistantProfile } from '@lifeos/contracts';
 
@@ -76,18 +77,52 @@ export function registerAssistantProfileRoutes(
     url: '/api/assistant-profile',
     config: { accessMode: 'bearer' },
     handler: async (request, reply) => {
-      const userId = await extractCallerUserId(request);
-      if (!userId) {
+      const callerUserId = await extractCallerUserId(request);
+      if (!callerUserId) {
         reply.status(401).send({ error: 'Unauthorized' });
         return;
       }
 
+      const query = z
+        .object({
+          userId: z.string().trim().min(1).optional(),
+        })
+        .safeParse(request.query);
+
+      if (!query.success) {
+        reply.status(400).send({ error: 'Invalid query parameters' });
+        return;
+      }
+
+      const targetUserId = query.data.userId ?? callerUserId;
+
+      if (targetUserId !== callerUserId) {
+        const sharedHousehold = db
+          .prepare(
+            `SELECT 1
+             FROM household_members caller
+             INNER JOIN household_members target
+               ON caller.household_id = target.household_id
+             WHERE caller.user_id = ?
+               AND target.user_id = ?
+               AND caller.status = 'active'
+               AND target.status = 'active'
+             LIMIT 1`,
+          )
+          .get(callerUserId, targetUserId);
+
+        if (!sharedHousehold) {
+          reply.status(403).send({ error: 'Forbidden' });
+          return;
+        }
+      }
+
       const row = db
         .prepare('SELECT * FROM assistant_profiles WHERE user_id = ?')
-        .get(userId) as AssistantProfileRow | undefined;
+        .get(targetUserId) as AssistantProfileRow | undefined;
 
       if (!row) {
-        reply.send(defaultProfile(userId));
+        reply.send(defaultProfile(targetUserId));
         return;
       }
 

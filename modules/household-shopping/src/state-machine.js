@@ -6,3 +6,4 @@ export const VALID_TRANSITIONS = {
 export function isValidTransition(current, next) {
     return VALID_TRANSITIONS[current].includes(next);
 }
+//# sourceMappingURL=state-machine.js.map

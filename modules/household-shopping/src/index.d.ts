@@ -13,3 +13,4 @@ export declare const householdShoppingModule: LifeOSModule;
 export declare function publishShoppingItemAdded(context: ShoppingPublishContext, payload: HouseholdShoppingItemAdded): Promise<void>;
 export declare function publishShoppingItemPurchased(context: ShoppingPublishContext, payload: HouseholdShoppingItemPurchased): Promise<void>;
 export default householdShoppingModule;
+//# sourceMappingURL=index.d.ts.map

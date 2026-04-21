@@ -24,3 +24,4 @@ export interface ObservabilityClient {
     recordMetric(name: string, value: number, tags?: Record<string, string>): void;
     log(level: 'debug' | 'info' | 'warn' | 'error', message: string, meta?: Record<string, unknown>): void;
 }
+//# sourceMappingURL=types.d.ts.map

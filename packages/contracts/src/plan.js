@@ -31,3 +31,11 @@ export const PlanningSuggestionSchema = z.object({
     rationale: z.string().min(1),
     actions: z.array(z.string().min(1)).min(1),
 });
+export const PlanBlockedRequestSchema = z.object({
+    planId: z.string().min(1),
+    reason: z.string().min(1).optional(),
+});
+export const PlanAlternativesResponseSchema = z.object({
+    alternatives: z.array(z.string().min(1)),
+});
+//# sourceMappingURL=plan.js.map

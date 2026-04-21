@@ -12,3 +12,4 @@ export const LoopInboxItemSchema = z
     triageState: z.enum(['untriaged', 'actioned', 'dismissed']),
 })
     .strict();
+//# sourceMappingURL=inbox-item.js.map

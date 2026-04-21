@@ -3,7 +3,15 @@ import type { KeyboardEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { FeatureTour } from '../components/FeatureTour';
 import { usePageTour } from '../hooks/usePageTour';
-import { createCapture, completeTask, getDailyReview, getGraphSummary, listTasks, readSettings } from '../ipc';
+import {
+  createCapture,
+  completeTask,
+  getDailyReview,
+  getGraphSummary,
+  listTasks,
+  loadAssistantProfile,
+  readSettings,
+} from '../ipc';
 import { todayTourSteps } from '../tours';
 import type { ScreenId } from '../types';
 
@@ -33,6 +41,7 @@ export function Today({ onNavigate, onResetTour }: Props): JSX.Element {
     staleTime: 10_000,
   });
   const settingsQuery = useQuery({ queryKey: ['settings'], queryFn: readSettings });
+  const profileQuery = useQuery({ queryKey: ['assistant-profile'], queryFn: loadAssistantProfile });
   const reviewQuery = useQuery({ queryKey: ['daily-review'], queryFn: getDailyReview });
 
   const captureMutation = useMutation({
@@ -46,7 +55,7 @@ export function Today({ onNavigate, onResetTour }: Props): JSX.Element {
 
   const tasks = tasksQuery.data ?? [];
   const activeGoals = graphQuery.data?.activeGoals ?? [];
-  const assistantName = settingsQuery.data?.assistantName ?? 'LifeOS';
+  const assistantName = profileQuery.data?.assistantName ?? settingsQuery.data?.assistantName ?? 'LifeOS';
   const pendingCaptures = reviewQuery.data?.pendingCaptures ?? 0;
   const unacknowledgedReminders = reviewQuery.data?.unacknowledgedReminders ?? 0;
   const hasResolvedTodayData =

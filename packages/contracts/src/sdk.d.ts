@@ -7,3 +7,4 @@ export interface SDKConfig {
     onAuthExpired: () => void;
     timeout?: number;
 }
+//# sourceMappingURL=sdk.d.ts.map

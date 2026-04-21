@@ -9,3 +9,4 @@ export const ReminderEventSchema = z
     status: z.enum(['scheduled', 'fired', 'acknowledged', 'cancelled']),
 })
     .strict();
+//# sourceMappingURL=reminder-event.js.map

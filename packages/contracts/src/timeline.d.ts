@@ -23,3 +23,4 @@ export interface GoalSummary {
     priority: number;
     deadline: string | null;
 }
+//# sourceMappingURL=timeline.d.ts.map

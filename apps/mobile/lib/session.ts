@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as SecureStore from 'expo-secure-store';
 import * as LocalAuthentication from 'expo-local-authentication';
 import { create } from 'zustand';
-import type { LoginRequest, UserProfile } from '@lifeos/contracts';
+import type { AssistantProfile, LoginRequest, UserProfile } from '@lifeos/contracts';
 
 import { PUSH_TOKEN_KEY, registerPushToken } from './notifications';
 import { useQueueStore } from './queue';
@@ -22,10 +22,12 @@ type SessionState = {
   useCases: string[] | null;
   assistantStyle: string | null;
   assistantName: string;
+  activeProfile: AssistantProfile | null;
   restoreSession: () => Promise<void>;
   setOnboardingComplete: (completed: boolean) => void;
   setHouseholdId: (id: string) => Promise<void>;
   setAssistantName: (name: string) => Promise<void>;
+  setActiveProfile: (profile: AssistantProfile) => void;
   loadBiometricPreference: () => Promise<void>;
   setBiometricEnabled: (enabled: boolean) => Promise<void>;
   requireBiometric: () => Promise<void>;
@@ -72,6 +74,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   useCases: null,
   assistantStyle: null,
   assistantName: 'LifeOS',
+  activeProfile: null,
   async restoreSession() {
     let nextStatus: SessionStatus = 'unauthenticated';
     let nextAccessToken: string | null = null;
@@ -117,6 +120,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       } catch {
         set({ assistantName: 'LifeOS' });
       }
+
+      try {
+        const profile = await sdk.assistantProfile.get();
+        set({ activeProfile: profile, assistantName: profile.assistantName });
+      } catch {
+        set({ activeProfile: null });
+      }
     }
   },
   async setHouseholdId(id) {
@@ -131,6 +141,10 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     const sanitized = trimmed.length >= 1 && trimmed.length <= 32 ? trimmed : 'LifeOS';
     await AsyncStorage.setItem(ASSISTANT_NAME_KEY, sanitized);
     set({ assistantName: sanitized });
+  },
+  setActiveProfile(profile) {
+    set({ activeProfile: profile });
+    void get().setAssistantName(profile.assistantName);
   },
   async loadBiometricPreference() {
     const [hasHardware, isEnrolled, storedValue] = await Promise.all([
@@ -185,7 +199,13 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       // Continue resetting in-memory session even when storage delete fails.
     } finally {
       useQueueStore.getState().clear();
-      set({ status: 'unauthenticated', accessToken: null, user: null, householdId: null });
+      set({
+        status: 'unauthenticated',
+        accessToken: null,
+        user: null,
+        householdId: null,
+        activeProfile: null,
+      });
     }
   },
 }));

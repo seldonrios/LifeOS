@@ -11,3 +11,4 @@ export interface DeviceInfo {
 export interface RevokeDeviceRequest {
     deviceId: string;
 }
+//# sourceMappingURL=devices.d.ts.map

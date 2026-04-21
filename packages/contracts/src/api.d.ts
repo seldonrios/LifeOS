@@ -4,8 +4,8 @@
 import { z } from 'zod';
 export declare const CaptureCreateRequestSchema: z.ZodObject<{
     type: z.ZodEnum<{
-        voice: "voice";
         text: "text";
+        voice: "voice";
     }>;
     content: z.ZodString;
     metadata: z.ZodOptional<z.ZodObject<{
@@ -18,20 +18,22 @@ export declare const CaptureCreateRequestSchema: z.ZodObject<{
         }>>;
         sourceDeviceId: z.ZodOptional<z.ZodString>;
         targetHint: z.ZodOptional<z.ZodEnum<{
-            unknown: "unknown";
             shopping: "shopping";
             chore: "chore";
             reminder: "reminder";
             note: "note";
+            unknown: "unknown";
         }>>;
+        audioBase64: z.ZodOptional<z.ZodString>;
+        durationMs: z.ZodOptional<z.ZodNumber>;
     }, z.core.$strip>>;
     tags: z.ZodOptional<z.ZodArray<z.ZodString>>;
 }, z.core.$strip>;
 export declare const CaptureCreateResponseSchema: z.ZodObject<{
     id: z.ZodString;
     type: z.ZodEnum<{
-        voice: "voice";
         text: "text";
+        voice: "voice";
     }>;
     content: z.ZodString;
     processedAt: z.ZodNumber;
@@ -50,6 +52,7 @@ export declare const InboxListResponseSchema: z.ZodArray<z.ZodObject<{
         reminder: "reminder";
         approval: "approval";
         notification: "notification";
+        capture: "capture";
     }>;
     title: z.ZodString;
     description: z.ZodOptional<z.ZodString>;
@@ -123,9 +126,9 @@ export declare const ReminderScheduleRequestSchema: z.ZodObject<{
     note: z.ZodOptional<z.ZodString>;
     dueAt: z.ZodString;
     channel: z.ZodEnum<{
-        push: "push";
         email: "email";
         inbox: "inbox";
+        push: "push";
     }>;
     status: z.ZodEnum<{
         pending: "pending";
@@ -142,9 +145,9 @@ export declare const ReminderScheduleResponseSchema: z.ZodObject<{
     note: z.ZodOptional<z.ZodString>;
     dueAt: z.ZodString;
     channel: z.ZodEnum<{
-        push: "push";
         email: "email";
         inbox: "inbox";
+        push: "push";
     }>;
     status: z.ZodEnum<{
         pending: "pending";
@@ -195,3 +198,4 @@ export declare const ApiErrorResponseSchema: z.ZodObject<{
     }, z.core.$strip>;
 }, z.core.$strip>;
 export type ApiErrorResponse = z.infer<typeof ApiErrorResponseSchema>;
+//# sourceMappingURL=api.d.ts.map

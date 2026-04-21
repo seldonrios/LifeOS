@@ -6,8 +6,8 @@ export declare const HeroLoopEntitySchemas: {
     readonly capture: z.ZodObject<{
         id: z.ZodString;
         type: z.ZodEnum<{
-            voice: "voice";
             text: "text";
+            voice: "voice";
         }>;
         content: z.ZodString;
         processedAt: z.ZodNumber;
@@ -24,6 +24,7 @@ export declare const HeroLoopEntitySchemas: {
             reminder: "reminder";
             approval: "approval";
             notification: "notification";
+            capture: "capture";
         }>;
         title: z.ZodString;
         description: z.ZodOptional<z.ZodString>;
@@ -71,9 +72,9 @@ export declare const HeroLoopEntitySchemas: {
         note: z.ZodOptional<z.ZodString>;
         dueAt: z.ZodString;
         channel: z.ZodEnum<{
-            push: "push";
             email: "email";
             inbox: "inbox";
+            push: "push";
         }>;
         status: z.ZodEnum<{
             pending: "pending";
@@ -110,3 +111,4 @@ export declare const HeroLoopEntitySchemas: {
 export type HeroLoopEntitySchemaMap = typeof HeroLoopEntitySchemas;
 export type HeroLoopEntityName = keyof HeroLoopEntitySchemaMap;
 export type HeroLoopEntityValue<TName extends HeroLoopEntityName> = z.infer<HeroLoopEntitySchemaMap[TName]>;
+//# sourceMappingURL=entities.d.ts.map

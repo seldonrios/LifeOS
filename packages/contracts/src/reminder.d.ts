@@ -11,9 +11,9 @@ export declare const ReminderStatusSchema: z.ZodEnum<{
 }>;
 export type ReminderStatus = z.infer<typeof ReminderStatusSchema>;
 export declare const ReminderChannelSchema: z.ZodEnum<{
-    push: "push";
     email: "email";
     inbox: "inbox";
+    push: "push";
 }>;
 export type ReminderChannel = z.infer<typeof ReminderChannelSchema>;
 export declare const ReminderSchema: z.ZodObject<{
@@ -22,9 +22,9 @@ export declare const ReminderSchema: z.ZodObject<{
     note: z.ZodOptional<z.ZodString>;
     dueAt: z.ZodString;
     channel: z.ZodEnum<{
-        push: "push";
         email: "email";
         inbox: "inbox";
+        push: "push";
     }>;
     status: z.ZodEnum<{
         pending: "pending";
@@ -36,3 +36,4 @@ export declare const ReminderSchema: z.ZodObject<{
     taskId: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type Reminder = z.infer<typeof ReminderSchema>;
+//# sourceMappingURL=reminder.d.ts.map

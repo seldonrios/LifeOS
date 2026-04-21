@@ -12,3 +12,4 @@ export declare const ReminderEventSchema: z.ZodObject<{
     }>;
 }, z.core.$strict>;
 export type ReminderEvent = z.infer<typeof ReminderEventSchema>;
+//# sourceMappingURL=reminder-event.d.ts.map

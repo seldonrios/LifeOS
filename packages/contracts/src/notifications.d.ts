@@ -18,3 +18,4 @@ export interface NotificationRoute {
     screen: string;
     params?: Record<string, unknown>;
 }
+//# sourceMappingURL=notifications.d.ts.map

@@ -202,11 +202,11 @@ export declare const HouseholdVoiceCaptureCreatedSchema: z.ZodObject<{
     }>;
     sourceDeviceId: z.ZodOptional<z.ZodString>;
     targetHint: z.ZodOptional<z.ZodEnum<{
-        unknown: "unknown";
         shopping: "shopping";
         chore: "chore";
         reminder: "reminder";
         note: "note";
+        unknown: "unknown";
     }>>;
     createdAt: z.ZodString;
 }, z.core.$strip>;
@@ -225,11 +225,11 @@ export declare const HomeNodeVoiceSessionCompletedSchema: z.ZodObject<{
     capture_id: z.ZodString;
     transcript: z.ZodString;
     target_hint: z.ZodOptional<z.ZodEnum<{
-        unknown: "unknown";
         shopping: "shopping";
         chore: "chore";
         reminder: "reminder";
         note: "note";
+        unknown: "unknown";
     }>>;
     completed_at: z.ZodString;
 }, z.core.$strip>;
@@ -296,15 +296,15 @@ export declare const HouseholdAutomationFailedSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type HouseholdAutomationFailed = z.infer<typeof HouseholdAutomationFailedSchema>;
 export declare const HouseholdCaptureStatusSchema: z.ZodEnum<{
-    resolved: "resolved";
     pending: "pending";
+    resolved: "resolved";
     unresolved: "unresolved";
 }>;
 export type HouseholdCaptureStatus = z.infer<typeof HouseholdCaptureStatusSchema>;
 export declare const HouseholdCaptureStatusResponseSchema: z.ZodObject<{
     status: z.ZodEnum<{
-        resolved: "resolved";
         pending: "pending";
+        resolved: "resolved";
         unresolved: "unresolved";
     }>;
     resolvedAction: z.ZodOptional<z.ZodString>;
@@ -328,11 +328,13 @@ export type HouseholdHomeStateChanged = z.infer<typeof HouseholdHomeStateChanged
 export declare const HouseholdHomeStateConfigSchema: z.ZodObject<{
     haIntegrationEnabled: z.ZodOptional<z.ZodBoolean>;
     haConsentedStateKeys: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    timeZone: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type HouseholdHomeStateConfig = z.infer<typeof HouseholdHomeStateConfigSchema>;
 export declare const HouseholdUpdateConfigRequestSchema: z.ZodObject<{
     haIntegrationEnabled: z.ZodOptional<z.ZodBoolean>;
     haConsentedStateKeys: z.ZodOptional<z.ZodArray<z.ZodString>>;
+    timeZone: z.ZodOptional<z.ZodString>;
 }, z.core.$strip>;
 export type HouseholdUpdateConfigRequest = z.infer<typeof HouseholdUpdateConfigRequestSchema>;
 export declare const HouseholdHaWebhookRequestSchema: z.ZodPipe<z.ZodObject<{
@@ -345,11 +347,11 @@ export declare const HouseholdHaWebhookRequestSchema: z.ZodPipe<z.ZodObject<{
     sourceDeviceId: z.ZodOptional<z.ZodString>;
     actorUserId: z.ZodOptional<z.ZodString>;
     targetHint: z.ZodOptional<z.ZodEnum<{
-        unknown: "unknown";
         shopping: "shopping";
         chore: "chore";
         reminder: "reminder";
         note: "note";
+        unknown: "unknown";
     }>>;
 }, z.core.$strip>, z.ZodTransform<{
     voice_transcript: string | undefined;
@@ -359,7 +361,7 @@ export declare const HouseholdHaWebhookRequestSchema: z.ZodPipe<z.ZodObject<{
     previousValue?: unknown;
     sourceDeviceId?: string | undefined;
     actorUserId?: string | undefined;
-    targetHint?: "unknown" | "shopping" | "chore" | "reminder" | "note" | undefined;
+    targetHint?: "shopping" | "chore" | "reminder" | "note" | "unknown" | undefined;
 }, {
     deviceId: string;
     stateKey: string;
@@ -369,7 +371,7 @@ export declare const HouseholdHaWebhookRequestSchema: z.ZodPipe<z.ZodObject<{
     voiceTranscript?: string | undefined;
     sourceDeviceId?: string | undefined;
     actorUserId?: string | undefined;
-    targetHint?: "unknown" | "shopping" | "chore" | "reminder" | "note" | undefined;
+    targetHint?: "shopping" | "chore" | "reminder" | "note" | "unknown" | undefined;
 }>>;
 export type HouseholdHaWebhookRequest = z.infer<typeof HouseholdHaWebhookRequestSchema>;
 export declare const HomeStateChangeSchema: z.ZodObject<{
@@ -410,9 +412,9 @@ export declare const HouseholdReminderFiredSchema: z.ZodObject<{
     householdId: z.ZodString;
     reminderId: z.ZodString;
     objectType: z.ZodEnum<{
-        custom: "custom";
         shopping: "shopping";
         chore: "chore";
+        custom: "custom";
         routine: "routine";
         event: "event";
     }>;
@@ -699,3 +701,4 @@ export declare const HomeNodeDisplayFeedSchema: z.ZodObject<{
     generatedAt: z.ZodString;
 }, z.core.$strict>;
 export type HomeNodeDisplayFeed = z.infer<typeof HomeNodeDisplayFeedSchema>;
+//# sourceMappingURL=household.d.ts.map

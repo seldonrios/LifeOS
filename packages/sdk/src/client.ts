@@ -935,10 +935,18 @@ class HouseholdNamespace {
 class AssistantProfileNamespace {
   constructor(private config: SDKConfig) {}
 
-  async get(): Promise<AssistantProfile> {
+  async get(userId?: string): Promise<AssistantProfile> {
+    const query = new URLSearchParams();
+    if (userId) {
+      query.set('userId', userId);
+    }
+    const url = query.toString().length > 0
+      ? `${this.config.baseUrl}/api/assistant-profile?${query.toString()}`
+      : `${this.config.baseUrl}/api/assistant-profile`;
+
     const response = await sendHttpRequest<AssistantProfile>(
       {
-        url: `${this.config.baseUrl}/api/assistant-profile`,
+        url,
         method: 'GET',
       },
       this.config.getAccessToken,

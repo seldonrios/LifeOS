@@ -55,3 +55,13 @@ export declare const PlanningSuggestionSchema: z.ZodObject<{
     actions: z.ZodArray<z.ZodString>;
 }, z.core.$strip>;
 export type PlanningSuggestion = z.infer<typeof PlanningSuggestionSchema>;
+export declare const PlanBlockedRequestSchema: z.ZodObject<{
+    planId: z.ZodString;
+    reason: z.ZodOptional<z.ZodString>;
+}, z.core.$strip>;
+export type PlanBlockedRequest = z.infer<typeof PlanBlockedRequestSchema>;
+export declare const PlanAlternativesResponseSchema: z.ZodObject<{
+    alternatives: z.ZodArray<z.ZodString>;
+}, z.core.$strip>;
+export type PlanAlternativesResponse = z.infer<typeof PlanAlternativesResponseSchema>;
+//# sourceMappingURL=plan.d.ts.map

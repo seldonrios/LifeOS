@@ -14,3 +14,4 @@ export declare const LoopInboxItemSchema: z.ZodObject<{
     }>;
 }, z.core.$strict>;
 export type LoopInboxItem = z.infer<typeof LoopInboxItemSchema>;
+//# sourceMappingURL=inbox-item.d.ts.map
