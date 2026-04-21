@@ -1,3 +1,8 @@
+> **Status: foundation context**
+> This document describes completed Phase 1 foundation work and architectural context.
+> It is not the primary source of truth for the current release target.
+> For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md) and [`docs/vision/personal-operations-os-mvp.md`](../vision/personal-operations-os-mvp.md).
+
 # Phase 1
 
 ## Purpose
@@ -15,17 +20,17 @@ For LifeOS, that now means documenting a realistic reference architecture for a 
 - Automation: event-driven reactions and workflows across local systems.
 - Modules: domain-specific extensions that plug into the node cleanly.
 
-## What Phase 1 Should Deliver
+## What Phase 1 Established
 
-- A clear system boundary around the Personal AI Node.
-- A realistic home-server deployment profile.
-- A conceptual data model for life graph entities and relationships.
-- A local event model that supports automation and coordination.
-- A bounded local agent mesh for specialization and delegation.
-- A bounded simulation capability for planning and what-if analysis.
-- A module philosophy that allows growth by domain.
-- A practical integration story for home, productivity, and personal data sources.
-- A voice, media, and display story that makes the system usable in everyday life.
+- Established a clear system boundary around the Personal AI Node.
+- Established a realistic home-server deployment profile.
+- Established a conceptual data model for life graph entities and relationships.
+- Established a local event model that supports automation and coordination.
+- Established a bounded local agent mesh for specialization and delegation.
+- Established a bounded simulation capability for planning and what-if analysis.
+- Established a module philosophy that allows growth by domain.
+- Established a practical integration story for home, productivity, and personal data sources.
+- Established a voice, media, and display story that makes the system usable in everyday life.
 
 ## Reference Capability Areas
 

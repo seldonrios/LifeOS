@@ -1,3 +1,8 @@
+> **Status: foundation context**
+> This document describes completed Phase 1 foundation work and architectural context.
+> It is not the primary source of truth for the current release target.
+> For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md) and [`docs/vision/personal-operations-os-mvp.md`](../vision/personal-operations-os-mvp.md).
+
 # Phase 1 Reference Architecture
 
 ## Purpose

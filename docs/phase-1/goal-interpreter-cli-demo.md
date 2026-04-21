@@ -1,3 +1,7 @@
+> **Status: current implementation guide**
+> This document describes a working CLI demo that is part of the current implementation.
+> For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md).
+
 # Goal Interpreter CLI Demo (MVP #1)
 
 ## Purpose

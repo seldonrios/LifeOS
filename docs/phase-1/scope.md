@@ -1,10 +1,15 @@
+> **Status: foundation context**
+> This document describes completed Phase 1 foundation work and architectural context.
+> It is not the primary source of truth for the current release target.
+> For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md) and [`docs/vision/personal-operations-os-mvp.md`](../vision/personal-operations-os-mvp.md).
+
 # Phase 1 Scope
 
 ## Purpose
 
 State what Phase 1 includes operationally so contributors can separate foundational work from later-phase ambitions.
 
-## In Scope
+## A. Phase 1 foundation scope
 
 - Local reasoning and planning flows.
 - A life graph model for persistent personal context.
@@ -12,11 +17,20 @@ State what Phase 1 includes operationally so contributors can separate foundatio
 - A module system for domain capabilities.
 - A bounded local agent mesh for specialized roles.
 - A bounded local simulation capability for what-if analysis and planning.
-- Local integrations such as smart home systems, calendars, wearables, sensors, and local storage.
-- Room awareness, voice interaction, receptionist flows, and media routing as local capabilities.
-- Production, economic-planning, health, and social modules built on shared foundations.
-- A home-server deployment profile that a technically skilled individual can realistically assemble.
 - Documentation that makes the system understandable enough to prototype responsibly.
+
+## B. Architectural compatibility targets
+
+- Local integrations such as smart home systems, calendars, wearables, sensors, and local storage.
+- Voice/media surfaces and room-aware capability patterns.
+- Broader domain modules (health, social, production, economic planning).
+
+## C. Explicitly not required for current MVP
+
+- Room-aware automation as a release requirement.
+- Receptionist/media routing as a release requirement.
+- Health/social/economic modules as current MVP requirements.
+- Home-server hardware stack as a mandatory contributor target.
 
 ## Phase 1 System Boundary
 
