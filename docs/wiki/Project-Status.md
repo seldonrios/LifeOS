@@ -2,7 +2,7 @@
 
 [Back to Home](Home.md)
 
-LifeOS has shipped a working Phase 3 hero loop (capture -> inbox -> plan -> review) with a desktop app, mobile companion, and CLI. The project is no longer docs-first; it is an active platform with real users and ongoing development.
+LifeOS has shipped a working Phase 3 hero loop (capture -> inbox -> plan -> reminders/next actions -> review) with a desktop app, mobile companion, and CLI. It is an active platform with real users and ongoing development.
 
 ## What Already Exists
 

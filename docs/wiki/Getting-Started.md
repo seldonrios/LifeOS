@@ -23,8 +23,8 @@ Use this order if you want the fastest route to understanding the repo:
 
 1. Read the [Repo README](../../README.md) for the high-level vision.
 2. Read the [Docs Index](../README.md) to see the main documentation map.
-3. Read the [Vision Overview](../vision/overview.md) to understand the long-term direction.
-4. Read the [Current Product Contract](../product/current-product-contract.md) to understand the active MVP.
+3. Read the [Current Product Contract](../product/current-product-contract.md) to understand the active MVP.
+4. Read the [Vision Overview](../vision/overview.md) to understand the long-term direction.
 5. Read the [Phase 1 Overview](../phase-1/README.md) for foundation context (the completed Phase 1 Personal AI Node).
 6. Read the [Architecture Overview](../architecture/overview.md) to understand the main system pieces.
 7. Read the [Setup Guide](../SETUP.md) if you want to run the project locally.
@@ -40,16 +40,16 @@ The repo is easier to understand if you think of it in layers:
 - `services/` contains service wrappers and runtime entrypoints
 - `config/` contains default settings and runtime profiles
 
-This is a docs-first repository, so the documents are not secondary. They are part of the implementation surface.
+The docs are part of the implementation surface because they define contracts, scope boundaries, and contributor expectations alongside the code.
 
 ## The Minimum To Know Before Contributing
 
 Before making changes, it helps to understand four things:
 
-- LifeOS is currently centered on the **Personal AI Node**
-- Phase 1 is about a credible local foundation, not the entire long-term vision
+- LifeOS is currently a **local-first Personal Operations OS** with a **CLI-first MVP**
+- The **Personal AI Node** is completed Phase 1 foundation context, not the active release framing
 - the system is designed around reasoning, the life graph, the event bus, automation, and modules
-- existing docs under `docs/` are the canonical source of truth
+- the current product contract in `docs/product/current-product-contract.md` is the primary release-scope reference, with the rest of `docs/` providing supporting architecture and foundation context
 
 ## Read Next
 

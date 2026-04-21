@@ -30,8 +30,16 @@ Phase 1 focuses on a practical local-first base, including:
 - an event-driven automation layer
 - a bounded local agent mesh
 - a module system for domain growth
-- local integrations such as calendars, sensors, and home systems
-- voice, media, room-awareness, and dashboard surfaces where they strengthen local usefulness
+- a bounded local simulation capability for what-if analysis and planning
+- documentation and reference architecture that make the system understandable enough to prototype responsibly
+
+## Architectural Compatibility Targets
+
+These areas matter as Phase 1 extension targets and reference architecture, but they are not current MVP obligations:
+
+- local integrations such as calendars, sensors, wearables, and home systems
+- voice, media, room-awareness, receptionist patterns, and dashboard surfaces
+- broader domain areas such as health, social coordination, production, and economic planning
 
 ## The System Boundary
 
@@ -42,7 +50,7 @@ That means the reference boundary includes:
 - the local server
 - local dashboards and control surfaces
 - modules consuming shared events and life-graph context
-- voice, media, and room-level signals where relevant
+- voice, media, and room-level signals as part of the foundation architecture
 
 ## What Phase 1 Is Not
 
@@ -54,6 +62,8 @@ It is not about:
 - broad AI-to-AI internet protocols
 - enterprise infrastructure requirements from day one
 - a polished consumer platform with every subsystem finished
+
+It also does not make room-aware automation, receptionist flows, or broader domain suites into current Phase 3 release requirements.
 
 That discipline matters because the project succeeds only if the local foundation is credible.
 

@@ -2,7 +2,7 @@
 
 [Back to Home](Home.md)
 
-LifeOS is still in a stage where thoughtful contributions can shape the project in a meaningful way. Good contributions do not have to be huge. They need to reduce ambiguity, strengthen Phase 1, or make future prototyping easier.
+LifeOS is still in a stage where thoughtful contributions can shape the project in a meaningful way. Good contributions do not have to be huge. They need to reduce ambiguity, strengthen the current MVP, or clarify Phase 1 foundation context for future prototyping.
 
 ## Where Help Is Most Valuable
 
@@ -24,7 +24,7 @@ The best contributions usually do one of three things:
 - make the platform easier to prototype
 - show how a capability fits the Phase 1 direction without inflating scope
 
-This is especially important in a docs-first project, where shared language and boundaries matter as much as raw implementation volume.
+This is especially important in a contract-driven project, where shared language and boundaries matter as much as raw implementation volume.
 
 ## A Good Contribution Path
 
