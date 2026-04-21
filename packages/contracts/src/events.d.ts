@@ -14,8 +14,8 @@ export declare const HeroLoopEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         content: z.ZodString;
         processedAt: z.ZodNumber;
         status: z.ZodEnum<{
-            success: "success";
             pending: "pending";
+            success: "success";
             failed: "failed";
         }>;
         error: z.ZodOptional<z.ZodString>;
@@ -27,9 +27,9 @@ export declare const HeroLoopEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         id: z.ZodString;
         type: z.ZodEnum<{
             reminder: "reminder";
+            capture: "capture";
             approval: "approval";
             notification: "notification";
-            capture: "capture";
         }>;
         title: z.ZodString;
         description: z.ZodOptional<z.ZodString>;
@@ -83,9 +83,9 @@ export declare const HeroLoopEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         note: z.ZodOptional<z.ZodString>;
         dueAt: z.ZodString;
         channel: z.ZodEnum<{
-            email: "email";
-            inbox: "inbox";
             push: "push";
+            inbox: "inbox";
+            email: "email";
         }>;
         status: z.ZodEnum<{
             pending: "pending";
@@ -117,10 +117,9 @@ export declare const HeroLoopEventSchema: z.ZodDiscriminatedUnion<[z.ZodObject<{
         generatedAt: z.ZodString;
         source: z.ZodEnum<{
             manual: "manual";
-            heuristic: "heuristic";
             llm: "llm";
+            heuristic: "heuristic";
         }>;
     }, z.core.$strict>;
 }, z.core.$strip>], "type">;
 export type HeroLoopEvent = z.infer<typeof HeroLoopEventSchema>;
-//# sourceMappingURL=events.d.ts.map

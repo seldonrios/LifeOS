@@ -8,9 +8,9 @@ export declare const ReviewPeriodSchema: z.ZodEnum<{
 }>;
 export type ReviewPeriod = z.infer<typeof ReviewPeriodSchema>;
 export declare const ReviewSourceSchema: z.ZodEnum<{
-    manual: "manual";
     heuristic: "heuristic";
     llm: "llm";
+    manual: "manual";
 }>;
 export type ReviewSource = z.infer<typeof ReviewSourceSchema>;
 export declare const ReviewLoopSummarySchema: z.ZodObject<{
@@ -38,9 +38,9 @@ export declare const ReviewReportSchema: z.ZodObject<{
     }, z.core.$strict>;
     generatedAt: z.ZodString;
     source: z.ZodEnum<{
-        manual: "manual";
         heuristic: "heuristic";
         llm: "llm";
+        manual: "manual";
     }>;
 }, z.core.$strict>;
 export type ReviewReport = z.infer<typeof ReviewReportSchema>;
@@ -61,9 +61,9 @@ export declare const ReviewPayloadSchema: z.ZodObject<{
     }, z.core.$strict>;
     generatedAt: z.ZodString;
     source: z.ZodEnum<{
-        manual: "manual";
         heuristic: "heuristic";
         llm: "llm";
+        manual: "manual";
     }>;
 }, z.core.$strict>;
 export type ReviewPayload = ReviewReport;

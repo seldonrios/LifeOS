@@ -45,4 +45,3 @@ export const InboxItemSchema = z.object({
     read: z.boolean(),
     data: InboxItemDataSchema,
 });
-//# sourceMappingURL=inbox.js.map

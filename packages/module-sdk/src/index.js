@@ -10,5 +10,5 @@ export async function registerModuleSchema(context, schema) {
         });
     await client.registerModuleSchema(schema);
 }
-export { CaptureEntrySchema, LoopInboxItemSchema, PlannedActionSchema, ReminderEventSchema, ReviewSessionSchema, } from '@lifeos/contracts';
+export { CaptureEntrySchema, PlannedActionSchema, ReminderEventSchema, } from '@lifeos/contracts';
 export { HouseholdRoleSchema, HouseholdMemberStatusSchema, ChoreStatusSchema, ShoppingItemStatusSchema, HouseholdMemberInvitedSchema, HouseholdMemberJoinedSchema, HouseholdMemberRoleChangedSchema, HouseholdChoreAssignedSchema, HouseholdChoreCompletedSchema, HouseholdShoppingItemAddedSchema, HouseholdShoppingItemPurchasedSchema, HouseholdCalendarEventCreatedSchema, HouseholdVoiceCaptureCreatedSchema, HouseholdShoppingItemAddRequestedSchema, HouseholdChoreCreateRequestedSchema, HouseholdReminderCreateRequestedSchema, HouseholdNoteCreateRequestedSchema, HouseholdCaptureUnresolvedSchema, HouseholdAutomationFailedSchema, HouseholdHomeStateChangedSchema, HouseholdReminderFiredSchema, AuditLogEntrySchema, } from '@lifeos/contracts';

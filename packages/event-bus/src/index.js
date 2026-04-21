@@ -200,6 +200,12 @@ class LifeOSEventBus {
         });
         try {
             const connection = await this.connectionPromise;
+            if (!connection) {
+                this.connectionPromise = null;
+                this.transport = 'unknown';
+                this.setConnectionHealth('disconnected');
+                return null;
+            }
             this.connection = connection;
             this.transport = 'nats';
             this.setConnectionHealth('connected');

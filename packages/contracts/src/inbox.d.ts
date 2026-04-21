@@ -18,16 +18,16 @@ export declare const ApprovalResultSchema: z.ZodObject<{
 export type ApprovalResult = z.infer<typeof ApprovalResultSchema>;
 export declare const InboxItemTypeSchema: z.ZodEnum<{
     reminder: "reminder";
+    capture: "capture";
     approval: "approval";
     notification: "notification";
-    capture: "capture";
 }>;
 export type InboxItemType = z.infer<typeof InboxItemTypeSchema>;
 export declare const InboxActionRequestSchema: z.ZodObject<{
     captureId: z.ZodString;
     action: z.ZodEnum<{
-        defer: "defer";
         delete: "delete";
+        defer: "defer";
         "make-plan": "make-plan";
         "save-note": "save-note";
     }>;
@@ -60,9 +60,9 @@ export declare const InboxItemSchema: z.ZodObject<{
     id: z.ZodString;
     type: z.ZodEnum<{
         reminder: "reminder";
+        capture: "capture";
         approval: "approval";
         notification: "notification";
-        capture: "capture";
     }>;
     title: z.ZodString;
     description: z.ZodOptional<z.ZodString>;
@@ -82,4 +82,3 @@ export declare const InboxItemSchema: z.ZodObject<{
     }, z.core.$strip>, z.ZodRecord<z.ZodString, z.ZodUnknown>]>;
 }, z.core.$strip>;
 export type InboxItem = z.infer<typeof InboxItemSchema>;
-//# sourceMappingURL=inbox.d.ts.map

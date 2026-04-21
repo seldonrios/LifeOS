@@ -3,17 +3,17 @@
  */
 import { z } from 'zod';
 export declare const HealthCheckKeySchema: z.ZodEnum<{
+    auth: "auth";
+    eventBus: "eventBus";
     storage: "storage";
     model: "model";
-    eventBus: "eventBus";
     notifications: "notifications";
     sync: "sync";
-    auth: "auth";
 }>;
 export type HealthCheckKey = z.infer<typeof HealthCheckKeySchema>;
 export declare const HealthCheckStatusSchema: z.ZodEnum<{
-    pass: "pass";
     warn: "warn";
+    pass: "pass";
     fail: "fail";
 }>;
 export type HealthCheckStatus = z.infer<typeof HealthCheckStatusSchema>;
@@ -24,16 +24,16 @@ export declare const RepairActionSchema: z.ZodObject<{
 export type RepairAction = z.infer<typeof RepairActionSchema>;
 export declare const HealthCheckResultSchema: z.ZodObject<{
     key: z.ZodEnum<{
+        auth: "auth";
+        eventBus: "eventBus";
         storage: "storage";
         model: "model";
-        eventBus: "eventBus";
         notifications: "notifications";
         sync: "sync";
-        auth: "auth";
     }>;
     status: z.ZodEnum<{
-        pass: "pass";
         warn: "warn";
+        pass: "pass";
         fail: "fail";
     }>;
     title: z.ZodString;
@@ -64,37 +64,37 @@ export declare const UXPreferencesSchema: z.ZodObject<{
 }, z.core.$strip>;
 export type UXPreferences = z.infer<typeof UXPreferencesSchema>;
 export declare const OnboardingStageSchema: z.ZodEnum<{
-    setupStyle: "setupStyle";
     useCases: "useCases";
+    permissions: "permissions";
+    setupStyle: "setupStyle";
     welcome: "welcome";
     assistantStyle: "assistantStyle";
     firstCapture: "firstCapture";
     connectServices: "connectServices";
-    permissions: "permissions";
     healthCheck: "healthCheck";
     complete: "complete";
 }>;
 export type OnboardingStage = z.infer<typeof OnboardingStageSchema>;
 export declare const OnboardingProgressSchema: z.ZodObject<{
     currentStage: z.ZodEnum<{
-        setupStyle: "setupStyle";
         useCases: "useCases";
+        permissions: "permissions";
+        setupStyle: "setupStyle";
         welcome: "welcome";
         assistantStyle: "assistantStyle";
         firstCapture: "firstCapture";
         connectServices: "connectServices";
-        permissions: "permissions";
         healthCheck: "healthCheck";
         complete: "complete";
     }>;
     completedStages: z.ZodArray<z.ZodEnum<{
-        setupStyle: "setupStyle";
         useCases: "useCases";
+        permissions: "permissions";
+        setupStyle: "setupStyle";
         welcome: "welcome";
         assistantStyle: "assistantStyle";
         firstCapture: "firstCapture";
         connectServices: "connectServices";
-        permissions: "permissions";
         healthCheck: "healthCheck";
         complete: "complete";
     }>>;
@@ -133,4 +133,3 @@ export declare const AssistantProfileSchema: z.ZodObject<{
     updatedAt: z.ZodString;
 }, z.core.$strip>;
 export type AssistantProfile = z.infer<typeof AssistantProfileSchema>;
-//# sourceMappingURL=ux.d.ts.map

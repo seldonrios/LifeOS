@@ -28,15 +28,11 @@ export async function registerModuleSchema(
 
 export {
   CaptureEntrySchema,
-  LoopInboxItemSchema,
   PlannedActionSchema,
   ReminderEventSchema,
-  ReviewSessionSchema,
   type CaptureEntry,
-  type LoopInboxItem,
   type PlannedAction,
   type ReminderEvent,
-  type ReviewSession,
 } from '@lifeos/contracts';
 
 export {

@@ -1,6 +1,13 @@
 import { type LifeGraphPathOptions } from './path';
 import type { GoalPlanRecord, LifeGraphDocument, LifeGraphStorageInfo } from './types';
-export type LifeGraphManagerOptions = LifeGraphPathOptions;
+export type LifeGraphManagerOptions = LifeGraphPathOptions & {
+    /**
+     * Force the JSON-file storage adapter regardless of whether better-sqlite3
+     * is available. Intended for testing and ARM64 environments where the native
+     * addon cannot be compiled.
+     */
+    forceJsonAdapter?: boolean;
+};
 export interface AppendPlanInput<TPlan = Record<string, unknown>> {
     input: string;
     plan: TPlan;
@@ -10,10 +17,12 @@ export interface AppendPlanInput<TPlan = Record<string, unknown>> {
 export declare class LifeGraphManager {
     private readonly options;
     private readonly dbByPath;
+    private readonly dbCreationByPath;
+    private readonly jsonAdapterPaths;
     private readonly initializationByPath;
     constructor(options?: LifeGraphManagerOptions);
     private resolvePath;
-    private getDb;
+    private getOrCreateDb;
     private initializeSchema;
     private writeGraphToDb;
     private readGraphFromDb;

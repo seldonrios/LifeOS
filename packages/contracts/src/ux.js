@@ -75,4 +75,3 @@ export const AssistantProfileSchema = AssistantProfileInputSchema.extend({
     userId: z.string(),
     updatedAt: z.string(),
 });
-//# sourceMappingURL=ux.js.map

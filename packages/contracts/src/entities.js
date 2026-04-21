@@ -14,4 +14,3 @@ export const HeroLoopEntitySchemas = {
     reminder: ReminderSchema,
     review: ReviewPayloadSchema,
 };
-//# sourceMappingURL=entities.js.map

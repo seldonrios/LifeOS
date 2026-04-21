@@ -64,4 +64,3 @@ export declare const PlanAlternativesResponseSchema: z.ZodObject<{
     alternatives: z.ZodArray<z.ZodString>;
 }, z.core.$strip>;
 export type PlanAlternativesResponse = z.infer<typeof PlanAlternativesResponseSchema>;
-//# sourceMappingURL=plan.d.ts.map

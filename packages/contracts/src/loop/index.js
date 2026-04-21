@@ -1,6 +1,15 @@
+/**
+ * Inbox is a projection, not a persisted entity.
+ * The inbox is derived at runtime by filtering CaptureEntry records where status === 'pending'.
+ * There is no stored LoopInboxItem.
+ *
+ * Review is stateless/generated-only.
+ * generateReview() returns LifeGraphReviewInsights on demand; no ReviewSession is persisted.
+ */
 export { CaptureEntrySchema } from './capture-entry';
-export { LoopInboxItemSchema } from './inbox-item';
+/**
+ * PlannedAction is the canonical hero-loop execution object.
+ * Triage creates it, remind schedules against it, and review derives from it.
+ */
 export { PlannedActionSchema } from './planned-action';
 export { ReminderEventSchema } from './reminder-event';
-export { ReviewSessionSchema } from './review-session';
-//# sourceMappingURL=index.js.map

@@ -157,6 +157,11 @@ export interface GoalPlanRecord<TPlan = Record<string, unknown>> {
 export interface LocalLifeGraph<TPlan = Record<string, unknown>> {
     goals: Array<GoalPlanRecord<TPlan>>;
 }
+/**
+ * LifeGraphTask is the goal-decomposition task type only.
+ * It is embedded inside GoalPlan.tasks and represents tasks produced by the goal-planning surface.
+ * It is not the canonical hero-loop execution object; use PlannedAction for hero-loop execution tracking.
+ */
 export interface LifeGraphTask {
     id: string;
     title: string;

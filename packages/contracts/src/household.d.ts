@@ -15,8 +15,8 @@ export declare const HouseholdMemberStatusSchema: z.ZodEnum<{
 export type HouseholdMemberStatus = z.infer<typeof HouseholdMemberStatusSchema>;
 export declare const ChoreStatusSchema: z.ZodEnum<{
     pending: "pending";
-    in_progress: "in_progress";
     completed: "completed";
+    in_progress: "in_progress";
     skipped: "skipped";
 }>;
 export type ChoreStatus = z.infer<typeof ChoreStatusSchema>;
@@ -59,9 +59,9 @@ export declare const HouseholdAddShoppingItemRequestSchema: z.ZodObject<{
     listId: z.ZodOptional<z.ZodString>;
     title: z.ZodString;
     source: z.ZodEnum<{
-        voice: "voice";
         manual: "manual";
         routine: "routine";
+        voice: "voice";
     }>;
 }, z.core.$strip>;
 export type HouseholdAddShoppingItemRequest = z.infer<typeof HouseholdAddShoppingItemRequestSchema>;
@@ -162,9 +162,9 @@ export declare const HouseholdShoppingItemAddedSchema: z.ZodObject<{
     title: z.ZodString;
     addedByUserId: z.ZodString;
     source: z.ZodEnum<{
-        voice: "voice";
         manual: "manual";
         routine: "routine";
+        voice: "voice";
     }>;
 }, z.core.$strip>;
 export type HouseholdShoppingItemAdded = z.infer<typeof HouseholdShoppingItemAddedSchema>;
@@ -196,9 +196,9 @@ export declare const HouseholdVoiceCaptureCreatedSchema: z.ZodObject<{
     text: z.ZodString;
     audioRef: z.ZodNullable<z.ZodString>;
     source: z.ZodEnum<{
+        ha_bridge: "ha_bridge";
         mobile: "mobile";
         ha_satellite: "ha_satellite";
-        ha_bridge: "ha_bridge";
     }>;
     sourceDeviceId: z.ZodOptional<z.ZodString>;
     targetHint: z.ZodOptional<z.ZodEnum<{
@@ -412,10 +412,10 @@ export declare const HouseholdReminderFiredSchema: z.ZodObject<{
     householdId: z.ZodString;
     reminderId: z.ZodString;
     objectType: z.ZodEnum<{
+        routine: "routine";
         shopping: "shopping";
         chore: "chore";
         custom: "custom";
-        routine: "routine";
         event: "event";
     }>;
     objectId: z.ZodString;
@@ -423,8 +423,8 @@ export declare const HouseholdReminderFiredSchema: z.ZodObject<{
     firedAt: z.ZodString;
     deliveryStatus: z.ZodEnum<{
         failed: "failed";
-        delivered: "delivered";
         quiet_hours_suppressed: "quiet_hours_suppressed";
+        delivered: "delivered";
     }>;
 }, z.core.$strip>;
 export type HouseholdReminderFired = z.infer<typeof HouseholdReminderFiredSchema>;
@@ -701,4 +701,3 @@ export declare const HomeNodeDisplayFeedSchema: z.ZodObject<{
     generatedAt: z.ZodString;
 }, z.core.$strict>;
 export type HomeNodeDisplayFeed = z.infer<typeof HomeNodeDisplayFeedSchema>;
-//# sourceMappingURL=household.d.ts.map

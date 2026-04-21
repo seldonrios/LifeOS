@@ -7,8 +7,8 @@ export declare const ReminderEventSchema: z.ZodObject<{
     status: z.ZodEnum<{
         scheduled: "scheduled";
         fired: "fired";
-        cancelled: "cancelled";
         acknowledged: "acknowledged";
+        cancelled: "cancelled";
     }>;
 }, z.core.$strict>;
 export type ReminderEvent = z.infer<typeof ReminderEventSchema>;

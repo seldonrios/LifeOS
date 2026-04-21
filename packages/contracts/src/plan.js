@@ -38,4 +38,3 @@ export const PlanBlockedRequestSchema = z.object({
 export const PlanAlternativesResponseSchema = z.object({
     alternatives: z.array(z.string().min(1)),
 });
-//# sourceMappingURL=plan.js.map

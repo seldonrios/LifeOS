@@ -36,10 +36,10 @@ export declare function buildHaVoiceCaptureEventData(input: {
     actorUserId: string;
     text: string;
     audioRef: string | null;
-    source: "mobile" | "ha_satellite" | "ha_bridge";
+    source: "ha_bridge" | "mobile" | "ha_satellite";
     createdAt: string;
     sourceDeviceId?: string | undefined;
-    targetHint?: "unknown" | "shopping" | "chore" | "reminder" | "note" | undefined;
+    targetHint?: "shopping" | "chore" | "reminder" | "note" | "unknown" | undefined;
 };
 export declare const homeStateModule: LifeOSModule;
 export default homeStateModule;

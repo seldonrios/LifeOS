@@ -23,11 +23,11 @@ export declare const CaptureEntrySchema: z.ZodObject<{
         }>>;
         sourceDeviceId: z.ZodOptional<z.ZodString>;
         targetHint: z.ZodOptional<z.ZodEnum<{
+            unknown: "unknown";
             shopping: "shopping";
             chore: "chore";
             reminder: "reminder";
             note: "note";
-            unknown: "unknown";
         }>>;
     }, z.core.$strip>>;
 }, z.core.$strict>;

@@ -37,4 +37,3 @@ export const CaptureListItemSchema = z.object({
     tags: z.array(z.string()),
     status: z.string().min(1),
 });
-//# sourceMappingURL=capture.js.map

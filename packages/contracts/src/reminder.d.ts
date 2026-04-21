@@ -3,17 +3,17 @@
  */
 import { z } from 'zod';
 export declare const ReminderStatusSchema: z.ZodEnum<{
-    pending: "pending";
-    done: "done";
     scheduled: "scheduled";
     fired: "fired";
+    done: "done";
+    pending: "pending";
     dismissed: "dismissed";
 }>;
 export type ReminderStatus = z.infer<typeof ReminderStatusSchema>;
 export declare const ReminderChannelSchema: z.ZodEnum<{
-    email: "email";
     inbox: "inbox";
     push: "push";
+    email: "email";
 }>;
 export type ReminderChannel = z.infer<typeof ReminderChannelSchema>;
 export declare const ReminderSchema: z.ZodObject<{
@@ -22,15 +22,15 @@ export declare const ReminderSchema: z.ZodObject<{
     note: z.ZodOptional<z.ZodString>;
     dueAt: z.ZodString;
     channel: z.ZodEnum<{
-        email: "email";
         inbox: "inbox";
         push: "push";
+        email: "email";
     }>;
     status: z.ZodEnum<{
-        pending: "pending";
-        done: "done";
         scheduled: "scheduled";
         fired: "fired";
+        done: "done";
+        pending: "pending";
         dismissed: "dismissed";
     }>;
     taskId: z.ZodOptional<z.ZodString>;

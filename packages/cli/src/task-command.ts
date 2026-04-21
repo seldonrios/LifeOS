@@ -289,6 +289,7 @@ export async function handleTaskComplete(
       throw error;
     }
 
+    // Compatibility shim: falls back to PlannedAction lookup when the task ID is not found in GoalPlan.tasks. This path supports actions created via inbox triage. Do not promote this to the primary path.
     const plannedAction = await client.getPlannedAction(normalizedId);
     if (!plannedAction) {
       throw error;

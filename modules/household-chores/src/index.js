@@ -158,4 +158,3 @@ export async function publishChoreCompleted(context, payload) {
     await context.publish(Topics.lifeos.householdChoreCompleted, payload, 'dashboard-service');
 }
 export default householdChoresModule;
-//# sourceMappingURL=index.js.map

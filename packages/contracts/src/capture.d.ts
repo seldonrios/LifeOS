@@ -17,9 +17,9 @@ export declare const CaptureRequestSchema: z.ZodObject<{
         scope: z.ZodOptional<z.ZodLiteral<"household">>;
         householdId: z.ZodOptional<z.ZodString>;
         source: z.ZodOptional<z.ZodEnum<{
+            ha_bridge: "ha_bridge";
             mobile: "mobile";
             ha_satellite: "ha_satellite";
-            ha_bridge: "ha_bridge";
         }>>;
         sourceDeviceId: z.ZodOptional<z.ZodString>;
         targetHint: z.ZodOptional<z.ZodEnum<{
@@ -37,8 +37,8 @@ export declare const CaptureRequestSchema: z.ZodObject<{
 export type CaptureRequest = z.infer<typeof CaptureRequestSchema>;
 export type CaptureRequestMetadata = z.infer<NonNullable<typeof CaptureRequestSchema.shape.metadata>>;
 export declare const CaptureStatusSchema: z.ZodEnum<{
-    success: "success";
     pending: "pending";
+    success: "success";
     failed: "failed";
 }>;
 export type CaptureStatus = z.infer<typeof CaptureStatusSchema>;
@@ -51,8 +51,8 @@ export declare const CaptureResultSchema: z.ZodObject<{
     content: z.ZodString;
     processedAt: z.ZodNumber;
     status: z.ZodEnum<{
-        success: "success";
         pending: "pending";
+        success: "success";
         failed: "failed";
     }>;
     error: z.ZodOptional<z.ZodString>;
@@ -68,4 +68,3 @@ export declare const CaptureListItemSchema: z.ZodObject<{
     status: z.ZodString;
 }, z.core.$strip>;
 export type CaptureListItem = z.infer<typeof CaptureListItemSchema>;
-//# sourceMappingURL=capture.d.ts.map

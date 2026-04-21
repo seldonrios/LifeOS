@@ -112,9 +112,9 @@ export declare const MemoryEntrySchema: z.ZodObject<{
     relatedTo: z.ZodDefault<z.ZodArray<z.ZodString>>;
     threadId: z.ZodOptional<z.ZodString>;
     role: z.ZodOptional<z.ZodEnum<{
+        system: "system";
         assistant: "assistant";
         user: "user";
-        system: "system";
     }>>;
     key: z.ZodOptional<z.ZodString>;
     value: z.ZodOptional<z.ZodString>;
@@ -246,9 +246,9 @@ export declare const LifeGraphDocumentSchema: z.ZodObject<{
         relatedTo: z.ZodDefault<z.ZodArray<z.ZodString>>;
         threadId: z.ZodOptional<z.ZodString>;
         role: z.ZodOptional<z.ZodEnum<{
+            system: "system";
             assistant: "assistant";
             user: "user";
-            system: "system";
         }>>;
         key: z.ZodOptional<z.ZodString>;
         value: z.ZodOptional<z.ZodString>;
@@ -258,8 +258,8 @@ export declare const LifeGraphDocumentSchema: z.ZodObject<{
         id: z.ZodString;
         content: z.ZodString;
         type: z.ZodEnum<{
-            voice: "voice";
             text: "text";
+            voice: "voice";
         }>;
         capturedAt: z.ZodString;
         source: z.ZodString;
@@ -272,17 +272,17 @@ export declare const LifeGraphDocumentSchema: z.ZodObject<{
             scope: z.ZodOptional<z.ZodLiteral<"household">>;
             householdId: z.ZodOptional<z.ZodString>;
             source: z.ZodOptional<z.ZodEnum<{
+                ha_bridge: "ha_bridge";
                 mobile: "mobile";
                 ha_satellite: "ha_satellite";
-                ha_bridge: "ha_bridge";
             }>>;
             sourceDeviceId: z.ZodOptional<z.ZodString>;
             targetHint: z.ZodOptional<z.ZodEnum<{
-                unknown: "unknown";
                 shopping: "shopping";
                 chore: "chore";
                 reminder: "reminder";
                 note: "note";
+                unknown: "unknown";
             }>>;
         }, z.core.$strip>>;
     }, z.core.$strict>>>;
@@ -306,9 +306,9 @@ export declare const LifeGraphDocumentSchema: z.ZodObject<{
         scheduledFor: z.ZodString;
         firedAt: z.ZodOptional<z.ZodString>;
         status: z.ZodEnum<{
+            cancelled: "cancelled";
             scheduled: "scheduled";
             fired: "fired";
-            cancelled: "cancelled";
             acknowledged: "acknowledged";
         }>;
     }, z.core.$strict>>>;
@@ -450,9 +450,9 @@ export declare const LifeGraphSchema: z.ZodObject<{
         relatedTo: z.ZodDefault<z.ZodArray<z.ZodString>>;
         threadId: z.ZodOptional<z.ZodString>;
         role: z.ZodOptional<z.ZodEnum<{
+            system: "system";
             assistant: "assistant";
             user: "user";
-            system: "system";
         }>>;
         key: z.ZodOptional<z.ZodString>;
         value: z.ZodOptional<z.ZodString>;
@@ -462,8 +462,8 @@ export declare const LifeGraphSchema: z.ZodObject<{
         id: z.ZodString;
         content: z.ZodString;
         type: z.ZodEnum<{
-            voice: "voice";
             text: "text";
+            voice: "voice";
         }>;
         capturedAt: z.ZodString;
         source: z.ZodString;
@@ -476,17 +476,17 @@ export declare const LifeGraphSchema: z.ZodObject<{
             scope: z.ZodOptional<z.ZodLiteral<"household">>;
             householdId: z.ZodOptional<z.ZodString>;
             source: z.ZodOptional<z.ZodEnum<{
+                ha_bridge: "ha_bridge";
                 mobile: "mobile";
                 ha_satellite: "ha_satellite";
-                ha_bridge: "ha_bridge";
             }>>;
             sourceDeviceId: z.ZodOptional<z.ZodString>;
             targetHint: z.ZodOptional<z.ZodEnum<{
-                unknown: "unknown";
                 shopping: "shopping";
                 chore: "chore";
                 reminder: "reminder";
                 note: "note";
+                unknown: "unknown";
             }>>;
         }, z.core.$strip>>;
     }, z.core.$strict>>>;
@@ -510,9 +510,9 @@ export declare const LifeGraphSchema: z.ZodObject<{
         scheduledFor: z.ZodString;
         firedAt: z.ZodOptional<z.ZodString>;
         status: z.ZodEnum<{
+            cancelled: "cancelled";
             scheduled: "scheduled";
             fired: "fired";
-            cancelled: "cancelled";
             acknowledged: "acknowledged";
         }>;
     }, z.core.$strict>>>;

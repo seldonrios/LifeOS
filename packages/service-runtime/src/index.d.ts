@@ -1,7 +1,12 @@
 export * from './types';
 import { type ResolvedConfig } from '@lifeos/config';
 import type { SecretStore } from '@lifeos/secrets';
-import type { ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
+import type { RouteAccessMode, ServiceRuntimeOptions, ServiceRuntimePhase } from './types';
+declare module 'fastify' {
+    interface FastifyContextConfig {
+        accessMode?: RouteAccessMode;
+    }
+}
 interface InternalServiceRuntimeOptions extends ServiceRuntimeOptions {
     onAuthPolicy?: (config: ResolvedConfig) => Promise<void>;
     onPhase?: (phase: ServiceRuntimePhase) => void | Promise<void>;

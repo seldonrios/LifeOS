@@ -12,8 +12,8 @@ export declare const HeroLoopEntitySchemas: {
         content: z.ZodString;
         processedAt: z.ZodNumber;
         status: z.ZodEnum<{
-            success: "success";
             pending: "pending";
+            success: "success";
             failed: "failed";
         }>;
         error: z.ZodOptional<z.ZodString>;
@@ -22,9 +22,9 @@ export declare const HeroLoopEntitySchemas: {
         id: z.ZodString;
         type: z.ZodEnum<{
             reminder: "reminder";
+            capture: "capture";
             approval: "approval";
             notification: "notification";
-            capture: "capture";
         }>;
         title: z.ZodString;
         description: z.ZodOptional<z.ZodString>;
@@ -72,9 +72,9 @@ export declare const HeroLoopEntitySchemas: {
         note: z.ZodOptional<z.ZodString>;
         dueAt: z.ZodString;
         channel: z.ZodEnum<{
-            email: "email";
-            inbox: "inbox";
             push: "push";
+            inbox: "inbox";
+            email: "email";
         }>;
         status: z.ZodEnum<{
             pending: "pending";
@@ -103,12 +103,11 @@ export declare const HeroLoopEntitySchemas: {
         generatedAt: z.ZodString;
         source: z.ZodEnum<{
             manual: "manual";
-            heuristic: "heuristic";
             llm: "llm";
+            heuristic: "heuristic";
         }>;
     }, z.core.$strict>;
 };
 export type HeroLoopEntitySchemaMap = typeof HeroLoopEntitySchemas;
 export type HeroLoopEntityName = keyof HeroLoopEntitySchemaMap;
 export type HeroLoopEntityValue<TName extends HeroLoopEntityName> = z.infer<HeroLoopEntitySchemaMap[TName]>;
-//# sourceMappingURL=entities.d.ts.map

@@ -246,6 +246,9 @@ export class HouseholdGraphClient {
         if (patch.haConsentedStateKeys !== undefined) {
             nextConfig.haConsentedStateKeys = patch.haConsentedStateKeys;
         }
+        if (patch.timeZone !== undefined) {
+            nextConfig.timeZone = patch.timeZone;
+        }
         this.db
             .prepare('UPDATE households SET config_json = ? WHERE id = ?')
             .run(JSON.stringify(nextConfig), householdId);

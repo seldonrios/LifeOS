@@ -1,5 +1,7 @@
 export * from './types';
 import type { JwtPayload, SecurityClient, ServiceToken } from './types';
+export declare const SECURITY_DEFAULT_SIGNING_SECRET = "lifeos-dev-secret-change-me";
+export declare const SECURITY_TEST_SIGNING_SECRET = "lifeos-test-secret";
 export declare class JwtService {
     private readonly issuer;
     private readonly audience;

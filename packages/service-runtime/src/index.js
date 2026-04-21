@@ -79,6 +79,19 @@ function shouldEnforceAuth(method, path, mode) {
     }
     return shouldEnforceMutatingAuth(method);
 }
+function resolveRouteAccessMode(request) {
+    const routeConfig = request.routeOptions.config;
+    const configuredAccessMode = routeConfig?.accessMode ??
+        routeConfig?.config?.accessMode ??
+        request.routeConfig?.accessMode;
+    if (configuredAccessMode === 'inherit' ||
+        configuredAccessMode === 'bearer' ||
+        configuredAccessMode === 'surface-secret' ||
+        configuredAccessMode === 'public') {
+        return configuredAccessMode;
+    }
+    return 'inherit';
+}
 function resolveAuthPolicy(opts, configSecurity) {
     const hasLegacyAuthFlags = opts.enforceMutatingRouteAuth !== undefined || opts.enableAuth !== undefined;
     if (opts.enforceRouteAuthMode !== undefined) {
@@ -225,7 +238,15 @@ export async function startService(opts) {
         if (request.url.startsWith('/health/')) {
             return;
         }
-        if (!authPolicy.enabled || !shouldEnforceAuth(request.method, request.url, authPolicy.mode)) {
+        const routeAccessMode = resolveRouteAccessMode(request);
+        if (routeAccessMode === 'public' || routeAccessMode === 'surface-secret') {
+            return;
+        }
+        const enforceBearerAuth = routeAccessMode === 'bearer' ||
+            (routeAccessMode === 'inherit' &&
+                authPolicy.enabled &&
+                shouldEnforceAuth(request.method, request.url, authPolicy.mode));
+        if (!enforceBearerAuth) {
             return;
         }
         const authorization = request.headers.authorization;
@@ -397,6 +418,15 @@ export async function startService(opts) {
     }
     catch (error) {
         terminateBoot(error, 'Invalid host configuration');
+    }
+    try {
+        await opts.onBeforeListen?.(app);
+    }
+    catch (error) {
+        terminateBoot(error, 'Failed to initialize listen hook');
+    }
+    if (opts.skipListen) {
+        return;
     }
     try {
         await app.listen({ port: validatedPort, host: validatedHost });
