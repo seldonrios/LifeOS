@@ -17,73 +17,70 @@ Current executable MVP targets are:
 
 ## Recommended Reading Order
 
-1. [Vision Overview](vision/overview.md)
-2. [Vision Principles](vision/principles.md)
-3. [Roadmap](vision/roadmap.md)
-4. [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md)
-5. [Phase 1 Overview](phase-1/README.md)
-6. [Phase 1 Reference Architecture](phase-1/reference-architecture.md)
-7. [Phase 1 Scope](phase-1/scope.md)
-8. [Architecture Overview](architecture/overview.md)
-9. [Reference Stack](architecture/reference-stack.md)
-10. [Contributor Map](community/contributor-map.md)
+1. [Current Product Contract](product/current-product-contract.md) - **[current]** Active product contract
+2. [Roadmap](vision/roadmap.md) - **[current]** Phase sequence and active phase
+3. [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md) - **[current]** Phase 3 execution plan
+4. [Project README](../README.md) - **[current]** Quick start and CLI reference
+5. [Architecture Overview](architecture/overview.md) - **[foundation]** Core component architecture
+6. [Phase 1 Overview](phase-1/README.md) - **[foundation]** Phase 1 Personal AI Node foundation
+7. [Phase 1 Reference Architecture](phase-1/reference-architecture.md) - **[foundation]** Phase 1 reference architecture
 
 ## Vision
 
-- [Overview](vision/overview.md)
-- [Principles](vision/principles.md)
-- [Roadmap](vision/roadmap.md)
-- [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md)
+- [Overview](vision/overview.md) **[current]**
+- [Principles](vision/principles.md) **[current]**
+- [Roadmap](vision/roadmap.md) **[current]**
+- [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md) **[current]**
 
 ## Phase 1
 
-- [Phase 1 Landing Page](phase-1/README.md)
-- [Goal Interpreter CLI Demo (MVP #1)](phase-1/goal-interpreter-cli-demo.md)
-- [Reference Architecture](phase-1/reference-architecture.md)
-- [Scope](phase-1/scope.md)
-- [Goals](phase-1/goals.md)
-- [Non-Goals](phase-1/non-goals.md)
-- [Use Cases](phase-1/use-cases.md)
-- [Success Criteria](phase-1/success-criteria.md)
+- [Phase 1 Landing Page](phase-1/README.md) **[foundation]**
+- [Goal Interpreter CLI Demo (MVP #1)](phase-1/goal-interpreter-cli-demo.md) **[foundation]**
+- [Reference Architecture](phase-1/reference-architecture.md) **[foundation]**
+- [Scope](phase-1/scope.md) **[foundation]**
+- [Goals](phase-1/goals.md) **[foundation]**
+- [Non-Goals](phase-1/non-goals.md) **[foundation]**
+- [Use Cases](phase-1/use-cases.md) **[foundation]**
+- [Success Criteria](phase-1/success-criteria.md) **[foundation]**
 
 ## Architecture
 
-- [Overview](architecture/overview.md)
-- [Personal AI Node](architecture/personal-ai-node.md)
-- [Hardware Profile](architecture/hardware.md)
-- [Reference Stack](architecture/reference-stack.md)
-- [Reasoning Engine](architecture/reasoning-engine.md)
-- [Life Graph](architecture/life-graph.md)
-- [Automation Framework](architecture/automation-framework.md)
-- [Module System](architecture/module-system.md)
-- [Integrations](architecture/integrations.md)
-- [Event Model](architecture/event-model.md)
-- [Voice and Media](architecture/voice-and-media.md)
-- [Security and Privacy](architecture/security-and-privacy.md)
-- [User Interfaces](architecture/user-interfaces.md)
+- [Overview](architecture/overview.md) **[foundation]**
+- [Personal AI Node](architecture/personal-ai-node.md) **[foundation]**
+- [Hardware Profile](architecture/hardware.md) **[foundation]**
+- [Reference Stack](architecture/reference-stack.md) **[foundation]**
+- [Reasoning Engine](architecture/reasoning-engine.md) **[foundation]**
+- [Life Graph](architecture/life-graph.md) **[foundation]**
+- [Automation Framework](architecture/automation-framework.md) **[foundation]**
+- [Module System](architecture/module-system.md) **[foundation]**
+- [Integrations](architecture/integrations.md) **[foundation]**
+- [Event Model](architecture/event-model.md) **[foundation]**
+- [Voice and Media](architecture/voice-and-media.md) **[foundation]**
+- [Security and Privacy](architecture/security-and-privacy.md) **[foundation]**
+- [User Interfaces](architecture/user-interfaces.md) **[foundation]**
 
 ## Security
 
-- [Threat Model](security/threat-model.md)
+- [Threat Model](security/threat-model.md) **[foundation]**
 
 ## Concepts
 
-- [Agent Mesh](concepts/agent-mesh.md)
-- [Simulation](concepts/simulation.md)
-- [Privacy and Sovereignty](concepts/privacy-and-sovereignty.md)
-- [Decentralized Network](concepts/decentralized-network.md)
+- [Agent Mesh](concepts/agent-mesh.md) **[foundation]**
+- [Simulation](concepts/simulation.md) **[foundation]**
+- [Privacy and Sovereignty](concepts/privacy-and-sovereignty.md) **[foundation]**
+- [Decentralized Network](concepts/decentralized-network.md) **[foundation]**
 
 ## Community
 
-- [Open Source Direction](community/open-source-direction.md)
-- [Contributor Map](community/contributor-map.md)
-- [Glossary](community/glossary.md)
-- [Phase 1 MVP North Star Issue Draft](community/phase-1-mvp-north-star-issue.md)
-- [v0.1.0 Launch Thread Draft](community/v0.1.0-launch-thread.md)
-- [v0.2.0 Ecosystem North Star Issue Draft](community/v0.2.0-ecosystem-north-star-issue.md)
-- [v0.2.0 Launch Thread Draft](community/v0.2.0-launch-thread.md)
-- [v0.2.0 Release Notes Draft](community/v0.2.0-release-notes.md)
+- [Open Source Direction](community/open-source-direction.md) **[foundation]**
+- [Contributor Map](community/contributor-map.md) **[current]**
+- [Glossary](community/glossary.md) **[current]**
+- [Phase 1 MVP North Star Issue Draft](community/phase-1-mvp-north-star-issue.md) **[foundation]**
+- [v0.1.0 Launch Thread Draft](community/v0.1.0-launch-thread.md) **[foundation]**
+- [v0.2.0 Ecosystem North Star Issue Draft](community/v0.2.0-ecosystem-north-star-issue.md) **[future]**
+- [v0.2.0 Launch Thread Draft](community/v0.2.0-launch-thread.md) **[future]**
+- [v0.2.0 Release Notes Draft](community/v0.2.0-release-notes.md) **[future]**
 
 ## Module Spec
 
-- [lifeos.json Manifest Spec](module-spec/lifeos-manifest.md)
+- [lifeos.json Manifest Spec](module-spec/lifeos-manifest.md) **[foundation]**

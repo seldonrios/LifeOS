@@ -1,5 +1,8 @@
 # Welcome to the LifeOS Wiki
 
+> **Status: foundation context (wiki)**
+> This wiki reflects the Phase 1 foundation framing. For the current product contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md).
+
 LifeOS is an open-source attempt to build a personal AI system that is actually useful in everyday life.
 
 The short version is simple: instead of treating AI like a single chat window in the cloud, LifeOS treats it more like a local operating layer for planning, coordination, memory, and automation. The project is built around user control, local-first deployment, modular capabilities, and clear system boundaries.
@@ -8,7 +11,7 @@ This wiki is the friendly front door for that work. It is here to help new contr
 
 ## What LifeOS Is
 
-LifeOS is centered on the idea of a **Personal AI Node**: a system that runs on user-controlled hardware and helps with real-life coordination.
+LifeOS is currently a Personal Operations OS — a local-first system for running a dependable daily operations loop on user-controlled infrastructure. Its foundation is the Personal AI Node concept established in Phase 1.
 
 That can include things like:
 

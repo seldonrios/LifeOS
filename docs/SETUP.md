@@ -19,6 +19,16 @@ This guide gets a LifeOS development environment running and validates that it i
   - `bash scripts/init-secrets.sh`
   - `bash scripts/provision-nats-identities.sh`
 
+## Supported Environments
+
+| Environment | Support level | Primary use | Notes |
+| --- | --- | --- | --- |
+| Linux/macOS shell (bash/zsh) | Supported | Primary CLI surface | All hero loop commands |
+| PowerShell | Supported where noted | CLI surface | Bash-only scripts noted explicitly |
+| Docker optional profile | Optional | Full stack / NATS | Not required for CLI MVP |
+| Home-server profile | Reference / advanced | Full ambient stack | Phase 6 context; not primary MVP target |
+| Web/mobile surfaces | Contract-dependent | Companion surfaces | Not primary MVP surface; Tauri desktop and Expo mobile are companion apps |
+
 ## Recommended: Dev Container
 
 1. Clone and enter the repository.

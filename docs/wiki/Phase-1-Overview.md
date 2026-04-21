@@ -1,8 +1,13 @@
 # Phase 1 Overview
 
+> **Status: foundation context**
+> This document describes the completed Phase 1 Personal AI Node foundation.
+> It is not the current release target.
+> For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md).
+
 [Back to Home](Home.md)
 
-Phase 1 is the stage where LifeOS becomes a buildable local foundation. The current target is the **Personal AI Node**, not the entire long-term LifeOS vision.
+Phase 1 is the stage where LifeOS became a buildable local foundation. Phase 1 established the Personal AI Node as the local foundation. The current release target is Phase 3 — see the Current Product Contract.
 
 ## The Main Goal
 

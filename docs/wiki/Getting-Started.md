@@ -24,10 +24,11 @@ Use this order if you want the fastest route to understanding the repo:
 1. Read the [Repo README](../../README.md) for the high-level vision.
 2. Read the [Docs Index](../README.md) to see the main documentation map.
 3. Read the [Vision Overview](../vision/overview.md) to understand the long-term direction.
-4. Read the [Phase 1 Overview](../phase-1/README.md) to understand the current target.
-5. Read the [Architecture Overview](../architecture/overview.md) to understand the main system pieces.
-6. Read the [Setup Guide](../SETUP.md) if you want to run the project locally.
-7. Run the [Goal Interpreter CLI Demo](../phase-1/goal-interpreter-cli-demo.md) if you want to test a concrete MVP workflow immediately.
+4. Read the [Current Product Contract](../product/current-product-contract.md) to understand the active MVP.
+5. Read the [Phase 1 Overview](../phase-1/README.md) for foundation context (the completed Phase 1 Personal AI Node).
+6. Read the [Architecture Overview](../architecture/overview.md) to understand the main system pieces.
+7. Read the [Setup Guide](../SETUP.md) if you want to run the project locally.
+8. Run the [Goal Interpreter CLI Demo](../phase-1/goal-interpreter-cli-demo.md) if you want to test a concrete MVP workflow immediately.
 
 ## How To Orient In The Repo
 

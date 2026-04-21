@@ -59,6 +59,20 @@ When you open a PR, include:
 
 Good first issues usually stay within one loop stage, one surface area, and one clear acceptance path.
 
+## Current contribution target
+
+Current work should directly improve either the daily hero loop or the platform foundation that the loop depends on.
+
+Broad feature additions must explicitly declare whether they are current MVP work, foundation work, or future-phase design work.
+
+In the PR template response, authors must state:
+
+- which loop stage is improved
+- whether the change alters current product contract language
+- whether the change introduces future-phase concepts
+
+> If your PR adds conceptual breadth without improving the current hero loop or its direct platform foundations, it should land as architecture/design documentation rather than as an implied MVP promise.
+
 ## How to create a new module (recommended way)
 
 ```bash
