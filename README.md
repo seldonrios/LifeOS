@@ -5,6 +5,36 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Security Policy](https://img.shields.io/badge/security-policy-blue.svg)](SECURITY.md)
 
+## What LifeOS is today
+
+LifeOS is currently a **local-first Personal Operations OS** with a **CLI-first MVP**. It provides a dependable daily operations loop — capture, inbox triage, planning, reminders / next actions, and daily / weekly review — running entirely on your own infrastructure.
+
+Active product slice stages:
+
+- Capture incoming tasks, ideas, and requests
+- Inbox triage (approvals, reminders, plans)
+- Planning and next-action generation
+- Reminders / next actions
+- Daily / weekly review
+
+> **Current status: Phase 3 — Personal Operations OS MVP + Daily-Use Validation**
+> **Primary surface: CLI**
+> **Primary goal: one dependable daily hero loop on user-controlled infrastructure**
+> Full product contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
+
+The broader Personal AI Node vision is architectural context for future expansion — it is **not** the default release promise for contributors unless explicitly marked as current MVP work.
+
+| Binding now | Not binding yet |
+|---|---|
+| CLI-first hero loop | Room-aware automation |
+| Local-first storage and sync | Receptionist flows |
+| Life graph persistence | Full smart-home orchestration |
+| Reminders / reviews / next actions | Health/social/economic domain suites |
+| Module loader + manifest rules | Federated node ecosystem |
+| Trust/reporting surfaces | Agentic web / cognitive internet |
+
+Full contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
+
 **LifeOS** - Personal Operations OS (local-first)
 
 LifeOS is an open-source system for running a dependable personal operations loop on your own infrastructure.
@@ -171,6 +201,8 @@ lifeos events listen [--topic "lifeos.>"] [--json] [--verbose]
 
 Voice-first examples:
 
+> Foundation capability — voice commands are available but not the primary MVP surface
+
 ```text
 pnpm lifeos voice consent
 pnpm lifeos voice start
@@ -246,6 +278,8 @@ Baseline modules (`scheduler`, `notes`, `calendar`, `personality`, `briefing`) a
 
 ## Multi-Device Sync
 
+> Foundation capability — available but not primary MVP surface
+
 ### Multi-Device Sync
 
 LifeOS now syncs your Life Graph across laptop, phone, tablet, etc. -- 100% locally via NATS.
@@ -288,6 +322,8 @@ Runtime enforcement options:
 - `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` enforces heap-pressure checks before `module.init` (`strict` in production, `warn` in development, `off` by explicit override).
 
 ## Distributed Mesh Runtime
+
+> Phase 4+ / Foundation context — not required for current MVP
 
 LifeOS mesh uses a hybrid model:
 
@@ -450,6 +486,7 @@ Contributors are welcome across systems, backend, modules, docs, and UX.
 
 Start here:
 
+- [Current Product Contract](docs/product/current-product-contract.md)
 - [Setup Guide](docs/SETUP.md)
 - [Docs Index](docs/README.md)
 - [Phase 1 Landing Page](docs/phase-1/README.md)
