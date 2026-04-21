@@ -21,19 +21,18 @@ Active product slice stages:
 > **Primary surface: CLI**
 > **Primary goal: one dependable daily hero loop on user-controlled infrastructure**
 > Full product contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
-
-Current architecture boundary: [docs/architecture/current-system-boundary.md](docs/architecture/current-system-boundary.md)
+> Current architecture boundary: [docs/architecture/current-system-boundary.md](docs/architecture/current-system-boundary.md)
 
 The broader Personal AI Node vision is architectural context for future expansion — it is **not** the default release promise for contributors unless explicitly marked as current MVP work.
 
-| Binding now | Not binding yet |
-|---|---|
-| CLI-first hero loop | Room-aware automation |
-| Local-first storage and sync | Receptionist flows |
-| Life graph persistence | Full smart-home orchestration |
+| Binding now                        | Not binding yet                      |
+| ---------------------------------- | ------------------------------------ |
+| CLI-first hero loop                | Room-aware automation                |
+| Local-first storage and sync       | Receptionist flows                   |
+| Life graph persistence             | Full smart-home orchestration        |
 | Reminders / reviews / next actions | Health/social/economic domain suites |
-| Module loader + manifest rules | Federated node ecosystem |
-| Trust/reporting surfaces | Agentic web / cognitive internet |
+| Module loader + manifest rules     | Federated node ecosystem             |
+| Trust/reporting surfaces           | Agentic web / cognitive internet     |
 
 Full contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
 
