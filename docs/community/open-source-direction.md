@@ -19,3 +19,5 @@ LifeOS is open source because the problem it addresses is too important to ancho
 LifeOS should become a place where contributors can collaborate on a shared foundation while experimenting at the module and prototype level.
 
 In practice, that means shared work on graph models, event schemas, room-awareness flows, PBX integration patterns, production modules, health modules, and simulation services.
+
+These areas are architectural extension targets. Current community contribution priority is the Phase 3 hero loop and its direct platform foundations.

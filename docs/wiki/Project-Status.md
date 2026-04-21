@@ -2,7 +2,7 @@
 
 [Back to Home](Home.md)
 
-LifeOS is currently a docs-first project with early implementation surfaces. That is an intentional stage, not an accident. The repo is being used to define a coherent Personal AI Node before the full runtime matures.
+LifeOS has shipped a working Phase 3 hero loop (capture -> inbox -> plan -> review) with a desktop app, mobile companion, and CLI. The project is no longer docs-first; it is an active platform with real users and ongoing development.
 
 ## What Already Exists
 
@@ -31,7 +31,7 @@ This is useful because contributors can already build against a visible pattern.
 
 Some of the most important work is still primarily architectural:
 
-- the full Personal AI Node runtime as an integrated local system
+- the full Personal AI Node runtime as an integrated local system (Phase 1 architectural foundation, not current MVP)
 - the mature reasoning, automation, and coordination story across services
 - deeper life-graph behavior beyond current contracts
 - long-horizon simulation, room awareness, and broader multi-surface experiences

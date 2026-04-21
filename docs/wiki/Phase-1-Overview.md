@@ -21,7 +21,7 @@ The goal of Phase 1 is to define a coherent local system that can:
 
 This stage is about making the system understandable and extensible, not pretending every subsystem is already complete.
 
-## What Is In Scope
+## What Is In Scope (Phase 1 Foundation)
 
 Phase 1 focuses on a practical local-first base, including:
 

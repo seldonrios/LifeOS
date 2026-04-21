@@ -9,7 +9,7 @@
 
 State what Phase 1 includes operationally so contributors can separate foundational work from later-phase ambitions.
 
-## A. Phase 1 foundation scope
+## In Scope (Phase 1 Foundation)
 
 - Local reasoning and planning flows.
 - A life graph model for persistent personal context.
@@ -20,6 +20,8 @@ State what Phase 1 includes operationally so contributors can separate foundatio
 - Documentation that makes the system understandable enough to prototype responsibly.
 
 ## B. Architectural compatibility targets
+
+*(The following are Phase 1 architectural extension targets, not current MVP obligations — see [`docs/product/current-product-contract.md`](../product/current-product-contract.md).)*
 
 - Local integrations such as smart home systems, calendars, wearables, sensors, and local storage.
 - Voice/media surfaces and room-aware capability patterns.

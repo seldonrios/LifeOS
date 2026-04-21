@@ -1,5 +1,9 @@
 # Vision Overview
 
+> **Status: future roadmap**
+> This document describes the long-term LifeOS vision arc.
+> The current release target is Phase 3. See [`docs/product/current-product-contract.md`](../product/current-product-contract.md) for the active MVP contract.
+
 ## Purpose
 
 Explain the problem LifeOS is trying to solve and frame the long-term direction from a personal AI node to a broader cognitive network.

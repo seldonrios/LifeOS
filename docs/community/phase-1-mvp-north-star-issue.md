@@ -2,6 +2,8 @@
 
 **Status**: Shipped ✅
 
+> **Note:** This is a historical community issue tracking the Phase 1 MVP milestone. It is preserved for context. The current roadmap and active contribution targets are in [`docs/product/current-product-contract.md`](../product/current-product-contract.md). The "Next Phases" list below is not the current roadmap.
+
 LifeOS v0.1 is now live:
 
 - `lifeos goal "..."` -> structured Life Graph plan

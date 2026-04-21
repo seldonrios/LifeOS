@@ -34,6 +34,8 @@ For LifeOS, that now means documenting a realistic reference architecture for a 
 
 ## Reference Capability Areas
 
+*(These are Phase 1 architectural extension targets. Current MVP priority is the Phase 3 hero loop — see [`docs/product/current-product-contract.md`](../product/current-product-contract.md).)*
+
 - room-aware automation and follow-me media
 - AI receptionist and voice interaction
 - production, inventory, and personal economic planning

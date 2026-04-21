@@ -7,7 +7,7 @@ LifeOS is an open-source attempt to build a personal AI system that is actually 
 
 The short version is simple: instead of treating AI like a single chat window in the cloud, LifeOS treats it more like a local operating layer for planning, coordination, memory, and automation. The project is built around user control, local-first deployment, modular capabilities, and clear system boundaries.
 
-This wiki is the friendly front door for that work. It is here to help new contributors, curious readers, and future builders understand what LifeOS is trying to become, what already exists in the repo, and what Phase 1 is focused on right now.
+This wiki is the friendly front door for that work. It is here to help new contributors, curious readers, and future builders understand what LifeOS is trying to become, what already exists in the repo, and what Phase 3 is focused on right now.
 
 ## What LifeOS Is
 
@@ -27,7 +27,7 @@ The goal is not to build a magical black box. The goal is to build an understand
 
 Phase 1 is the foundation stage. In this repo, LifeOS is not trying to ship the full long-term network vision yet. It is trying to make the Personal AI Node real enough to reason about, run locally, and extend safely.
 
-Right now, the project is best understood as a docs-first platform with early implementation surfaces. The architecture is ahead of the runtime, on purpose. The repo is being used to define stable concepts, contracts, and boundaries so contributors can build toward the same system instead of a collection of unrelated experiments.
+The project has shipped a working Phase 3 hero loop; the architecture continues to lead the runtime for future phases. The architecture is ahead of the runtime, on purpose. The repo is being used to define stable concepts, contracts, and boundaries so contributors can build toward the same system instead of a collection of unrelated experiments.
 
 ## How The System Is Shaped
 
