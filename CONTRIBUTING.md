@@ -73,6 +73,15 @@ In the PR template response, authors must state:
 
 > If your PR adds conceptual breadth without improving the current hero loop or its direct platform foundations, it should land as architecture/design documentation rather than as an implied MVP promise.
 
+## Architecture Boundary Rules (Current Baseline)
+
+Use [docs/architecture/current-system-boundary.md](docs/architecture/current-system-boundary.md) as the architecture authority for the active release target.
+
+- Core runtime packages may depend inward on shared primitives/contracts.
+- Modules are extension units and should not be imported directly by app/service surfaces except through defined runtime/application contracts.
+- If direct module imports or other boundary exceptions exist, call them out as transitional architecture debt in the PR.
+- Review current MVP changes primarily through the CLI-centered local runtime shape, not through optional extended platform stack completeness.
+
 ## How to create a new module (recommended way)
 
 ```bash

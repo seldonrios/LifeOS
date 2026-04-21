@@ -2,6 +2,7 @@
 > This document describes completed Phase 1 foundation work and architectural context.
 > It is not the primary source of truth for the current release target.
 > For the active MVP contract, see [`docs/product/current-product-contract.md`](../product/current-product-contract.md) and [`docs/vision/personal-operations-os-mvp.md`](../vision/personal-operations-os-mvp.md).
+> For the active architecture boundary, see [`docs/architecture/current-system-boundary.md`](../architecture/current-system-boundary.md).
 
 # Phase 1 Reference Architecture
 
@@ -20,7 +21,7 @@ Capture the realistic Phase 1 system shape for a home-brew LifeOS server and rou
          |               |               |
          |---------------|---------------|
                          |
-                Agent Mesh (AI Modules)
+      Local Orchestration Mesh + Modules
                          |
       |------------|-------------|-------------|
       |            |             |             |
@@ -28,7 +29,13 @@ Capture the realistic Phase 1 system shape for a home-brew LifeOS server and rou
  Automation     Systems        Modules         Systems
 ```
 
-The Personal AI Node is a local infrastructure platform. Everything meaningful flows through a shared event model and a shared life graph. The event bus carries change. The life graph carries durable context. The reasoning layer and bounded agent mesh decide what to do with both.
+The Personal AI Node is a local infrastructure platform. Everything meaningful flows through a shared event model and a shared life graph. The event bus carries change. The life graph carries durable context. The reasoning layer and local orchestration mesh decide what to do with both.
+
+Mesh vocabulary in this document:
+
+- local orchestration mesh: bounded runtime coordination in current local deployments
+- node/federation mesh: optional/future cross-node delegation context
+- mesh service: only when referring to a separately deployed runtime/service boundary
 
 ## Reference Deployment Posture
 

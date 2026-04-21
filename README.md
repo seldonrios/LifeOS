@@ -22,6 +22,8 @@ Active product slice stages:
 > **Primary goal: one dependable daily hero loop on user-controlled infrastructure**
 > Full product contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
 
+Current architecture boundary: [docs/architecture/current-system-boundary.md](docs/architecture/current-system-boundary.md)
+
 The broader Personal AI Node vision is architectural context for future expansion — it is **not** the default release promise for contributors unless explicitly marked as current MVP work.
 
 | Binding now | Not binding yet |
@@ -34,6 +36,13 @@ The broader Personal AI Node vision is architectural context for future expansio
 | Trust/reporting surfaces | Agentic web / cognitive internet |
 
 Full contract: [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
+
+## Architecture Navigation
+
+- Current product contract (scope authority): [docs/product/current-product-contract.md](docs/product/current-product-contract.md)
+- Current system boundary (architecture authority for active release): [docs/architecture/current-system-boundary.md](docs/architecture/current-system-boundary.md)
+- Phase 1 reference architecture (foundation context): [docs/phase-1/reference-architecture.md](docs/phase-1/reference-architecture.md)
+- Roadmap (future direction): [docs/vision/roadmap.md](docs/vision/roadmap.md)
 
 **LifeOS** - Personal Operations OS (local-first)
 
@@ -73,6 +82,8 @@ Setup paths:
 
 - Recommended path (CLI MVP): `docs/SETUP.md` -> "Recommended: Dev Container" or "Advanced: Native Install"
 - Advanced path (full Docker profile): `docker compose --profile dormant up`
+
+Note: the `dormant` profile name is a compatibility label for optional/non-MVP extended platform services; it does not mean abandoned code.
 
 These commands work in Linux/macOS shells (`bash`/`zsh`) and in PowerShell unless noted otherwise.
 
@@ -118,6 +129,8 @@ Operator migration notes:
 - `lifeos status` now reports storage backend, graph path, and resolved SQLite path.
 - `lifeos trust status` and `lifeos trust report --json` include storage backend/path metadata.
 - Compatibility path remains `life-graph.json`, while runtime persistence is SQLite (`life-graph.db` alongside it).
+- Current canonical persistence for the MVP runtime is local SQLite, with a documented JSON fallback for development compatibility.
+- Postgres/Neo4j and other service-stack stores are optional extended platform data stores (non-MVP by default).
 
 ## Quick Start (Detailed CLI)
 
@@ -321,11 +334,17 @@ Runtime enforcement options:
 - `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` rejects undeclared runtime graph/event operations.
 - `LIFEOS_MODULE_RESOURCE_ENFORCEMENT` enforces heap-pressure checks before `module.init` (`strict` in production, `warn` in development, `off` by explicit override).
 
-## Distributed Mesh Runtime
+## Local Orchestration Mesh Runtime
 
-> Phase 4+ / Foundation context — not required for current MVP
+> Foundation capability and future-scale context - not required for current MVP loop
 
-LifeOS mesh uses a hybrid model:
+Mesh vocabulary used in this README:
+
+- local orchestration mesh: bounded runtime coordination used by current local deployments
+- node/federation mesh: optional/future cross-node delegation context
+- mesh service: only when referring to a separately deployed service boundary
+
+LifeOS local orchestration mesh uses a hybrid model:
 
 - Event-bus control plane (heartbeats + delegation transparency topics).
 - HTTP JSON RPC data plane (`goal.plan`, heavy intent publish).
@@ -353,7 +372,7 @@ Leader election + failover behavior:
 - `mesh status` now includes `leaderId`, `term`, `leaseUntil`, `isLeader`, and `leaderHealthy`.
 - Leader events emitted: `lifeos.mesh.leader.elected`, `lifeos.mesh.leader.changed`, `lifeos.mesh.leader.lost`.
 
-Mesh/JWT environment variables:
+Local orchestration mesh/JWT environment variables:
 
 - `LIFEOS_MESH_RPC_HOST` (default `127.0.0.1`)
 - `LIFEOS_MESH_RPC_PORT` (default `5590`)
@@ -415,6 +434,11 @@ Runtime modules:
 - `research`, `notes`, `weather`, and `news` handle voice-first daily assistant flows
 - `sync-core` mirrors life-event deltas across paired devices (local-first)
 - `orchestrator` builds contextual memory, proactive suggestions, and daily briefings
+
+Module contract layers:
+
+- `lifeos.json`: distribution/security/trust contract for certification and loading policy
+- runtime manifest (`manifest.ts` and compiled runtime manifest consumed by loader): runtime capability contract
 
 ## Works with LifeOS
 
@@ -487,6 +511,7 @@ Contributors are welcome across systems, backend, modules, docs, and UX.
 Start here:
 
 - [Current Product Contract](docs/product/current-product-contract.md)
+- [Current System Boundary](docs/architecture/current-system-boundary.md)
 - [Setup Guide](docs/SETUP.md)
 - [Docs Index](docs/README.md)
 - [Phase 1 Landing Page](docs/phase-1/README.md)

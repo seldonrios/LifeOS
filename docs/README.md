@@ -18,12 +18,13 @@ Current executable MVP targets are:
 ## Recommended Reading Order
 
 1. [Current Product Contract](product/current-product-contract.md) - **[current]** Active product contract
-2. [Roadmap](vision/roadmap.md) - **[current]** Phase sequence and active phase
-3. [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md) - **[current]** Phase 3 execution plan
-4. [Project README](../README.md) - **[current]** Quick start and CLI reference
-5. [Architecture Overview](architecture/overview.md) - **[foundation]** Core component architecture
-6. [Phase 1 Overview](phase-1/README.md) - **[foundation]** Phase 1 Personal AI Node foundation
-7. [Phase 1 Reference Architecture](phase-1/reference-architecture.md) - **[foundation]** Phase 1 reference architecture
+2. [Current System Boundary](architecture/current-system-boundary.md) - **[current]** Active architecture boundary map
+3. [Roadmap](vision/roadmap.md) - **[current]** Phase sequence and active phase
+4. [Personal Operations OS MVP Plan](vision/personal-operations-os-mvp.md) - **[current]** Phase 3 execution plan
+5. [Project README](../README.md) - **[current]** Quick start and CLI reference
+6. [Architecture Overview](architecture/overview.md) - **[foundation]** Core component architecture
+7. [Phase 1 Overview](phase-1/README.md) - **[foundation]** Phase 1 Personal AI Node foundation
+8. [Phase 1 Reference Architecture](phase-1/reference-architecture.md) - **[foundation]** Phase 1 reference architecture
 
 ## Vision
 
@@ -45,6 +46,7 @@ Current executable MVP targets are:
 
 ## Architecture
 
+- [Current System Boundary](architecture/current-system-boundary.md) **[current]**
 - [Overview](architecture/overview.md) **[foundation]**
 - [Personal AI Node](architecture/personal-ai-node.md) **[foundation]**
 - [Hardware Profile](architecture/hardware.md) **[foundation]**

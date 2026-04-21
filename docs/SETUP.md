@@ -2,6 +2,8 @@
 
 This guide gets a LifeOS development environment running and validates that it is healthy before you start contributing.
 
+Current architecture boundary for this release: [docs/architecture/current-system-boundary.md](architecture/current-system-boundary.md).
+
 ## Prerequisites
 
 - Node.js >= 20.19.0
@@ -28,6 +30,12 @@ This guide gets a LifeOS development environment running and validates that it i
 | Docker optional profile | Optional | Full stack / NATS | Not required for CLI MVP |
 | Home-server profile | Reference / advanced | Full ambient stack | Phase 6 context; not primary MVP target |
 | Web/mobile surfaces | Contract-dependent | Companion surfaces | Not primary MVP surface; Tauri desktop and Expo mobile are companion apps |
+
+Persistence posture for this setup guide:
+
+- current MVP canonical persistence is local SQLite
+- documented JSON-file adapter fallback is for development compatibility
+- Postgres/Neo4j are optional extended platform stores (non-MVP by default)
 
 ## Recommended: Dev Container
 
@@ -61,6 +69,8 @@ For the full stack (all profile-gated services), run:
 ```bash
 docker compose --profile dormant up
 ```
+
+The `dormant` profile name is retained for command compatibility and means optional/non-MVP extended platform services.
 
 7. For full stack runs, confirm `init-db` completes before app services continue.
 
@@ -132,6 +142,8 @@ For the full stack (all profile-gated services), run:
 docker compose --profile dormant up
 ```
 
+The `dormant` profile name is retained for command compatibility and means optional/non-MVP extended platform services.
+
 8. Confirm `init-db` completion and startup diagnostics output from running application services before development work (full stack path).
 
 ## Ready to Contribute Signal
@@ -142,6 +154,13 @@ Use this checklist before opening a PR:
 - Minimal path: `docker compose up ollama nats` starts and both services stay healthy
 - Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
 - Startup diagnostics report is emitted (full stack path)
+
+## Module Contract Layers
+
+LifeOS currently uses two module contract layers:
+
+- `lifeos.json`: distribution/security/trust contract used for certification and policy checks
+- runtime manifest (`manifest.ts` source and compiled runtime manifest consumed by loader): runtime capability contract
 
 ## Personal Operations OS Onboarding Checklist
 

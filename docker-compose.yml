@@ -1,4 +1,5 @@
 x-dormant-profile: &dormant_profile
+  # Compatibility profile name for optional/non-MVP extended platform services.
   profiles: ['dormant']
 
 services:

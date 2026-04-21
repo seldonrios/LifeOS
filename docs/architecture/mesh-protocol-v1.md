@@ -2,6 +2,12 @@
 
 Status: active contract for Phase 3 foundation.
 
+Terminology lock:
+
+- This contract describes the **local orchestration mesh** used for bounded runtime coordination.
+- **node/federation mesh** refers to optional/future cross-node patterns outside the current MVP default path.
+- Use **mesh service** only when referring to an actual separately deployed service boundary.
+
 ## Purpose
 
 Define the stable control-plane and delegation contract for trusted LifeOS node collaboration.
