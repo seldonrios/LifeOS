@@ -1,6 +1,7 @@
-import { Topics, type BaseEvent } from '@lifeos/event-bus';
+import type { BaseEvent } from '@lifeos/event-bus';
 
-import type { LifeGraphTask } from '@lifeos/life-graph';
+import { Topics } from '@lifeos/contracts';
+
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
 
 interface TaskCompletedPayload {
@@ -29,15 +30,6 @@ interface TaskScheduledPayload {
   origin?: string;
 }
 
-function buildFollowUpTasks(overdueTasks: TickOverduePayload['overdueTasks']): LifeGraphTask[] {
-  return overdueTasks.slice(0, 3).map((task, index) => ({
-    id: `reminder_task_${Date.now()}_${index}`,
-    title: `Review overdue task: ${task.title}`,
-    status: 'todo',
-    priority: 4,
-  }));
-}
-
 async function handleTaskCompleted(
   event: BaseEvent<TaskCompletedPayload>,
   context: ModuleRuntimeContext,
@@ -62,44 +54,18 @@ async function handleTickOverdue(
     return;
   }
 
-  const client = context.createLifeGraphClient(
-    context.graphPath
-      ? {
-          graphPath: context.graphPath,
-          env: context.env,
-        }
-      : {
-          env: context.env,
-        },
-  );
-
-  const first = event.data.overdueTasks[0];
-  const followUpTitle = `Overdue reminder: ${first?.title ?? 'Pending tasks'}`;
-  // Automated follow-up plan creation for each lifeos.tick.overdue event.
-  // This call requires "graph": ["append"] in modules/reminder/lifeos.json;
-  // without it, wrapGraphClientWithPolicy throws in strict mode.
-  // Bounded behavior: at most one plan per tick event and up to 3 tasks,
-  // enforced by buildFollowUpTasks(overdueTasks.slice(0, 3)).
-  const followUpId = await client.createNode('plan', {
-    title: followUpTitle,
-    description: `Auto-generated reminder for ${event.data.overdueTasks.length} overdue task(s).`,
-    tasks: buildFollowUpTasks(event.data.overdueTasks),
-  });
-
   await context.publish(
-    Topics.lifeos.reminderFollowupCreated,
+    Topics.lifeos.reminderSuggestionCreated,
     {
-      followUpPlanId: followUpId,
       overdueCount: event.data.overdueTasks.length,
+      overdueTasks: event.data.overdueTasks,
       tickEventId: event.id,
-      createdAt: new Date().toISOString(),
+      suggestedAt: new Date().toISOString(),
     },
     'reminder-module',
   );
 
-  context.log(
-    `[Reminder] Created follow-up plan ${followUpId} for ${event.data.overdueTasks.length} overdue tasks`,
-  );
+  context.log(`[Reminder] Emitted suggestion event for ${event.data.overdueTasks.length} overdue tasks`);
 }
 
 export function createReminderModule(): LifeOSModule {

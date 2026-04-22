@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Topics, type BaseEvent } from '@lifeos/event-bus';
+import type { BaseEvent } from '@lifeos/event-bus';
+import { Topics } from '@lifeos/contracts';
 import type { ModuleRuntimeContext } from '@lifeos/module-loader';
 
 import { createReminderModule } from './index';
@@ -116,7 +117,7 @@ test('reminder module logs when a task is scheduled', async () => {
   assert.match(logs[0] ?? '', /Tracking scheduled task/);
 });
 
-test('reminder module creates follow-up plan and emits reminder event on overdue tick', async () => {
+test('handleTickOverdue emits reminderSuggestionCreated event when overdue tasks exist', async () => {
   const { context, subscriptions, published, createNodeCalls } = createContextMock();
   const module = createReminderModule();
   await module.init(context);
@@ -146,14 +147,46 @@ test('reminder module creates follow-up plan and emits reminder event on overdue
     },
   });
 
-  assert.equal(createNodeCalls.length, 1);
-  assert.match(String(createNodeCalls[0]?.title), /Overdue reminder:/);
+  assert.equal(createNodeCalls.length, 0);
   assert.equal(published.length, 1);
-  assert.equal(published[0]?.topic, Topics.lifeos.reminderFollowupCreated);
-  assert.equal(typeof published[0]?.data.followUpPlanId, 'string');
+  assert.equal(published[0]?.topic, Topics.lifeos.reminderSuggestionCreated);
   assert.equal(published[0]?.data.overdueCount, 1);
   assert.equal(published[0]?.data.tickEventId, 'tick_evt_1');
-  assert.equal(typeof published[0]?.data.createdAt, 'string');
+  assert.equal(typeof published[0]?.data.suggestedAt, 'string');
+  assert.ok(Array.isArray(published[0]?.data.overdueTasks));
+});
+
+test('handleTickOverdue does not call createNode plan on overdue tick', async () => {
+  const { context, subscriptions, createNodeCalls } = createContextMock();
+  const module = createReminderModule();
+  await module.init(context);
+
+  const overdueHandler = subscriptions.find(
+    (entry) => entry.topic === Topics.lifeos.tickOverdue,
+  )?.handler;
+
+  assert.ok(overdueHandler);
+  await overdueHandler?.({
+    id: 'tick_evt_3',
+    type: Topics.lifeos.tickOverdue,
+    timestamp: '2026-03-22T00:00:00.000Z',
+    source: 'lifeos-cli',
+    version: '0.1.0',
+    data: {
+      checkedTasks: 1,
+      overdueTasks: [
+        {
+          id: 'task_2',
+          title: 'Renew insurance',
+          goalTitle: 'Admin',
+          dueDate: '2026-03-21',
+        },
+      ],
+      tickedAt: '2026-03-22T00:00:00.000Z',
+    },
+  });
+
+  assert.equal(createNodeCalls.length, 0);
 });
 
 test('reminder module does not create follow-up plan for overdue tick with no overdue tasks', async () => {

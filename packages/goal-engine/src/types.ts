@@ -1,5 +1,13 @@
 import { GoalTransitionError, validateGoalTransition } from './state-machine';
 
+/**
+ * Active (MVP runtime): types wired into interpretGoal(), GoalPlan, LifeGraphTask,
+ * and the CLI execution lane.
+ * Future (scaffolding only): types defined for planned automation features not yet
+ * connected to any runtime path.
+ */
+
+/** @future */
 export enum ApprovalMode {
   none = 'none',
   notify_only = 'notify_only',
@@ -7,6 +15,7 @@ export enum ApprovalMode {
   approve_before_execute = 'approve_before_execute',
 }
 
+/** @active */
 export enum GoalStatus {
   proposed = 'proposed',
   validated = 'validated',
@@ -18,6 +27,7 @@ export enum GoalStatus {
   archived = 'archived',
 }
 
+/** @active */
 export enum GoalCategory {
   health = 'health',
   business = 'business',
@@ -30,6 +40,7 @@ export enum GoalCategory {
   household = 'household',
 }
 
+/** @active */
 export enum GoalHorizon {
   daily = 'daily',
   weekly = 'weekly',
@@ -38,6 +49,7 @@ export enum GoalHorizon {
   yearly = 'yearly',
 }
 
+/** @active */
 export interface Goal {
   id: string;
   title: string;
@@ -76,6 +88,7 @@ export interface Goal {
   audit_log: string[];
 }
 
+/** @future */
 export enum MilestoneStatus {
   pending = 'pending',
   in_progress = 'in_progress',
@@ -83,6 +96,7 @@ export enum MilestoneStatus {
   blocked = 'blocked',
 }
 
+/** @future */
 export interface Milestone {
   id: string;
   title: string;
@@ -96,6 +110,7 @@ export interface Milestone {
   active_plan_id?: string;
 }
 
+/** @active */
 export enum PlanStatus {
   draft = 'draft',
   ready = 'ready',
@@ -106,6 +121,7 @@ export enum PlanStatus {
   blocked = 'blocked',
 }
 
+/** @active */
 export enum PlanType {
   strategic = 'strategic',
   operational = 'operational',
@@ -115,6 +131,7 @@ export enum PlanType {
   fallback = 'fallback',
 }
 
+/** @active */
 export interface PlanScoring {
   feasibility: number;
   value: number;
@@ -122,6 +139,7 @@ export interface PlanScoring {
   overall: number;
 }
 
+/** @active */
 export interface Plan {
   id: string;
   goal_id: string;
@@ -139,6 +157,7 @@ export interface Plan {
   tasks: string[];
 }
 
+/** @active */
 export enum TaskStatus {
   proposed = 'proposed',
   ready = 'ready',
@@ -151,6 +170,7 @@ export enum TaskStatus {
   failed = 'failed',
 }
 
+/** @active */
 export enum TaskType {
   human_work = 'human_work',
   approval = 'approval',
@@ -162,6 +182,7 @@ export enum TaskType {
   review = 'review',
 }
 
+/** @active */
 export interface Task {
   id: string;
   goal_id: string;
@@ -180,6 +201,7 @@ export interface Task {
   updated_at: string;
 }
 
+/** @active */
 export enum ConstraintType {
   time_window = 'time_window',
   budget = 'budget',
@@ -201,6 +223,7 @@ export enum ConstraintType {
   custom = 'custom',
 }
 
+/** @active */
 export enum ViolationAction {
   reject = 'reject',
   warn = 'warn',
@@ -208,6 +231,7 @@ export enum ViolationAction {
   ask_user = 'ask_user',
 }
 
+/** @active */
 export interface Constraint {
   id: string;
   type: ConstraintType;
@@ -216,6 +240,7 @@ export interface Constraint {
   violation_action: ViolationAction;
 }
 
+/** @future */
 export interface ReplanRequest {
   goal_id: string;
   reason: string;
@@ -235,6 +260,7 @@ export interface ReplanRequest {
   context?: Record<string, unknown>;
 }
 
+/** @future */
 export interface ReplanResult {
   plan: Plan;
   new_plan_id?: string;
@@ -244,6 +270,7 @@ export interface ReplanResult {
   rationale: string;
 }
 
+/** @future */
 export interface FeasibilityAssessment {
   feasible: boolean;
   score: number;
@@ -261,6 +288,7 @@ export interface FeasibilityAssessment {
   suggestions: string[];
 }
 
+/** @future */
 export interface AgentWorkRequest {
   id: string;
   goal_id: string;
@@ -273,6 +301,7 @@ export interface AgentWorkRequest {
   payload: Record<string, unknown>;
 }
 
+/** @future */
 export interface AgentWorkResult {
   request_id: string;
   success: boolean;
@@ -283,6 +312,7 @@ export interface AgentWorkResult {
   error?: string;
 }
 
+/** @future */
 export class GoalStateMachine {
   transition(goal: Goal, newStatus: GoalStatus): Goal {
     if (!validateGoalTransition(goal.status, newStatus)) {
@@ -297,6 +327,7 @@ export class GoalStateMachine {
   }
 }
 
+/** @future */
 export const GoalEngineEventTopics = {
   consumed: {
     goalProposed: 'goal.proposed',

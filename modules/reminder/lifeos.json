@@ -4,14 +4,14 @@
   "author": "lifeos-core",
   "description": "Reminder reactions for overdue and task events",
   "permissions": {
-    "graph": ["read", "append"],
+    "graph": ["read"],
     "network": [],
     "voice": ["speak"],
     "events": [
       "subscribe:lifeos.tick.overdue",
       "subscribe:lifeos.task.completed",
       "subscribe:task.scheduled",
-      "publish:lifeos.reminder.followup.created"
+      "publish:lifeos.reminder.suggestion.created"
     ]
   },
   "resources": {

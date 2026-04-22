@@ -49,7 +49,10 @@ export declare const Topics: {
     readonly lifeos: {
         readonly tickOverdue: "lifeos.tick.overdue";
         readonly taskCompleted: "lifeos.task.completed";
+        readonly reminderScheduled: "lifeos.reminder.scheduled";
+        readonly reminderFired: "lifeos.reminder.fired";
         readonly reminderFollowupCreated: "lifeos.reminder.followup.created";
+        readonly reminderSuggestionCreated: "lifeos.reminder.suggestion.created";
         readonly voiceWakeDetected: "lifeos.voice.wake.detected";
         readonly voiceCommandReceived: "lifeos.voice.command.received";
         readonly voiceCommandProcessed: "lifeos.voice.command.processed";

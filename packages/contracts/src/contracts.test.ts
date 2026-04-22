@@ -107,6 +107,13 @@ test('RuntimeHeroLoopEventSchema parses lifeos.reminder.scheduled with canonical
   assert.equal(parsed.type, 'lifeos.reminder.scheduled');
 });
 
+test('Topics.lifeos.reminderSuggestionCreated is defined', () => {
+  assert.equal(
+    Topics.lifeos.reminderSuggestionCreated,
+    'lifeos.reminder.suggestion.created',
+  );
+});
+
 test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with canonical payload', () => {
   const parsed = RuntimeHeroLoopEventSchema.parse({
     type: 'lifeos.reminder.followup.created',
@@ -119,6 +126,27 @@ test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with ca
   });
 
   assert.equal(parsed.type, 'lifeos.reminder.followup.created');
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.reminder.suggestion.created with canonical payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.reminder.suggestion.created',
+    payload: {
+      overdueCount: 2,
+      overdueTasks: [
+        {
+          id: 'task_001',
+          title: 'Submit board packet',
+          goalTitle: 'Board Prep',
+          dueDate: '2026-04-01',
+        },
+      ],
+      tickEventId: 'tick_evt_001',
+      suggestedAt: '2026-04-01T10:00:00.000Z',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.reminder.suggestion.created');
 });
 
 test('RuntimeHeroLoopEventSchema rejects reminder topic payload mismatch', () => {
@@ -141,6 +169,37 @@ test('RuntimeHeroLoopEventSchema rejects reminder topic payload mismatch', () =>
         overdueCount: 2,
         tickEventId: 'tick_evt_001',
         createdAt: '2026-04-01T10:00:00.000Z',
+      },
+    }),
+  );
+
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.reminder.suggestion.created',
+      payload: {
+        followUpPlanId: 'plan_001',
+        overdueCount: 2,
+        tickEventId: 'tick_evt_001',
+        createdAt: '2026-04-01T10:00:00.000Z',
+      },
+    }),
+  );
+
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.reminder.followup.created',
+      payload: {
+        overdueCount: 2,
+        overdueTasks: [
+          {
+            id: 'task_001',
+            title: 'Submit board packet',
+            goalTitle: 'Board Prep',
+            dueDate: '2026-04-01',
+          },
+        ],
+        tickEventId: 'tick_evt_001',
+        suggestedAt: '2026-04-01T10:00:00.000Z',
       },
     }),
   );

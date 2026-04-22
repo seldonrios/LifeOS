@@ -52,6 +52,7 @@ export const Topics = {
     reminderScheduled: 'lifeos.reminder.scheduled',
     reminderFired: 'lifeos.reminder.fired',
     reminderFollowupCreated: 'lifeos.reminder.followup.created',
+    reminderSuggestionCreated: 'lifeos.reminder.suggestion.created',
     voiceWakeDetected: 'lifeos.voice.wake.detected',
     voiceCommandReceived: 'lifeos.voice.command.received',
     voiceCommandProcessed: 'lifeos.voice.command.processed',

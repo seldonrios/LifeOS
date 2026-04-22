@@ -52,6 +52,21 @@ const RuntimeReminderFollowupCreatedPayloadSchema = z.object({
   createdAt: z.string().min(1),
 });
 
+const RuntimeReminderSuggestionCreatedPayloadSchema = z.object({
+  overdueCount: z.number().int().nonnegative(),
+  overdueTasks: z.array(
+    z.object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      dueDate: z.string().min(1),
+      planId: z.string().min(1).optional(),
+      goalTitle: z.string().min(1).optional(),
+    }),
+  ),
+  tickEventId: z.string().min(1),
+  suggestedAt: z.string().min(1),
+});
+
 export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(Topics.lifeos.reminderScheduled),
@@ -60,6 +75,10 @@ export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(Topics.lifeos.reminderFollowupCreated),
     payload: RuntimeReminderFollowupCreatedPayloadSchema,
+  }),
+  z.object({
+    type: z.literal(Topics.lifeos.reminderSuggestionCreated),
+    payload: RuntimeReminderSuggestionCreatedPayloadSchema,
   }),
   z.object({
     type: z.literal(Topics.lifeos.taskCompleted),
