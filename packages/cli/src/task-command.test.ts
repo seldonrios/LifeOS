@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { PlannedAction } from '@lifeos/contracts';
-import type { LifeGraphDocument, LifeGraphTask } from '@lifeos/life-graph';
+import type { LifeGraphDocument } from '@lifeos/life-graph';
 
 import {
   flattenPlannedActions,
@@ -190,16 +190,7 @@ test('handleTaskComplete throws not found when neither planned action nor task e
   );
 });
 
-test('handleTaskComplete falls back to GoalPlan task compatibility shim', async () => {
-  const savedGraphs: LifeGraphDocument[] = [];
-  const task: LifeGraphTask = {
-    id: 'task_alpha1234',
-    title: 'Legacy task',
-    status: 'todo',
-    priority: 5,
-    dueDate: '2026-04-22',
-  };
-
+test('handleTaskComplete does not use GoalPlan.tasks as execution fallback', async () => {
   const client = {
     async getPlannedAction() {
       return undefined;
@@ -212,32 +203,36 @@ test('handleTaskComplete falls back to GoalPlan task compatibility shim', async 
             title: 'Legacy Goal',
             description: 'Compatibility plan',
             deadline: '2026-04-30',
-            tasks: [task],
+            tasks: [
+              {
+                id: 'task_alpha1234',
+                title: 'Legacy task',
+                status: 'todo',
+                priority: 5,
+                dueDate: '2026-04-22',
+              },
+            ],
             createdAt: '2026-04-20T12:00:00.000Z',
           },
         ],
       });
     },
     async updatePlannedAction() {
-      throw new Error('should not update planned action in legacy fallback');
+      throw new Error('should not update planned action');
     },
     async cancelRemindersForAction() {
-      throw new Error('should not cancel reminders in legacy fallback');
-    },
-    async saveGraph(graph: LifeGraphDocument) {
-      savedGraphs.push(graph);
+      throw new Error('should not cancel reminders');
     },
   };
 
-  const result = await handleTaskComplete('task_alpha', client, {
-    outputJson: true,
-    stdout: () => undefined,
-  });
-
-  assert.equal(result.source, 'task');
-  assert.equal(result.id, 'task_alpha1234');
-  assert.equal(savedGraphs.length, 1);
-  assert.equal(savedGraphs[0]?.plans[0]?.tasks[0]?.status, 'done');
+  await assert.rejects(
+    () =>
+      handleTaskComplete('task_alpha', client, {
+        outputJson: true,
+        stdout: () => undefined,
+      }),
+    /not found/i,
+  );
 });
 
 test('handleTaskBlock transitions todo to blocked and stores blockedReason', async () => {
@@ -457,4 +452,31 @@ test('flattenPlannedActions includes blocked and deferred items', () => {
   assert.ok(ids.includes('action_deferred'));
   assert.equal(ids.includes('action_done'), false);
   assert.equal(ids.includes('action_cancelled'), false);
+});
+
+test('flattenPlannedActions ignores GoalPlan.tasks execution entries', () => {
+  const graph = createGraph({
+    plans: [
+      {
+        id: 'goal_legacy',
+        title: 'Legacy Plan',
+        description: 'Plan context only',
+        deadline: null,
+        createdAt: '2026-04-20T12:00:00.000Z',
+        tasks: [
+          {
+            id: 'task_legacy_only',
+            title: 'Legacy task only',
+            status: 'todo',
+            priority: 5,
+            dueDate: '2026-04-20',
+          },
+        ],
+      },
+    ],
+    plannedActions: [],
+  });
+
+  const rows = flattenPlannedActions(graph, new Date('2026-04-22T12:00:00.000Z'));
+  assert.equal(rows.length, 0);
 });

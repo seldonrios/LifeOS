@@ -3675,6 +3675,137 @@ test('remind publishes lifeos.reminder.scheduled with canonical payload', async 
   assert.ok(stderr.join('').includes('event_published topic=lifeos.reminder.scheduled'));
 });
 
+test('tick fires due scheduled reminders once and publishes lifeos.reminder.fired', async () => {
+  const stdout: string[] = [];
+  const eventBus = createMockEventBus();
+  const updateCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  const exitCode = await runCli(['tick', '--json', '--graph-path', '/tmp/life-graph.json'], {
+    runTick: async () => ({
+      now: '2026-04-07T09:00:00.000Z',
+      checkedTasks: 0,
+      overdueTasks: [],
+    }),
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: '2026-04-07T08:00:00.000Z',
+            plans: [],
+            captureEntries: [],
+            plannedActions: [],
+            reminderEvents: [
+              {
+                id: 'reminder_due_1',
+                actionId: 'action_1',
+                scheduledFor: '2026-04-07T08:30:00.000Z',
+                status: 'scheduled',
+              },
+              {
+                id: 'reminder_future',
+                actionId: 'action_2',
+                scheduledFor: '2026-04-07T11:00:00.000Z',
+                status: 'scheduled',
+              },
+              {
+                id: 'reminder_fired',
+                actionId: 'action_3',
+                scheduledFor: '2026-04-07T07:00:00.000Z',
+                status: 'fired',
+              },
+            ],
+          };
+        },
+        async updateReminderEvent(id: string, patch: Record<string, unknown>) {
+          updateCalls.push({ id, patch });
+        },
+      }) as never,
+    createEventBusClient: () => eventBus.bus,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'reminder_due_1');
+  assert.equal(updateCalls[0]?.patch.status, 'fired');
+  const firedEvent = eventBus.published.find((event) => event.topic === Topics.lifeos.reminderFired);
+  assert.ok(firedEvent);
+  assert.equal(firedEvent?.event.data.reminderId, 'reminder_due_1');
+  const payload = JSON.parse(stdout.join('')) as { overdueTasks: unknown[] };
+  assert.equal(Array.isArray(payload.overdueTasks), true);
+});
+
+test('remind ack acknowledges fired reminder by id prefix', async () => {
+  const stdout: string[] = [];
+  const updateCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+
+  const exitCode = await runCli(['remind', 'ack', 'reminder_fire', '--json'], {
+    now: () => new Date('2026-04-07T10:00:00.000Z'),
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            reminderEvents: [
+              {
+                id: 'reminder_fire_1',
+                actionId: 'action_1',
+                scheduledFor: '2026-04-07T08:30:00.000Z',
+                firedAt: '2026-04-07T08:30:00.000Z',
+                status: 'fired',
+              },
+            ],
+          };
+        },
+        async updateReminderEvent(id: string, patch: Record<string, unknown>) {
+          updateCalls.push({ id, patch });
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'reminder_fire_1');
+  assert.equal(updateCalls[0]?.patch.status, 'acknowledged');
+  assert.equal(typeof updateCalls[0]?.patch.acknowledgedAt, 'string');
+  const payload = JSON.parse(stdout.join('')) as { status?: string; id?: string };
+  assert.equal(payload.id, 'reminder_fire_1');
+  assert.equal(payload.status, 'acknowledged');
+});
+
+test('remind ack rejects non-fired reminders', async () => {
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['remind', 'ack', 'reminder_sched_1'], {
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            reminderEvents: [
+              {
+                id: 'reminder_sched_1',
+                actionId: 'action_1',
+                scheduledFor: '2026-04-07T11:00:00.000Z',
+                status: 'scheduled',
+              },
+            ],
+          };
+        },
+      }) as never,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_REMINDER_INVALID_STATE/);
+});
+
 // ─── demo:loop command tests ───────────────────────────────────────────────
 
 function createLoopMockClient() {

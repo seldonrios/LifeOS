@@ -1,4 +1,5 @@
-import { Topics, type BaseEvent } from '@lifeos/event-bus';
+import type { BaseEvent } from '@lifeos/event-bus';
+import { Topics } from '@lifeos/contracts';
 import type { LifeGraphClient, LifeGraphDocument } from '@lifeos/life-graph';
 import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
 
@@ -16,9 +17,8 @@ interface TickOverduePayload {
   overdueTasks: Array<{
     id: string;
     title: string;
-    goalTitle: string;
     dueDate: string;
-  }>;
+  } & ({ planId?: string } | { goalTitle: string })>;
   tickedAt: string;
 }
 
@@ -123,7 +123,7 @@ function resolveDueDate(payload: VoiceTaskIntentPayload, now: Date): string | nu
   return parseDueDateFromUtterance(payload.utterance, now);
 }
 
-function resolveTaskId(graph: LifeGraphDocument, payload: VoiceTaskIntentPayload): string | null {
+function resolveActionId(graph: LifeGraphDocument, payload: VoiceTaskIntentPayload): string | null {
   if (payload.taskId) {
     return payload.taskId;
   }
@@ -133,13 +133,12 @@ function resolveTaskId(graph: LifeGraphDocument, payload: VoiceTaskIntentPayload
     return null;
   }
 
-  for (const plan of graph.plans) {
-    if (payload.planId && plan.id !== payload.planId) {
+  for (const action of graph.plannedActions ?? []) {
+    if (payload.planId && action.planId !== payload.planId) {
       continue;
     }
-    const match = plan.tasks.find((task) => normalizeTitle(task.title) === normalizedTitle);
-    if (match) {
-      return match.id;
+    if (normalizeTitle(action.title) === normalizedTitle) {
+      return action.id;
     }
   }
 
@@ -161,53 +160,34 @@ function markVoiceTask(
   graph: LifeGraphDocument,
   payload: VoiceTaskIntentPayload,
   now: Date,
-): { nextGraph: LifeGraphDocument; updatedTaskId: string | null; dueDate: string | null } {
+): { nextGraph: LifeGraphDocument; updatedActionId: string | null; dueDate: string | null } {
   const dueDate = resolveDueDate(payload, now);
-  const resolvedTaskId = resolveTaskId(graph, payload);
-  if (!resolvedTaskId) {
-    return { nextGraph: graph, updatedTaskId: null, dueDate };
+  const resolvedActionId = resolveActionId(graph, payload);
+  if (!resolvedActionId) {
+    return { nextGraph: graph, updatedActionId: null, dueDate };
   }
 
-  let updatedTaskId: string | null = null;
-  const nextPlans = graph.plans.map((plan) => {
-    if (payload.planId && plan.id !== payload.planId) {
-      return plan;
+  let updatedActionId: string | null = null;
+  const nextPlannedActions = (graph.plannedActions ?? []).map((action) => {
+    if (action.id !== resolvedActionId) {
+      return action;
     }
 
-    let changed = false;
-    const nextTasks = plan.tasks.map((task) => {
-      if (task.id !== resolvedTaskId) {
-        return task;
-      }
-      changed = true;
-      updatedTaskId = task.id;
-      const nextTask = {
-        ...task,
-        voiceTriggered: true,
-      };
-      const resolvedDueDate = dueDate ?? task.dueDate;
-      if (resolvedDueDate) {
-        nextTask.dueDate = resolvedDueDate;
-      }
-      return nextTask;
-    });
-
-    return changed
-      ? {
-          ...plan,
-          tasks: nextTasks,
-        }
-      : plan;
+    updatedActionId = action.id;
+    const resolvedDueDate = dueDate ?? action.dueDate;
+    return {
+      ...action,
+      ...(resolvedDueDate ? { dueDate: resolvedDueDate } : {}),
+    };
   });
 
   return {
     nextGraph: {
       ...graph,
       updatedAt: now.toISOString(),
-      plans: nextPlans,
-      calendarEvents: graph.calendarEvents ?? [],
+      plannedActions: nextPlannedActions,
     },
-    updatedTaskId,
+    updatedActionId,
     dueDate,
   };
 }
@@ -220,37 +200,29 @@ function applyRescheduleSuggestions(
 ): { nextGraph: LifeGraphDocument; updatedTaskIds: string[] } {
   const updatedTaskIds: string[] = [];
   const overdueSet = new Set(overdueTaskIds.slice(0, MAX_OVERDUE_TASKS_PER_TICK));
-  const nextPlans = graph.plans.map((plan) => {
-    let changed = false;
-    const nextTasks = plan.tasks.map((task) => {
-      if (!overdueSet.has(task.id)) {
-        return task;
-      }
-      if (task.suggestedReschedule && task.suggestedReschedule >= nowIso) {
-        return task;
-      }
-      changed = true;
-      updatedTaskIds.push(task.id);
-      return {
-        ...task,
-        suggestedReschedule: suggestedIso,
-      };
-    });
+  const nextPlannedActions = (graph.plannedActions ?? []).map((action) => {
+    if (!overdueSet.has(action.id)) {
+      return action;
+    }
+    if (action.status === 'done' || action.status === 'cancelled') {
+      return action;
+    }
+    if (action.deferredUntil && action.deferredUntil >= nowIso) {
+      return action;
+    }
 
-    return changed
-      ? {
-          ...plan,
-          tasks: nextTasks,
-        }
-      : plan;
+    updatedTaskIds.push(action.id);
+    return {
+      ...action,
+      deferredUntil: suggestedIso,
+    };
   });
 
   return {
     nextGraph: {
       ...graph,
       updatedAt: new Date().toISOString(),
-      plans: nextPlans,
-      calendarEvents: graph.calendarEvents ?? [],
+      plannedActions: nextPlannedActions,
     },
     updatedTaskIds,
   };
@@ -263,15 +235,17 @@ async function handleVoiceTaskIntent(
   const client = createClient(context);
   const graph = await client.loadGraph();
   const now = resolveRequestedAt(event.data.requestedAt);
-  const { nextGraph, updatedTaskId, dueDate } = markVoiceTask(graph, event.data, now);
+  const { nextGraph, updatedActionId, dueDate } = markVoiceTask(graph, event.data, now);
 
-  if (!updatedTaskId) {
-    context.log('[Scheduler] No matching task found for voice task intent.');
+  if (!updatedActionId) {
+    context.log('[Scheduler] No matching planned action found for voice task intent.');
     return;
   }
 
   await client.saveGraph(nextGraph);
-  context.log(`[Scheduler] Updated voice task ${updatedTaskId}${dueDate ? ` due ${dueDate}` : ''}`);
+  context.log(
+    `[Scheduler] Updated voice planned action ${updatedActionId}${dueDate ? ` due ${dueDate}` : ''}`,
+  );
 }
 
 async function handleTickOverdue(

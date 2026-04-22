@@ -773,40 +773,45 @@ function parseInsightsOutput(raw: string): { wins: string[]; nextActions: string
 }
 
 function deriveHeuristicInsights(
-  plans: GoalPlan[],
   plannedActions: PlannedAction[],
   period: LifeGraphReviewPeriod,
 ): { wins: string[]; nextActions: string[]; history: string[] } {
-  const completedTaskTitles = plans.flatMap((plan) =>
-    plan.tasks
-      .filter((task) => task.status === 'done')
-      .map((task) => `${plan.title}: ${task.title} (${task.id})`),
-  );
-  const todoTaskTitles = plans.flatMap((plan) =>
-    plan.tasks
-      .filter((task) => task.status !== 'done')
-      .sort((left, right) => right.priority - left.priority)
-      .map((task) => `${plan.title}: ${task.title}`),
-  );
   const completedPlannedActions = plannedActions
     .filter((action) => action.status === 'done')
-    .map((action) => `Planned action completed: ${action.title} (${action.id})`);
+    .map((action) => ({
+      id: action.id,
+      title: `Planned action completed: ${action.title} (${action.id})`,
+      completedAt: action.completedAt ?? '',
+    }))
+    .sort((left, right) => right.completedAt.localeCompare(left.completedAt))
+    .map((action) => action.title);
+
   const pendingPlannedActions = plannedActions
-    .filter((action) => action.status !== 'done')
+    .filter((action) => action.status === 'todo')
+    .sort((left, right) => {
+      if (left.dueDate && right.dueDate) {
+        const dueDateCompare = left.dueDate.localeCompare(right.dueDate);
+        if (dueDateCompare !== 0) {
+          return dueDateCompare;
+        }
+      } else if (left.dueDate && !right.dueDate) {
+        return -1;
+      } else if (!left.dueDate && right.dueDate) {
+        return 1;
+      }
+      return left.title.localeCompare(right.title);
+    })
     .map((action) => `Planned action: ${action.title}`);
 
-  const winsCandidates = [...completedPlannedActions, ...completedTaskTitles];
-  const nextActionCandidates = [...pendingPlannedActions, ...todoTaskTitles];
-
   const wins =
-    winsCandidates.slice(0, 3).length > 0
-      ? winsCandidates.slice(0, 3)
+    completedPlannedActions.slice(0, 3).length > 0
+      ? completedPlannedActions.slice(0, 3)
       : [`No completed tasks recorded in the ${period} window yet.`];
   const nextActions =
-    nextActionCandidates.slice(0, 3).length > 0
-      ? nextActionCandidates.slice(0, 3)
+    pendingPlannedActions.slice(0, 3).length > 0
+      ? pendingPlannedActions.slice(0, 3)
       : ['Capture one next concrete task for your highest-priority goal.'];
-  const history = [...completedPlannedActions, ...completedTaskTitles].slice(0, 10);
+  const history = completedPlannedActions.slice(0, 10);
 
   return { wins, nextActions, history };
 }
@@ -1792,11 +1797,7 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       const generatedAt = new Date().toISOString();
       const model = options.env?.LIFEOS_GOAL_MODEL?.trim() || 'llama3.1:8b';
       const host = options.env?.OLLAMA_HOST;
-      const heuristic = deriveHeuristicInsights(
-        graph.plans,
-        graph.plannedActions ?? [],
-        normalizedPeriod,
-      );
+      const heuristic = deriveHeuristicInsights(graph.plannedActions ?? [], normalizedPeriod);
 
       const reviewPrompt = JSON.stringify(
         {

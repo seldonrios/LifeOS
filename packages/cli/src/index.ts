@@ -2308,7 +2308,6 @@ export async function runTaskCommand(
         status: completedTask.status,
         completionSource: completedTask.source,
         ...(completedTask.goalId ? { goalId: completedTask.goalId } : {}),
-        ...(completedTask.goalTitle ? { goalTitle: completedTask.goalTitle } : {}),
         ...(completedTask.sourceCapture ? { sourceCapture: completedTask.sourceCapture } : {}),
         completedAt: new Date().toISOString(),
       };
@@ -5517,7 +5516,7 @@ function buildProgram(
 
   program
     .command('remind')
-    .description('Schedule or acknowledge reminder events')
+    .description('Schedule or acknowledge reminder events for planned actions')
     .argument('<action-id-or-command>', 'PlannedAction ID, or "ack"')
     .argument('[value]', 'When using ack, the reminder ID (exact or prefix)')
     .option('--at <iso-datetime>', 'ISO datetime to schedule the reminder')
@@ -5682,9 +5681,9 @@ function buildProgram(
 
   program
     .command('task')
-    .description('Manage tasks')
+    .description('Manage planned actions')
     .argument('[action]', 'list | complete | next | block | cancel | unblock', 'list')
-    .argument('[id]', 'Task ID for complete/block/cancel/unblock action')
+    .argument('[id]', 'Planned action ID for complete/block/cancel/unblock action')
     .option('--reason <reason>', 'Reason for block action')
     .option('--json', 'Output JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)

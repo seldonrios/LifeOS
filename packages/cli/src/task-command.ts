@@ -2,12 +2,7 @@ import chalk from 'chalk';
 import Table from 'cli-table3';
 import type { PlannedAction } from '@lifeos/contracts';
 
-import type {
-  LifeGraphClient,
-  LifeGraphDocument,
-  LifeGraphReviewInsights,
-  LifeGraphTask,
-} from '@lifeos/life-graph';
+import type { LifeGraphClient, LifeGraphDocument, LifeGraphReviewInsights } from '@lifeos/life-graph';
 
 export interface TaskListItem {
   id: string;
@@ -51,9 +46,6 @@ function statusColor(status: TaskListItem['status']): string {
   if (status === 'cancelled') {
     return chalk.strikethrough(chalk.gray(status));
   }
-  if (status === 'in-progress') {
-    return chalk.cyan(status);
-  }
 
   return chalk.yellow(status);
 }
@@ -67,51 +59,6 @@ function priorityColor(priority: number): string {
   }
 
   return chalk.gray(String(priority));
-}
-
-// Compatibility shim: reads GoalPlan.tasks for task complete fallback path only. Do not use for new code.
-function flattenTasks(graph: LifeGraphDocument, now: Date = new Date()): TaskListItem[] {
-  const rows: TaskListItem[] = [];
-
-  for (const plan of graph.plans) {
-    for (const task of plan.tasks) {
-      rows.push({
-        id: task.id,
-        shortId: task.id.slice(0, 8),
-        title: task.title,
-        planId: plan.id,
-        status: task.status,
-        priority: task.priority,
-        dueDate: task.dueDate ?? null,
-        overdue: isOverdue(task.dueDate, now) && task.status !== 'done',
-      });
-    }
-  }
-
-  return rows.sort((left, right) => {
-    if (left.status === 'done' && right.status !== 'done') {
-      return 1;
-    }
-    if (right.status === 'done' && left.status !== 'done') {
-      return -1;
-    }
-    if (left.overdue !== right.overdue) {
-      return left.overdue ? -1 : 1;
-    }
-    if (left.priority !== right.priority) {
-      return right.priority - left.priority;
-    }
-    if (left.dueDate && right.dueDate) {
-      return left.dueDate.localeCompare(right.dueDate);
-    }
-    if (left.dueDate && !right.dueDate) {
-      return -1;
-    }
-    if (!left.dueDate && right.dueDate) {
-      return 1;
-    }
-    return left.title.localeCompare(right.title);
-  });
 }
 
 export function flattenPlannedActions(
@@ -190,60 +137,6 @@ function renderTaskTable(rows: TaskListItem[]): string {
   return table.toString();
 }
 
-function findTaskMatch(
-  graph: LifeGraphDocument,
-  taskIdOrPrefix: string,
-): {
-  planIndex: number;
-  taskIndex: number;
-  task: LifeGraphTask;
-  goalId: string;
-  goalTitle: string;
-} {
-  const needle = taskIdOrPrefix.trim().toLowerCase();
-  if (!needle) {
-    throw new Error('Task ID is required for complete action.');
-  }
-
-  const matches: Array<{
-    planIndex: number;
-    taskIndex: number;
-    task: LifeGraphTask;
-    goalId: string;
-    goalTitle: string;
-  }> = [];
-  graph.plans.forEach((plan, planIndex) => {
-    plan.tasks.forEach((task, taskIndex) => {
-      if (task.id.toLowerCase().startsWith(needle)) {
-        matches.push({
-          planIndex,
-          taskIndex,
-          task,
-          goalId: plan.id,
-          goalTitle: plan.title,
-        });
-      }
-    });
-  });
-
-  if (matches.length === 0) {
-    throw new Error(`Task "${taskIdOrPrefix}" not found.`);
-  }
-
-  if (matches.length > 1) {
-    const ids = matches.map((match) => match.task.id.slice(0, 8)).join(', ');
-    throw new Error(`Task ID prefix "${taskIdOrPrefix}" is ambiguous. Matches: ${ids}`);
-  }
-
-  return matches[0] as {
-    planIndex: number;
-    taskIndex: number;
-    task: LifeGraphTask;
-    goalId: string;
-    goalTitle: string;
-  };
-}
-
 function pickNextActionsFromPlannedActions(graph: LifeGraphDocument): string[] {
   const sorted = (graph.plannedActions ?? [])
     .filter((action) => action.status === 'todo')
@@ -287,20 +180,15 @@ export async function handleTaskComplete(
   taskId: string | undefined,
   client: Pick<
     LifeGraphClient,
-    | 'loadGraph'
-    | 'saveGraph'
-    | 'getPlannedAction'
-    | 'updatePlannedAction'
-    | 'cancelRemindersForAction'
+    'loadGraph' | 'getPlannedAction' | 'updatePlannedAction' | 'cancelRemindersForAction'
   >,
   options: TaskIoOptions,
 ): Promise<{
   id: string;
   title: string;
-  status: LifeGraphTask['status'];
+  status: PlannedAction['status'];
   goalId?: string;
-  goalTitle?: string;
-  source: 'task' | 'planned-action';
+  source: 'planned-action';
   sourceCapture?: string;
 }> {
   const needle = (taskId ?? '').trim().toLowerCase();
@@ -357,52 +245,7 @@ export async function handleTaskComplete(
     return completePlannedAction(plannedActionMatches[0] as PlannedAction);
   }
 
-  // Compatibility shim: falls back to GoalPlan.tasks lookup when no PlannedAction prefix match is found. This path supports legacy goal decomposition tasks. Do not promote this to the primary path.
-  const match = findTaskMatch(graph, taskId ?? '');
-
-  const updatedTask: LifeGraphTask = {
-    ...match.task,
-    status: 'done',
-  };
-
-  const nextGraph: LifeGraphDocument = {
-    ...graph,
-    updatedAt: new Date().toISOString(),
-    plans: graph.plans.map((plan, planIndex) => {
-      if (planIndex !== match.planIndex) {
-        return plan;
-      }
-
-      return {
-        ...plan,
-        tasks: plan.tasks.map((task, taskIndex) => {
-          if (taskIndex !== match.taskIndex) {
-            return task;
-          }
-
-          return updatedTask;
-        }),
-      };
-    }),
-  };
-
-  await client.saveGraph(nextGraph);
-  const payload = {
-    id: updatedTask.id,
-    title: updatedTask.title,
-    goalId: match.goalId,
-    goalTitle: match.goalTitle,
-    status: updatedTask.status,
-    source: 'task' as const,
-  };
-
-  if (options.outputJson) {
-    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
-  } else {
-    options.stdout(chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`));
-  }
-
-  return payload;
+  throw new Error(`Task "${taskId}" not found.`);
 }
 
 async function resolvePlannedActionByIdOrPrefix(

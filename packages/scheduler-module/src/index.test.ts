@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { Topics, type BaseEvent } from '@lifeos/event-bus';
+import type { BaseEvent } from '@lifeos/event-bus';
+import { Topics } from '@lifeos/contracts';
 import type { LifeGraphDocument } from '@lifeos/life-graph';
 import type { ModuleRuntimeContext } from '@lifeos/module-loader';
 
@@ -20,26 +21,17 @@ function createContextMock(initialGraph?: LifeGraphDocument) {
   let graph: LifeGraphDocument = initialGraph ?? {
     version: '0.1.0',
     updatedAt: '2026-03-23T00:00:00.000Z',
-    plans: [
-      {
-        id: 'goal_1',
-        title: 'Voice task: Finish report',
-        description: 'Created from voice command',
-        deadline: null,
-        createdAt: '2026-03-23T00:00:00.000Z',
-        tasks: [
-          {
-            id: 'task_1',
-            title: 'Finish report',
-            status: 'todo',
-            priority: 4,
-          },
-        ],
-      },
-    ],
+    plans: [],
     calendarEvents: [],
     captureEntries: [],
-    plannedActions: [],
+    plannedActions: [
+      {
+        id: 'action_1',
+        title: 'Finish report',
+        status: 'todo',
+        planId: 'goal_1',
+      },
+    ],
     reminderEvents: [],
   };
 
@@ -129,16 +121,15 @@ test('scheduler module marks voice task and infers due date', async () => {
     version: '0.1.0',
     data: {
       planId: 'goal_1',
-      taskId: 'task_1',
+      taskId: 'action_1',
       utterance: 'add a task to finish report by 2026-04-15',
     },
   });
 
   const saved = getSavedGraph();
   assert.ok(saved);
-  const task = saved?.plans[0]?.tasks[0];
-  assert.equal(task?.voiceTriggered, true);
-  assert.equal(task?.dueDate, '2026-04-15');
+  const action = saved?.plannedActions[0];
+  assert.equal(action?.dueDate, '2026-04-15');
 });
 
 test('scheduler module suggests reschedule for overdue tasks', async () => {
@@ -158,9 +149,9 @@ test('scheduler module suggests reschedule for overdue tasks', async () => {
       checkedTasks: 1,
       overdueTasks: [
         {
-          id: 'task_1',
+          id: 'action_1',
           title: 'Finish report',
-          goalTitle: 'Voice task',
+          planId: 'goal_1',
           dueDate: '2026-03-22',
         },
       ],
@@ -169,7 +160,7 @@ test('scheduler module suggests reschedule for overdue tasks', async () => {
   });
 
   const saved = getSavedGraph();
-  assert.ok(saved?.plans[0]?.tasks[0]?.suggestedReschedule);
+  assert.equal(typeof saved?.plannedActions[0]?.deferredUntil, 'string');
   assert.equal(published[0]?.topic, Topics.lifeos.taskRescheduleSuggested);
 });
 
@@ -196,34 +187,25 @@ test('scheduler module can resolve task by title when taskId is missing', async 
   });
 
   const saved = getSavedGraph();
-  assert.equal(saved?.plans[0]?.tasks[0]?.voiceTriggered, true);
+  assert.equal(typeof saved?.plannedActions[0]?.dueDate, 'string');
 });
 
 test('scheduler module does not overwrite fresh reschedule suggestions', async () => {
   const initialGraph: LifeGraphDocument = {
     version: '0.1.0',
     updatedAt: '2026-03-23T00:00:00.000Z',
-    plans: [
-      {
-        id: 'goal_1',
-        title: 'Voice task: Finish report',
-        description: 'Created from voice command',
-        deadline: null,
-        createdAt: '2026-03-23T00:00:00.000Z',
-        tasks: [
-          {
-            id: 'task_1',
-            title: 'Finish report',
-            status: 'todo',
-            priority: 4,
-            suggestedReschedule: '2099-01-01T00:00:00.000Z',
-          },
-        ],
-      },
-    ],
+    plans: [],
     calendarEvents: [],
     captureEntries: [],
-    plannedActions: [],
+    plannedActions: [
+      {
+        id: 'action_1',
+        title: 'Finish report',
+        status: 'todo',
+        planId: 'goal_1',
+        deferredUntil: '2099-01-01T00:00:00.000Z',
+      },
+    ],
     reminderEvents: [],
   };
   const { context, subscriptions, published, getSavedGraph } = createContextMock(initialGraph);
@@ -242,9 +224,9 @@ test('scheduler module does not overwrite fresh reschedule suggestions', async (
       checkedTasks: 1,
       overdueTasks: [
         {
-          id: 'task_1',
+          id: 'action_1',
           title: 'Finish report',
-          goalTitle: 'Voice task',
+          planId: 'goal_1',
           dueDate: '2026-03-22',
         },
       ],

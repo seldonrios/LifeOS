@@ -55,6 +55,13 @@ Daily hero loop:
 4. Execute with reminders and task completion.
 5. Review wins and next steps daily or weekly.
 
+MVP runtime model for daily execution:
+
+- `CaptureEntry` is intake.
+- `PlannedAction` is the canonical execution object.
+- `ReminderEvent` is the canonical reminder object.
+- `GoalPlan` remains planning context and projection input, not the day-to-day execution lane.
+
 ## Start Here
 
 If you are new here, start with the CLI MVP and run the full loop in minutes.
@@ -200,16 +207,18 @@ lifeos trust [status|explain|report] [action] [--json] [--verbose]
 lifeos doctor [--json] [--verbose]
 lifeos status [--json] [--graph-path <path>] [--verbose]
 lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
-lifeos task [list|complete|next] [id] [--json] [--graph-path <path>] [--verbose]
+lifeos task [list|complete|next|block|cancel|unblock] [id] [--reason <reason>] [--json] [--graph-path <path>] [--verbose]
 lifeos capture "<text>" [--json] [--graph-path <path>]
-lifeos inbox [list|triage] [id] [--action task|note|defer] [--json] [--graph-path <path>]
-lifeos remind <action-id> --at <datetime> [--json] [--graph-path <path>]
+lifeos inbox [list|triage] [id] [--action task|note|defer|plan] [--json] [--graph-path <path>]
+lifeos remind <action-id>|ack [value] [--at <datetime>] [--json] [--graph-path <path>] [--verbose]
 lifeos demo:loop [--dry-run] [--json]
 lifeos next [--json] [--graph-path <path>] [--verbose]
 lifeos tick [--json] [--graph-path <path>] [--verbose]
 lifeos modules [list|load] [id]
 lifeos events listen [--topic "lifeos.>"] [--json] [--verbose]
 ```
+
+Reminder note for overdue ticks: the reminder module emits `lifeos.reminder.suggestion.created` suggestion events; it does not auto-create follow-up plans.
 
 Voice-first examples:
 

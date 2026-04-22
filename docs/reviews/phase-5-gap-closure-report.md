@@ -17,6 +17,18 @@ This is not a future-vision design document. It is a concrete closure plan for m
 
 ## Executive summary
 
+## Implementation status (current repo)
+
+Phase 5 MVP loop is now implemented on a single canonical execution lane:
+
+- `task` runtime flows (`list`, `complete`, `next`, `block`, `cancel`, `unblock`) operate on `PlannedAction` only.
+- Scheduler voice updates and overdue reschedule suggestions mutate `plannedActions` (not `plans[*].tasks`).
+- Reminder lifecycle supports schedule -> fire -> acknowledge/cancel; completion/cancellation cancels future scheduled reminders.
+- `inbox triage --action plan` and `goal` projection paths write executable work into `PlannedAction` with provenance (`activationSource`, `planId`).
+- Heuristic review/next-action derivation uses `PlannedAction` as execution source-of-truth; `GoalPlan` remains planning context.
+
+`GoalPlan.tasks` remains as planning/decomposition context data and is not used as the normal MVP execution runtime surface.
+
 Phase 5 failed because the current MVP planning/execution surface is split across **two competing runtime models**:
 
 1. `GoalPlan.tasks` embedded inside `graph.plans`

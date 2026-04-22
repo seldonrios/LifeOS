@@ -910,11 +910,49 @@ test('generateReview falls back to heuristic insights on invalid llm output', as
     description: 'Keep planning on track',
     tasks: [{ title: 'Define next actions', status: 'todo', priority: 5 }],
   });
+  await client.appendPlannedAction({
+    id: 'action_planning_1',
+    title: 'Define next actions',
+    status: 'todo',
+  });
 
   const insights = await client.generateReview('daily');
   assert.equal(insights.source, 'heuristic');
   assert.equal(insights.period, 'daily');
   assert.ok(insights.nextActions.length >= 1);
+});
+
+test('generateReview heuristic next actions ignore GoalPlan.tasks and derive from PlannedAction only', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  await client.createNode('plan', {
+    title: 'Legacy plan tasks only',
+    description: 'Used for planning context',
+    tasks: [{ title: 'Legacy task title', status: 'todo', priority: 5 }],
+  });
+  await client.appendPlannedAction({
+    id: 'action_next_only',
+    title: 'Canonical execution action',
+    status: 'todo',
+  });
+
+  const insights = await client.generateReview('daily');
+  assert.equal(insights.source, 'heuristic');
+  assert.equal(insights.nextActions.some((entry) => entry.includes('Canonical execution action')), true);
+  assert.equal(insights.nextActions.some((entry) => entry.includes('Legacy task title')), false);
 });
 
 test('generateReview daily loopSummary counts only items in the active day window', async () => {

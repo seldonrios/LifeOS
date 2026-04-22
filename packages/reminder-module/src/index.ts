@@ -6,10 +6,11 @@ import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
 
 interface TaskCompletedPayload {
   taskId: string;
-  goalId: string;
+  goalId?: string;
   title: string;
   status: 'done';
   completedAt: string;
+  sourceCapture?: string;
 }
 
 interface TickOverduePayload {
