@@ -249,6 +249,7 @@ export interface RemindCommandOptions {
   at: string;
   outputJson: boolean;
   graphPath: string;
+  verbose: boolean;
 }
 export interface SpinnerLike {
   start(): SpinnerLike;

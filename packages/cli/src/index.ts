@@ -1471,6 +1471,31 @@ function createMeshTraceContext(source: string): {
   };
 }
 
+function formatMeshLeaderPreflightMessage(leaderId: string | null): string {
+  if (leaderId) {
+    return `Mesh leader "${leaderId}" is not healthy. Retry after leader failover stabilizes.`;
+  }
+  return 'Mesh control plane has no healthy leader. Retry after leader election stabilizes.';
+}
+
+async function runMeshDelegationLeaderPreflight(
+  meshCoordinator: MeshCoordinator,
+  verboseLog: (line: string) => void,
+): Promise<{ ok: true } | { ok: false; reason: 'leader_unhealthy'; leaderId: string | null }> {
+  const controlPlaneStatus = await meshCoordinator.getLiveStatus();
+  if (controlPlaneStatus.leaderHealthy) {
+    return { ok: true };
+  }
+  verboseLog(
+    `mesh_delegate_preflight_rejected reason=leader_unhealthy leader_id=${controlPlaneStatus.leaderId ?? 'none'}`,
+  );
+  return {
+    ok: false,
+    reason: 'leader_unhealthy',
+    leaderId: controlPlaneStatus.leaderId,
+  };
+}
+
 function parseJsonObject(value: string | undefined): Record<string, unknown> | null {
   if (!value) {
     return null;
@@ -1561,13 +1586,21 @@ function createVoicePublisher(
       verboseLog,
     );
 
-    const delegated = await meshCoordinator.delegateIntentPublish({
-      capability,
-      topic,
-      data,
-      source,
-      traceId: trace.traceId,
-    });
+    const preflight = await runMeshDelegationLeaderPreflight(meshCoordinator, verboseLog);
+    const delegated = preflight.ok
+      ? await meshCoordinator.delegateIntentPublish({
+          capability,
+          topic,
+          data,
+          source,
+          traceId: trace.traceId,
+        })
+      : {
+          delegated: false as const,
+          capability,
+          reason: preflight.reason,
+          ...(preflight.leaderId ? { nodeId: preflight.leaderId } : {}),
+        };
     if (delegated.delegated) {
       await publishEventSafely(
         Topics.lifeos.meshDelegateAccepted,
@@ -1768,12 +1801,20 @@ export async function runGoalCommand(
       env,
       verboseLog,
     );
-    const delegated = await meshCoordinator.delegateGoalPlan({
-      goal: normalizedGoal,
-      model: options.model,
-      requestedAt: meshTrace.requestedAt,
-      traceId: meshTrace.traceId,
-    });
+    const preflight = await runMeshDelegationLeaderPreflight(meshCoordinator, verboseLog);
+    const delegated = preflight.ok
+      ? await meshCoordinator.delegateGoalPlan({
+          goal: normalizedGoal,
+          model: options.model,
+          requestedAt: meshTrace.requestedAt,
+          traceId: meshTrace.traceId,
+        })
+      : {
+          delegated: false as const,
+          capability: 'goal-planning',
+          reason: preflight.reason,
+          ...(preflight.leaderId ? { nodeId: preflight.leaderId } : {}),
+        };
 
     if (delegated.delegated && isGoalPlanCandidate(delegated.payload)) {
       plan = delegated.payload;
@@ -3207,13 +3248,21 @@ export async function runResearchCommand(
       env,
       verboseLog,
     );
-    const delegated = await meshCoordinator.delegateIntentPublish({
-      capability: 'research',
-      topic: Topics.lifeos.voiceIntentResearch,
-      data: payload,
-      source: 'lifeos-cli',
-      traceId: meshTrace.traceId,
-    });
+    const preflight = await runMeshDelegationLeaderPreflight(meshCoordinator, verboseLog);
+    const delegated = preflight.ok
+      ? await meshCoordinator.delegateIntentPublish({
+          capability: 'research',
+          topic: Topics.lifeos.voiceIntentResearch,
+          data: payload,
+          source: 'lifeos-cli',
+          traceId: meshTrace.traceId,
+        })
+      : {
+          delegated: false as const,
+          capability: 'research',
+          reason: preflight.reason,
+          ...(preflight.leaderId ? { nodeId: preflight.leaderId } : {}),
+        };
     if (delegated.delegated) {
       await publishEventSafely(
         Topics.lifeos.meshDelegateAccepted,
@@ -4235,6 +4284,13 @@ export async function runMeshCommand(
         );
         return 1;
       }
+      const preflight = await runMeshDelegationLeaderPreflight(meshCoordinator, verboseLog);
+      if (!preflight.ok) {
+        writeStderr(
+          `${chalk.red.bold('Error:')} Mesh delegation preflight rejected. ${formatMeshLeaderPreflightMessage(preflight.leaderId)}\n`,
+        );
+        return 1;
+      }
       const meshTrace = createMeshTraceContext(options.source?.trim() || 'lifeos-cli');
 
       await publishEventSafely(
@@ -4940,6 +4996,12 @@ export async function runRemindCommand(
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+  const verboseLog = (line: string): void => {
+    if (!options.verbose) {
+      return;
+    }
+    writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
+  };
 
   try {
     const plannedAction = await client.getPlannedAction(options.actionId);
@@ -4999,7 +5061,7 @@ export async function runRemindCommand(
 
     await client.appendReminderEvent(reminderEvent);
     await publishEventSafely(
-      Topics.lifeos.reminderFollowupCreated,
+      Topics.lifeos.reminderScheduled,
       {
         id: reminderEvent.id,
         actionId: reminderEvent.actionId,
@@ -5167,6 +5229,7 @@ function buildProgram(
     .option('--at <iso-datetime>', 'ISO datetime to schedule the reminder')
     .option('--json', 'Output reminder event JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
     .action(async (actionId: string, commandOptions) => {
       if (!commandOptions.at) {
         setExitCode(1);
@@ -5179,6 +5242,7 @@ function buildProgram(
           at: commandOptions.at as string,
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath as string,
+          verbose: Boolean(commandOptions.verbose),
         },
         dependencies,
       );

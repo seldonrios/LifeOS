@@ -44,10 +44,21 @@ const RuntimeInboxTriagedPayloadSchema = z.object({
   plannedActionId: z.string().min(1).optional(),
 });
 
+const RuntimeReminderFollowupCreatedPayloadSchema = z.object({
+  followUpPlanId: z.string().min(1),
+  overdueCount: z.number().int().nonnegative(),
+  tickEventId: z.string().min(1),
+  createdAt: z.string().min(1),
+});
+
 export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
-    type: z.literal(Topics.lifeos.reminderFollowupCreated),
+    type: z.literal(Topics.lifeos.reminderScheduled),
     payload: ReminderEventSchema.pick({ id: true, actionId: true, scheduledFor: true }),
+  }),
+  z.object({
+    type: z.literal(Topics.lifeos.reminderFollowupCreated),
+    payload: RuntimeReminderFollowupCreatedPayloadSchema,
   }),
   z.object({
     type: z.literal(Topics.lifeos.taskCompleted),

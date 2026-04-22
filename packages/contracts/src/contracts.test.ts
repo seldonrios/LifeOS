@@ -91,9 +91,9 @@ test('hero-loop contract schemas parse valid payloads', () => {
   assert.equal(parsedCaptureResult.type, 'text');
 });
 
-test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with runtime payload', () => {
+test('RuntimeHeroLoopEventSchema parses lifeos.reminder.scheduled with canonical payload', () => {
   const parsed = RuntimeHeroLoopEventSchema.parse({
-    type: 'lifeos.reminder.followup.created',
+    type: 'lifeos.reminder.scheduled',
     payload: {
       id: 'rem_001',
       actionId: 'action_001',
@@ -101,17 +101,43 @@ test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with ru
     },
   });
 
+  assert.equal(parsed.type, 'lifeos.reminder.scheduled');
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.reminder.followup.created with canonical payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.reminder.followup.created',
+    payload: {
+      followUpPlanId: 'plan_001',
+      overdueCount: 2,
+      tickEventId: 'tick_evt_001',
+      createdAt: '2026-04-01T10:00:00.000Z',
+    },
+  });
+
   assert.equal(parsed.type, 'lifeos.reminder.followup.created');
 });
 
-test('RuntimeHeroLoopEventSchema rejects lifeos.reminder.scheduled (non-runtime topic)', () => {
+test('RuntimeHeroLoopEventSchema rejects reminder topic payload mismatch', () => {
   assert.throws(() =>
     RuntimeHeroLoopEventSchema.parse({
-      type: 'lifeos.reminder.scheduled',
+      type: 'lifeos.reminder.followup.created',
       payload: {
         id: 'rem_001',
         actionId: 'action_001',
         scheduledFor: '2026-04-01T09:00:00.000Z',
+      },
+    }),
+  );
+
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.reminder.scheduled',
+      payload: {
+        followUpPlanId: 'plan_001',
+        overdueCount: 2,
+        tickEventId: 'tick_evt_001',
+        createdAt: '2026-04-01T10:00:00.000Z',
       },
     }),
   );
@@ -251,7 +277,7 @@ test('RuntimeHeroLoopEventSchema rejects lifeos.inbox.triaged with invalid actio
 
 test('HeroLoopEventSchema deprecated alias parses the same runtime event', () => {
   const parsed = HeroLoopEventSchema.parse({
-    type: 'lifeos.reminder.followup.created',
+    type: 'lifeos.reminder.scheduled',
     payload: {
       id: 'rem_001',
       actionId: 'action_001',
@@ -259,7 +285,7 @@ test('HeroLoopEventSchema deprecated alias parses the same runtime event', () =>
     },
   });
 
-  assert.equal(parsed.type, 'lifeos.reminder.followup.created');
+  assert.equal(parsed.type, 'lifeos.reminder.scheduled');
 });
 
 test('HeroLoopEntitySchemas.capture parses CaptureEntry and rejects CaptureResult', () => {

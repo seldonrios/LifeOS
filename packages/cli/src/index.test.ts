@@ -2551,6 +2551,66 @@ test('mesh delegate goal-planning dispatches to a healthy rpc node', async () =>
   }
 });
 
+test('mesh delegate fails fast when mesh has no healthy leader', async () => {
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-mesh-delegate-preflight-'));
+  await mkdir(join(baseHome, '.lifeos'), { recursive: true });
+  const stderr: string[] = [];
+  const stdout: string[] = [];
+
+  await writeFile(
+    join(baseHome, '.lifeos', 'mesh.json'),
+    `${JSON.stringify(
+      {
+        nodes: [
+          {
+            nodeId: 'heavy-server',
+            role: 'heavy-compute',
+            capabilities: ['goal-planning'],
+            rpcUrl: 'http://127.0.0.1:58061',
+          },
+        ],
+        assignments: {
+          'goal-planning': 'heavy-server',
+        },
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+  await writeFile(
+    join(baseHome, '.lifeos', 'mesh-heartbeats.json'),
+    `${JSON.stringify(
+      {
+        nodes: [],
+        ttlMs: 15000,
+        updatedAt: new Date().toISOString(),
+      },
+      null,
+      2,
+    )}\n`,
+    'utf8',
+  );
+
+  const exitCode = await runCli(['mesh', 'delegate', 'goal-planning', '--goal', 'Plan launch'], {
+    env: {
+      HOME: baseHome,
+      LIFEOS_JWT_SECRET: 'mesh-test-secret',
+    },
+    stdout: (message) => {
+      stdout.push(message);
+    },
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /Mesh delegation preflight rejected/i);
+  assert.doesNotMatch(stdout.join(''), /Delegation unavailable/i);
+});
+
 test('init command completes successfully with no existing graph', async () => {
   const workspaceRoot = await mkdtemp(join(tmpdir(), 'lifeos-init-nograph-'));
   const stdout: string[] = [];
@@ -2719,11 +2779,14 @@ test('inbox defaults to list and validates invalid action messaging', async () =
   assert.equal(defaultExitCode, 0);
   assert.match(stdout.join(''), /Inbox is clear/);
 
-  const invalidActionExitCode = await runCli(['inbox', 'invalid-action', '--graph-path', graphPath], {
-    stderr: (message) => {
-      stderr.push(message);
+  const invalidActionExitCode = await runCli(
+    ['inbox', 'invalid-action', '--graph-path', graphPath],
+    {
+      stderr: (message) => {
+        stderr.push(message);
+      },
     },
-  });
+  );
   assert.equal(invalidActionExitCode, 1);
   assert.match(stderr.join(''), /Invalid inbox action "invalid-action"\. Use list or triage\./);
 
@@ -2789,11 +2852,14 @@ test('inbox list supports empty and non-empty human/json outputs', async () => {
   assert.match(humanOutput, /Draft project brief/);
   assert.match(humanOutput, /Book dentist appointment/);
 
-  const nonEmptyJsonExitCode = await runCli(['inbox', 'list', '--json', '--graph-path', graphPath], {
-    stdout: (message) => {
-      jsonStdout.push(message);
+  const nonEmptyJsonExitCode = await runCli(
+    ['inbox', 'list', '--json', '--graph-path', graphPath],
+    {
+      stdout: (message) => {
+        jsonStdout.push(message);
+      },
     },
-  });
+  );
   assert.equal(nonEmptyJsonExitCode, 0);
   const pending = JSON.parse(jsonStdout.join('')) as Array<{ status: string; content: string }>;
   assert.equal(pending.length, 2);
@@ -3228,6 +3294,51 @@ test('remind with different --at cancels prior scheduled reminders and creates a
   assert.equal(reminderOld2?.status, 'cancelled');
 });
 
+test('remind publishes lifeos.reminder.scheduled with canonical payload', async () => {
+  const actionId = 'action_3';
+  const scheduledAt = '2026-04-07T09:00:00Z';
+  const eventBus = createMockEventBus();
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['remind', actionId, '--at', scheduledAt, '--json', '--verbose'], {
+    createLifeGraphClient: () =>
+      ({
+        async getPlannedAction(id: string) {
+          if (id !== actionId) {
+            return undefined;
+          }
+          return {
+            id: actionId,
+            title: 'Finalize ops review',
+            status: 'todo',
+          };
+        },
+        async loadGraph() {
+          return {
+            reminderEvents: [],
+          };
+        },
+        async appendReminderEvent() {
+          return;
+        },
+      }) as never,
+    createEventBusClient: () => eventBus.bus,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const reminderEvent = eventBus.published.find(
+    (event) => event.topic === Topics.lifeos.reminderScheduled,
+  );
+  assert.ok(reminderEvent);
+  assert.equal(reminderEvent?.event.data.actionId, actionId);
+  assert.equal(reminderEvent?.event.data.scheduledFor, scheduledAt);
+  assert.equal(typeof reminderEvent?.event.data.id, 'string');
+  assert.ok(stderr.join('').includes('event_published topic=lifeos.reminder.scheduled'));
+});
+
 // ─── demo:loop command tests ───────────────────────────────────────────────
 
 function createLoopMockClient() {
@@ -3346,34 +3457,37 @@ test('demo:loop --dry-run does not call any storage methods', async () => {
   const { calls } = createLoopMockClient();
 
   // Client is provided but should never be called in dry-run mode
-  const exitCode = await runCli(['demo:loop', '--dry-run', '--graph-path', '/tmp/test-graph.json'], {
-    env: {},
-    cwd: () => '/repo',
-    now: () => new Date('2026-03-29T12:00:00.000Z'),
-    createLifeGraphClient: () => {
-      calls.push('createLifeGraphClient');
-      return {
-        async loadGraph() {
-          calls.push('loadGraph');
-          throw new Error('loadGraph must not be called in dry-run');
-        },
-        async appendCaptureEntry() {
-          calls.push('appendCaptureEntry');
-          throw new Error('appendCaptureEntry must not be called in dry-run');
-        },
-      } as never;
+  const exitCode = await runCli(
+    ['demo:loop', '--dry-run', '--graph-path', '/tmp/test-graph.json'],
+    {
+      env: {},
+      cwd: () => '/repo',
+      now: () => new Date('2026-03-29T12:00:00.000Z'),
+      createLifeGraphClient: () => {
+        calls.push('createLifeGraphClient');
+        return {
+          async loadGraph() {
+            calls.push('loadGraph');
+            throw new Error('loadGraph must not be called in dry-run');
+          },
+          async appendCaptureEntry() {
+            calls.push('appendCaptureEntry');
+            throw new Error('appendCaptureEntry must not be called in dry-run');
+          },
+        } as never;
+      },
+      generateReview: async () => {
+        calls.push('generateReview');
+        throw new Error('generateReview must not be called in dry-run');
+      },
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
     },
-    generateReview: async () => {
-      calls.push('generateReview');
-      throw new Error('generateReview must not be called in dry-run');
-    },
-    stdout: (message) => {
-      stdout.push(message);
-    },
-    stderr: (message) => {
-      stderr.push(message);
-    },
-  });
+  );
 
   assert.equal(exitCode, 0);
   assert.equal(stderr.length, 0);
@@ -3404,19 +3518,16 @@ test('demo:loop --json outputs structured trace with entries for all five stages
   const stdout: string[] = [];
   const { client } = createLoopMockClient();
 
-  const exitCode = await runCli(
-    ['demo:loop', '--json', '--graph-path', '/tmp/test-graph.json'],
-    {
-      env: {},
-      cwd: () => '/repo',
-      now: () => new Date('2026-03-29T12:00:00.000Z'),
-      createLifeGraphClient: () => client as never,
-      generateReview: async () => sampleReviewInsights(),
-      stdout: (message) => {
-        stdout.push(message);
-      },
+  const exitCode = await runCli(['demo:loop', '--json', '--graph-path', '/tmp/test-graph.json'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-29T12:00:00.000Z'),
+    createLifeGraphClient: () => client as never,
+    generateReview: async () => sampleReviewInsights(),
+    stdout: (message) => {
+      stdout.push(message);
     },
-  );
+  });
 
   assert.equal(exitCode, 0);
   const trace = JSON.parse(stdout.join('')) as Array<{ stage: string }>;
@@ -3668,31 +3779,28 @@ test('capture human-mode output prints Captured message with content', async () 
   const stdout: string[] = [];
   const fixedNow = new Date('2026-03-29T12:00:00.000Z');
 
-  const exitCode = await runCli(
-    ['capture', 'Buy groceries', '--graph-path', graphPath],
-    {
-      now: () => fixedNow,
-      createLifeGraphClient: () =>
-        ({
-          async loadGraph() {
-            return {
-              version: '0.1.0',
-              updatedAt: fixedNow.toISOString(),
-              captureEntries: [],
-            };
-          },
-          async appendCaptureEntry() {
-            return;
-          },
-          async saveGraph() {
-            return;
-          },
-        }) as never,
-      stdout: (message) => {
-        stdout.push(message);
-      },
+  const exitCode = await runCli(['capture', 'Buy groceries', '--graph-path', graphPath], {
+    now: () => fixedNow,
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() {
+          return {
+            version: '0.1.0',
+            updatedAt: fixedNow.toISOString(),
+            captureEntries: [],
+          };
+        },
+        async appendCaptureEntry() {
+          return;
+        },
+        async saveGraph() {
+          return;
+        },
+      }) as never,
+    stdout: (message) => {
+      stdout.push(message);
     },
-  );
+  });
 
   assert.equal(exitCode, 0);
   const output = stdout.join('');

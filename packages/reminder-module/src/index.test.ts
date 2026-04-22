@@ -150,6 +150,10 @@ test('reminder module creates follow-up plan and emits reminder event on overdue
   assert.match(String(createNodeCalls[0]?.title), /Overdue reminder:/);
   assert.equal(published.length, 1);
   assert.equal(published[0]?.topic, Topics.lifeos.reminderFollowupCreated);
+  assert.equal(typeof published[0]?.data.followUpPlanId, 'string');
+  assert.equal(published[0]?.data.overdueCount, 1);
+  assert.equal(published[0]?.data.tickEventId, 'tick_evt_1');
+  assert.equal(typeof published[0]?.data.createdAt, 'string');
 });
 
 test('reminder module does not create follow-up plan for overdue tick with no overdue tasks', async () => {
