@@ -50,6 +50,7 @@ export const Topics = {
     tickOverdue: 'lifeos.tick.overdue',
     taskCompleted: 'lifeos.task.completed',
     reminderScheduled: 'lifeos.reminder.scheduled',
+    reminderFired: 'lifeos.reminder.fired',
     reminderFollowupCreated: 'lifeos.reminder.followup.created',
     voiceWakeDetected: 'lifeos.voice.wake.detected',
     voiceCommandReceived: 'lifeos.voice.command.received',

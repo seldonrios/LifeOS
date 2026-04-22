@@ -3,7 +3,7 @@ import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph'
 export interface TickOverdueTask {
   id: string;
   title: string;
-  goalTitle: string;
+  planId?: string;
   dueDate: string;
 }
 
@@ -52,27 +52,25 @@ export async function runTick(options: RunTickOptions = {}): Promise<TickResult>
   const overdueTasks: TickOverdueTask[] = [];
   let checkedTasks = 0;
 
-  for (const plan of graph.plans) {
-    for (const task of plan.tasks) {
-      checkedTasks += 1;
-      if (task.status === 'done') {
-        continue;
-      }
-      if (!isOverdue(task.dueDate, now)) {
-        continue;
-      }
-
-      overdueTasks.push({
-        id: task.id,
-        title: task.title,
-        goalTitle: plan.title,
-        dueDate: task.dueDate as string,
-      });
+  for (const action of graph.plannedActions ?? []) {
+    checkedTasks += 1;
+    if (action.status !== 'todo') {
+      continue;
     }
+    if (!isOverdue(action.dueDate, now)) {
+      continue;
+    }
+
+    overdueTasks.push({
+      id: action.id,
+      title: action.title,
+      dueDate: action.dueDate as string,
+      ...(action.planId ? { planId: action.planId } : {}),
+    });
   }
 
   if (options.logger && overdueTasks.length > 0) {
-    options.logger(`[tick] ${overdueTasks.length} overdue task(s) detected`);
+    options.logger(`[tick] ${overdueTasks.length} overdue planned action(s) detected`);
   }
 
   return {

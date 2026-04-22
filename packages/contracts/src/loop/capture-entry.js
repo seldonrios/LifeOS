@@ -18,6 +18,9 @@ export const CaptureEntrySchema = z
         targetHint: z.enum(['shopping', 'chore', 'reminder', 'note', 'unknown']).optional(),
     })
         .optional(),
+    triagedToActionId: z.string().min(1).optional(),
+    triagedToPlanId: z.string().min(1).optional(),
+    triagedToNoteId: z.string().min(1).optional(),
 })
     .strict();
 //# sourceMappingURL=capture-entry.js.map

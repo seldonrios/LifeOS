@@ -16,9 +16,8 @@ interface TickOverduePayload {
   overdueTasks: Array<{
     id: string;
     title: string;
-    goalTitle: string;
     dueDate: string;
-  }>;
+  } & ({ planId?: string } | { goalTitle: string })>;
   tickedAt: string;
 }
 

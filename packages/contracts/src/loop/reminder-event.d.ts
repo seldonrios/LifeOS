@@ -4,6 +4,7 @@ export declare const ReminderEventSchema: z.ZodObject<{
     actionId: z.ZodString;
     scheduledFor: z.ZodString;
     firedAt: z.ZodOptional<z.ZodString>;
+    acknowledgedAt: z.ZodOptional<z.ZodString>;
     status: z.ZodEnum<{
         scheduled: "scheduled";
         fired: "fired";

@@ -183,8 +183,10 @@ export interface LifeGraphClient {
   appendPlannedAction(action: PlannedAction): Promise<void>;
   updatePlannedAction(id: string, patch: Partial<PlannedAction>): Promise<void>;
   appendReminderEvent(event: ReminderEvent): Promise<void>;
+  updateReminderEvent(id: string, patch: Partial<ReminderEvent>): Promise<void>;
   getCaptureEntry(id: string): Promise<CaptureEntry | undefined>;
   getPlannedAction(id: string): Promise<PlannedAction | undefined>;
+  cancelRemindersForAction(actionId: string): Promise<void>;
 }
 
 export interface GoalPlanRecord<TPlan = Record<string, unknown>> {

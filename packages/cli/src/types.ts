@@ -1,4 +1,5 @@
 import type { CreateEventBusClientOptions, ManagedEventBus } from '@lifeos/event-bus';
+import type { PlannedAction } from '@lifeos/contracts';
 import type {
   createLifeGraphClient,
   GraphMigrationResult,
@@ -238,7 +239,8 @@ export interface InboxCommandOptions {
   action: 'list' | 'triage';
   includeAllCaptures?: boolean;
   captureId?: string;
-  triageAction?: 'task' | 'note' | 'defer';
+  triageAction?: 'task' | 'note' | 'defer' | 'plan';
+  model?: string;
   tag?: string[];
   due?: string;
   outputJson: boolean;
@@ -247,6 +249,12 @@ export interface InboxCommandOptions {
 export interface RemindCommandOptions {
   actionId: string;
   at: string;
+  outputJson: boolean;
+  graphPath: string;
+  verbose: boolean;
+}
+export interface RemindAckCommandOptions {
+  reminderId: string;
   outputJson: boolean;
   graphPath: string;
   verbose: boolean;
@@ -293,6 +301,7 @@ export interface RunCliDependencies {
     },
     graphPath?: string,
   ) => Promise<GoalPlanRecord<GoalPlan>>;
+  appendPlannedAction?: (action: PlannedAction, graphPath?: string) => Promise<void>;
   getGraphSummary?: (graphPath?: string) => Promise<LifeGraphSummary>;
   getGraphStorageInfo?: (graphPath?: string) => Promise<LifeGraphStorageInfo>;
   generateReview?: (

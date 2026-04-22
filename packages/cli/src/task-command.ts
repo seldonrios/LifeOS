@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import Table from 'cli-table3';
+import type { PlannedAction } from '@lifeos/contracts';
 
 import type {
   LifeGraphClient,
@@ -12,8 +13,8 @@ export interface TaskListItem {
   id: string;
   shortId: string;
   title: string;
-  goalTitle: string;
-  status: LifeGraphTask['status'];
+  planId?: string;
+  status: PlannedAction['status'];
   priority: number;
   dueDate: string | null;
   overdue: boolean;
@@ -37,7 +38,7 @@ function isOverdue(dueDate: string | undefined, now: Date): boolean {
   return dueDate < toDateOnly(now);
 }
 
-function statusColor(status: LifeGraphTask['status']): string {
+function statusColor(status: TaskListItem['status']): string {
   if (status === 'done') {
     return chalk.green(status);
   }
@@ -59,7 +60,8 @@ function priorityColor(priority: number): string {
   return chalk.gray(String(priority));
 }
 
-export function flattenTasks(graph: LifeGraphDocument, now: Date = new Date()): TaskListItem[] {
+// Compatibility shim: reads GoalPlan.tasks for task complete fallback path only. Do not use for new code.
+function flattenTasks(graph: LifeGraphDocument, now: Date = new Date()): TaskListItem[] {
   const rows: TaskListItem[] = [];
 
   for (const plan of graph.plans) {
@@ -68,7 +70,7 @@ export function flattenTasks(graph: LifeGraphDocument, now: Date = new Date()): 
         id: task.id,
         shortId: task.id.slice(0, 8),
         title: task.title,
-        goalTitle: plan.title,
+        planId: plan.id,
         status: task.status,
         priority: task.priority,
         dueDate: task.dueDate ?? null,
@@ -103,12 +105,50 @@ export function flattenTasks(graph: LifeGraphDocument, now: Date = new Date()): 
   });
 }
 
+export function flattenPlannedActions(
+  graph: LifeGraphDocument,
+  now: Date = new Date(),
+): TaskListItem[] {
+  const rows = (graph.plannedActions ?? [])
+    .filter((action) => action.status !== 'done' && action.status !== 'cancelled')
+    .map((action) => ({
+      id: action.id,
+      shortId: action.id.slice(0, 8),
+      title: action.title,
+      planId: action.planId,
+      status: action.status,
+      priority: 0,
+      dueDate: action.dueDate ?? null,
+      overdue: isOverdue(action.dueDate, now),
+    }));
+
+  return rows.sort((left, right) => {
+    if (left.overdue !== right.overdue) {
+      return left.overdue ? -1 : 1;
+    }
+    if (left.dueDate && right.dueDate) {
+      const dueDateCompare = left.dueDate.localeCompare(right.dueDate);
+      if (dueDateCompare !== 0) {
+        return dueDateCompare;
+      }
+      return left.title.localeCompare(right.title);
+    }
+    if (left.dueDate && !right.dueDate) {
+      return -1;
+    }
+    if (!left.dueDate && right.dueDate) {
+      return 1;
+    }
+    return left.title.localeCompare(right.title);
+  });
+}
+
 function renderTaskTable(rows: TaskListItem[]): string {
   const table = new Table({
     head: [
       chalk.cyan('ID'),
       chalk.cyan('Task'),
-      chalk.cyan('Goal'),
+      chalk.cyan('Plan'),
       chalk.cyan('Status'),
       chalk.cyan('Priority'),
       chalk.cyan('Due'),
@@ -131,7 +171,7 @@ function renderTaskTable(rows: TaskListItem[]): string {
     table.push([
       task.shortId,
       task.title,
-      task.goalTitle,
+      task.planId ?? '-',
       statusColor(task.status),
       priorityColor(task.priority),
       dueCell,
@@ -195,9 +235,27 @@ function findTaskMatch(
   };
 }
 
-function pickNextActionsFromGraph(graph: LifeGraphDocument, now: Date = new Date()): string[] {
-  const tasks = flattenTasks(graph, now).filter((task) => task.status !== 'done');
-  return tasks.slice(0, 3).map((task) => `${task.goalTitle}: ${task.title}`);
+function pickNextActionsFromPlannedActions(graph: LifeGraphDocument): string[] {
+  const sorted = (graph.plannedActions ?? [])
+    .filter((action) => action.status === 'todo')
+    .sort((left, right) => {
+      if (left.dueDate && right.dueDate) {
+        const dueDateCompare = left.dueDate.localeCompare(right.dueDate);
+        if (dueDateCompare !== 0) {
+          return dueDateCompare;
+        }
+        return left.title.localeCompare(right.title);
+      }
+      if (left.dueDate && !right.dueDate) {
+        return -1;
+      }
+      if (!left.dueDate && right.dueDate) {
+        return 1;
+      }
+      return left.title.localeCompare(right.title);
+    });
+
+  return sorted.slice(0, 3).map((action) => action.title);
 }
 
 export async function handleTaskList(
@@ -205,7 +263,7 @@ export async function handleTaskList(
   options: TaskIoOptions,
 ): Promise<TaskListItem[]> {
   const graph = await client.loadGraph();
-  const rows = flattenTasks(graph, options.now ?? new Date());
+  const rows = flattenPlannedActions(graph, options.now ?? new Date());
 
   if (options.outputJson) {
     options.stdout(`${JSON.stringify(rows, null, 2)}\n`);
@@ -220,7 +278,11 @@ export async function handleTaskComplete(
   taskId: string | undefined,
   client: Pick<
     LifeGraphClient,
-    'loadGraph' | 'saveGraph' | 'getPlannedAction' | 'updatePlannedAction'
+    | 'loadGraph'
+    | 'saveGraph'
+    | 'getPlannedAction'
+    | 'updatePlannedAction'
+    | 'cancelRemindersForAction'
   >,
   options: TaskIoOptions,
 ): Promise<{
@@ -232,73 +294,17 @@ export async function handleTaskComplete(
   source: 'task' | 'planned-action';
   sourceCapture?: string;
 }> {
-  const graph = await client.loadGraph();
+  const needle = (taskId ?? '').trim().toLowerCase();
+  if (!needle) {
+    throw new Error('Task ID is required for complete action.');
+  }
 
-  try {
-    const match = findTaskMatch(graph, taskId ?? '');
-
-    const updatedTask: LifeGraphTask = {
-      ...match.task,
-      status: 'done',
-    };
-
-    const nextGraph: LifeGraphDocument = {
-      ...graph,
-      updatedAt: new Date().toISOString(),
-      plans: graph.plans.map((plan, planIndex) => {
-        if (planIndex !== match.planIndex) {
-          return plan;
-        }
-
-        return {
-          ...plan,
-          tasks: plan.tasks.map((task, taskIndex) => {
-            if (taskIndex !== match.taskIndex) {
-              return task;
-            }
-
-            return updatedTask;
-          }),
-        };
-      }),
-    };
-
-    await client.saveGraph(nextGraph);
-    const payload = {
-      id: updatedTask.id,
-      title: updatedTask.title,
-      goalId: match.goalId,
-      goalTitle: match.goalTitle,
-      status: updatedTask.status,
-      source: 'task' as const,
-    };
-
-    if (options.outputJson) {
-      options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
-    } else {
-      options.stdout(
-        chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`),
-      );
-    }
-
-    return payload;
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error);
-    const normalizedId = taskId?.trim() ?? '';
-    if (!message.includes('not found') || normalizedId.length === 0) {
-      throw error;
-    }
-
-    // Compatibility shim: falls back to PlannedAction lookup when the task ID is not found in GoalPlan.tasks. This path supports actions created via inbox triage. Do not promote this to the primary path.
-    const plannedAction = await client.getPlannedAction(normalizedId);
-    if (!plannedAction) {
-      throw error;
-    }
-
+  const completePlannedAction = async (plannedAction: PlannedAction) => {
     await client.updatePlannedAction(plannedAction.id, {
       status: 'done',
       completedAt: new Date().toISOString(),
     });
+    await client.cancelRemindersForAction(plannedAction.id);
 
     const payload = {
       id: plannedAction.id,
@@ -320,7 +326,74 @@ export async function handleTaskComplete(
     }
 
     return payload;
+  };
+
+  const exactPlannedAction = await client.getPlannedAction(needle);
+  if (exactPlannedAction) {
+    return completePlannedAction(exactPlannedAction);
   }
+
+  const graph = await client.loadGraph();
+  const plannedActionMatches = (graph.plannedActions ?? []).filter((action) => {
+    const normalizedActionId = action.id.toLowerCase();
+    return normalizedActionId !== needle && normalizedActionId.startsWith(needle);
+  });
+
+  if (plannedActionMatches.length > 1) {
+    const ids = plannedActionMatches.map((match) => match.id.slice(0, 8)).join(', ');
+    throw new Error(`Task ID prefix "${taskId}" is ambiguous. Matches: ${ids}`);
+  }
+
+  if (plannedActionMatches.length === 1) {
+    return completePlannedAction(plannedActionMatches[0] as PlannedAction);
+  }
+
+  // Compatibility shim: falls back to GoalPlan.tasks lookup when no PlannedAction prefix match is found. This path supports legacy goal decomposition tasks. Do not promote this to the primary path.
+  const match = findTaskMatch(graph, taskId ?? '');
+
+  const updatedTask: LifeGraphTask = {
+    ...match.task,
+    status: 'done',
+  };
+
+  const nextGraph: LifeGraphDocument = {
+    ...graph,
+    updatedAt: new Date().toISOString(),
+    plans: graph.plans.map((plan, planIndex) => {
+      if (planIndex !== match.planIndex) {
+        return plan;
+      }
+
+      return {
+        ...plan,
+        tasks: plan.tasks.map((task, taskIndex) => {
+          if (taskIndex !== match.taskIndex) {
+            return task;
+          }
+
+          return updatedTask;
+        }),
+      };
+    }),
+  };
+
+  await client.saveGraph(nextGraph);
+  const payload = {
+    id: updatedTask.id,
+    title: updatedTask.title,
+    goalId: match.goalId,
+    goalTitle: match.goalTitle,
+    status: updatedTask.status,
+    source: 'task' as const,
+  };
+
+  if (options.outputJson) {
+    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    options.stdout(chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`));
+  }
+
+  return payload;
 }
 
 export async function handleNextActions(
@@ -334,7 +407,7 @@ export async function handleNextActions(
     review = null;
   }
 
-  const fallback = pickNextActionsFromGraph(await client.loadGraph(), options.now ?? new Date());
+  const fallback = pickNextActionsFromPlannedActions(await client.loadGraph());
   const nextActions = review?.nextActions.length
     ? review.nextActions.slice(0, 3)
     : fallback.slice(0, 3);

@@ -1919,6 +1919,25 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       await manager.save({ ...graph, reminderEvents: updated }, resolvedGraphPath);
     },
 
+    async updateReminderEvent(id: string, patch: Partial<ReminderEvent>): Promise<void> {
+      const graph = await manager.load(resolvedGraphPath);
+      const reminderEvents = graph.reminderEvents ?? [];
+      const index = reminderEvents.findIndex((event) => event.id === id);
+      if (index < 0) {
+        throw new Error(`ReminderEvent "${id}" not found.`);
+      }
+
+      const merged = {
+        ...reminderEvents[index],
+        ...patch,
+        id: reminderEvents[index].id,
+      } as ReminderEvent;
+      ReminderEventSchema.parse(merged);
+
+      reminderEvents[index] = merged;
+      await manager.save({ ...graph, reminderEvents }, resolvedGraphPath);
+    },
+
     async getCaptureEntry(id: string): Promise<CaptureEntry | undefined> {
       const graph = await manager.load(resolvedGraphPath);
       return (graph.captureEntries ?? []).find((e) => e.id === id);
@@ -1927,6 +1946,22 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
     async getPlannedAction(id: string): Promise<PlannedAction | undefined> {
       const graph = await manager.load(resolvedGraphPath);
       return (graph.plannedActions ?? []).find((a) => a.id === id);
+    },
+
+    async cancelRemindersForAction(actionId: string): Promise<void> {
+      const graph = await manager.load(resolvedGraphPath);
+      const reminderEvents = graph.reminderEvents ?? [];
+      const updatedReminderEvents = reminderEvents.map((event) => {
+        if (event.actionId === actionId && event.status === 'scheduled') {
+          return {
+            ...event,
+            status: 'cancelled' as const,
+          };
+        }
+        return event;
+      });
+
+      await manager.save({ ...graph, reminderEvents: updatedReminderEvents }, resolvedGraphPath);
     },
   };
 }

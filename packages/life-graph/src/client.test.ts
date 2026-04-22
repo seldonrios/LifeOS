@@ -1126,3 +1126,83 @@ test('generateReview weekly loopSummary aggregates across the trailing seven-day
     'Follow up on overdue budget review',
   ]);
 });
+
+test('updateReminderEvent transitions scheduled reminder to fired', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendReminderEvent({
+    id: 'reminder-update-1',
+    actionId: 'action-update-1',
+    scheduledFor: '2026-05-01T09:00:00.000Z',
+    status: 'scheduled',
+  });
+
+  await client.updateReminderEvent('reminder-update-1', {
+    status: 'fired',
+    firedAt: '2026-05-01T09:00:00.000Z',
+  });
+
+  const graph = await loadGraph(graphPath);
+  const reminder = graph.reminderEvents.find((entry) => entry.id === 'reminder-update-1');
+  assert.equal(reminder?.status, 'fired');
+  assert.equal(reminder?.firedAt, '2026-05-01T09:00:00.000Z');
+});
+
+test('updateReminderEvent throws when reminder id is not found', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await assert.rejects(
+    async () => {
+      await client.updateReminderEvent('missing-reminder', {
+        status: 'fired',
+        firedAt: '2026-05-01T09:00:00.000Z',
+      });
+    },
+    /not found/i,
+  );
+});
+
+test('cancelRemindersForAction cancels scheduled reminders only', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendReminderEvent({
+    id: 'reminder-cancel-scheduled',
+    actionId: 'action-cancel-1',
+    scheduledFor: '2026-05-01T09:00:00.000Z',
+    status: 'scheduled',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder-cancel-fired',
+    actionId: 'action-cancel-1',
+    scheduledFor: '2026-05-01T08:00:00.000Z',
+    status: 'fired',
+    firedAt: '2026-05-01T08:00:00.000Z',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder-cancel-other-action',
+    actionId: 'action-cancel-2',
+    scheduledFor: '2026-05-01T10:00:00.000Z',
+    status: 'scheduled',
+  });
+
+  await client.cancelRemindersForAction('action-cancel-1');
+
+  const graph = await loadGraph(graphPath);
+  const reminderScheduled = graph.reminderEvents.find(
+    (entry) => entry.id === 'reminder-cancel-scheduled',
+  );
+  const reminderFired = graph.reminderEvents.find((entry) => entry.id === 'reminder-cancel-fired');
+  const reminderOtherAction = graph.reminderEvents.find(
+    (entry) => entry.id === 'reminder-cancel-other-action',
+  );
+
+  assert.equal(reminderScheduled?.status, 'cancelled');
+  assert.equal(reminderFired?.status, 'fired');
+  assert.equal(reminderOtherAction?.status, 'scheduled');
+});

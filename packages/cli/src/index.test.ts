@@ -37,6 +37,23 @@ function samplePlan(): GoalPlan {
   };
 }
 
+function samplePlanWithTaskCount(taskCount: number, deadline = '2026-03-26'): GoalPlan {
+  return {
+    id: 'goal_projection_test',
+    title: 'Projection Test Plan',
+    description: 'Projection helper test plan',
+    deadline,
+    createdAt: '2026-03-21T14:00:00.000Z',
+    tasks: Array.from({ length: taskCount }, (_, index) => ({
+      id: `task_${index + 1}`,
+      title: `Projected task ${index + 1}`,
+      status: 'todo' as const,
+      priority: 3,
+      dueDate: '2026-03-24',
+    })),
+  };
+}
+
 function sampleSummary(): LifeGraphSummary {
   return {
     version: '0.1.0',
@@ -97,6 +114,15 @@ function sampleGraph(): LifeGraphDocument {
             dueDate: '2026-03-20',
           },
         ],
+      },
+    ],
+    plannedActions: [
+      {
+        id: 'action_board_1',
+        title: 'Draft board deck',
+        status: 'todo',
+        dueDate: '2026-03-20',
+        planId: 'goal_123',
       },
     ],
   };
@@ -271,6 +297,254 @@ test('--no-save skips persistence and first-run message', async () => {
   assert.equal(exitCode, 0);
   assert.equal(saveCalled, false);
   assert.doesNotMatch(stdout.join(''), /Initializing your personal graph/);
+});
+
+test('goal save projects subtasks into planned actions with expected mapping', async () => {
+  const projectedActions: Array<{
+    planId?: string;
+    activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+    status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+    dueDate?: string;
+  }> = [];
+  const plan = samplePlanWithTaskCount(3, '2026-03-30');
+
+  const exitCode = await runCli(['goal', 'Project pipeline tasks'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => plan,
+    appendGoalPlan: async () => ({
+      id: 'plan_abc',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Project pipeline tasks',
+      plan,
+    }),
+    appendPlannedAction: async (action) => {
+      projectedActions.push(action);
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(projectedActions.length, 3);
+  projectedActions.forEach((action) => {
+    assert.equal(action.planId, 'plan_abc');
+    assert.equal(action.activationSource, 'goal_projection');
+    assert.equal(action.status, 'todo');
+    assert.equal(action.dueDate, '2026-03-30');
+  });
+});
+
+test('goal save projects at most 10 subtasks', async () => {
+  const projectedActions: Array<{ id: string }> = [];
+  const plan = samplePlanWithTaskCount(15);
+
+  const exitCode = await runCli(['goal', 'Project many tasks'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => plan,
+    appendGoalPlan: async () => ({
+      id: 'plan_many',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Project many tasks',
+      plan,
+    }),
+    appendPlannedAction: async (action) => {
+      projectedActions.push({ id: action.id });
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(projectedActions.length, 10);
+});
+
+test('goal --no-save does not project subtasks into planned actions', async () => {
+  let projectionCalled = false;
+
+  const exitCode = await runCli(['goal', 'Skip save projection', '--no-save'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => samplePlanWithTaskCount(4),
+    appendPlannedAction: async () => {
+      projectionCalled = true;
+      throw new Error('appendPlannedAction should not be called when --no-save is set');
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(projectionCalled, false);
+});
+
+test('goal save prints projected actions summary line in human output', async () => {
+  const stdout: string[] = [];
+  const plan = samplePlanWithTaskCount(2);
+
+  const exitCode = await runCli(['goal', 'Projection summary test'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => plan,
+    appendGoalPlan: async () => ({
+      id: 'plan_summary',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Projection summary test',
+      plan,
+    }),
+    appendPlannedAction: async () => {
+      return;
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Projected \d+ action\(s\) into your task list/);
+});
+
+test('goal projection and inbox plan triage projection share mapping semantics', async () => {
+  const plan = samplePlanWithTaskCount(3, '2026-04-05');
+  plan.tasks = plan.tasks.map((task, index) => ({
+    ...task,
+    dueDate: `2026-04-0${index + 1}`,
+  }));
+
+  const goalProjectedActions: Array<{
+    title: string;
+    status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+    activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+    dueDate?: string;
+  }> = [];
+
+  const goalExit = await runCli(['goal', 'Projection parity goal'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => plan,
+    appendGoalPlan: async () => ({
+      id: 'plan_parity_goal',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Projection parity goal',
+      plan,
+    }),
+    appendPlannedAction: async (action) => {
+      goalProjectedActions.push(action);
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+  });
+  assert.equal(goalExit, 0);
+
+  const graph = {
+    captureEntries: [
+      {
+        id: 'capture_parity_1',
+        content: 'Projection parity inbox',
+        type: 'text' as const,
+        capturedAt: '2026-03-21T14:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'pending' as const,
+      },
+    ],
+    plannedActions: [] as Array<{
+      id: string;
+      title: string;
+      status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+      planId?: string;
+      activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+      dueDate?: string;
+    }>,
+  };
+
+  const client = {
+    async getCaptureEntry(id: string) {
+      return graph.captureEntries.find((entry) => entry.id === id);
+    },
+    async createNode() {
+      return 'plan_parity_inbox';
+    },
+    async appendPlannedAction(action: (typeof graph.plannedActions)[number]) {
+      graph.plannedActions.push(action);
+    },
+    async updateCaptureEntry(id: string, patch: Partial<{ status: 'pending' | 'triaged'; triagedToPlanId: string }>) {
+      const entry = graph.captureEntries.find((item) => item.id === id);
+      if (!entry) {
+        throw new Error(`CaptureEntry "${id}" not found.`);
+      }
+      Object.assign(entry, patch);
+    },
+  };
+
+  const inboxExit = await runCli(
+    ['inbox', 'triage', 'capture_parity_1', '--action', 'plan', '--json'],
+    {
+      createLifeGraphClient: () => client as never,
+      interpretGoal: async () => plan,
+    },
+  );
+  assert.equal(inboxExit, 0);
+
+  const normalize = (
+    actions: Array<{
+      title: string;
+      status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+      activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+      dueDate?: string;
+    }>,
+  ) =>
+    actions.map((action) => ({
+      title: action.title,
+      status: action.status,
+      activationSource: action.activationSource,
+      dueDate: action.dueDate,
+    }));
+
+  assert.deepEqual(normalize(graph.plannedActions), normalize(goalProjectedActions));
+});
+
+test('goal save fails clearly when appendGoalPlan is injected without appendPlannedAction', async () => {
+  const stderr: string[] = [];
+  let createClientCalled = false;
+  const plan = samplePlanWithTaskCount(2);
+
+  const exitCode = await runCli(['goal', 'Mixed injection safety check'], {
+    env: {},
+    cwd: () => '/repo',
+    now: () => new Date('2026-03-21T10:00:00-04:00'),
+    fileExists: () => true,
+    interpretGoal: async () => plan,
+    appendGoalPlan: async () => ({
+      id: 'plan_mixed_injection',
+      createdAt: '2026-03-21T14:00:00.000Z',
+      input: 'Mixed injection safety check',
+      plan,
+    }),
+    createLifeGraphClient: () => {
+      createClientCalled = true;
+      throw new Error('createLifeGraphClient should not be called for projection in mixed injection mode');
+    },
+    createSpinner: () => createSpinnerRecorder().spinner,
+    stderr: (message) => {
+      stderr.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.equal(createClientCalled, false);
+  assert.match(
+    stderr.join(''),
+    /appendPlannedAction dependency is required when appendGoalPlan is injected\./,
+  );
 });
 
 test('--verbose emits safe diagnostics to stderr', async () => {
@@ -917,9 +1191,9 @@ test('task list --json emits flattened task rows', async () => {
   });
 
   assert.equal(exitCode, 0);
-  const rows = JSON.parse(stdout.join('')) as Array<{ id: string; goalTitle: string }>;
+  const rows = JSON.parse(stdout.join('')) as Array<{ id: string; planId?: string }>;
   assert.equal(rows.length, 1);
-  assert.equal(rows[0]?.goalTitle, 'Board Meeting Prep');
+  assert.equal(rows[0]?.planId, 'goal_123');
 });
 
 test('task complete updates task status via saveGraph', async () => {
@@ -997,7 +1271,7 @@ test('tick --json emits tick result payload', async () => {
         {
           id: 'task_1',
           title: 'Draft deck',
-          goalTitle: 'Board Prep',
+          planId: 'goal_1',
           dueDate: '2026-03-21',
         },
       ],
@@ -1042,7 +1316,7 @@ test('tick human mode shows fallback notice and overdue summary', async () => {
         {
           id: 'task_1',
           title: 'Draft deck',
-          goalTitle: 'Board Prep',
+          planId: 'goal_1',
           dueDate: '2026-03-21',
         },
       ],
@@ -2799,7 +3073,7 @@ test('inbox defaults to list and validates invalid action messaging', async () =
     },
   );
   assert.equal(invalidTriageActionExitCode, 1);
-  assert.match(stderr.join(''), /Invalid triage action "invalid"\. Use task, note, or defer\./);
+  assert.match(stderr.join(''), /Invalid triage action "invalid"\. Use task, note, defer, or plan\./);
 });
 
 test('inbox list supports empty and non-empty human/json outputs', async () => {
@@ -2866,6 +3140,58 @@ test('inbox list supports empty and non-empty human/json outputs', async () => {
   assert.ok(pending.every((entry) => entry.status === 'pending'));
 });
 
+test('inbox triage task writes triagedToActionId lineage', async () => {
+  const captureId = 'capture-task-lineage-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Finalize sprint checklist',
+        type: 'text' as const,
+        capturedAt: '2026-03-29T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'pending' as const,
+      },
+    ],
+    plannedActions: [] as Array<{
+      id: string;
+      title: string;
+      status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+      sourceCapture?: string;
+      dueDate?: string;
+    }>,
+  };
+  const client = {
+    async getCaptureEntry(id: string) {
+      return graph.captureEntries.find((entry) => entry.id === id);
+    },
+    async appendPlannedAction(action: (typeof graph.plannedActions)[number]) {
+      graph.plannedActions.push(action);
+    },
+    async updateCaptureEntry(
+      id: string,
+      patch: Partial<{ status: 'pending' | 'triaged'; triagedToActionId: string }>,
+    ) {
+      const entry = graph.captureEntries.find((item) => item.id === id);
+      if (!entry) {
+        throw new Error(`CaptureEntry "${id}" not found.`);
+      }
+      Object.assign(entry, patch);
+    },
+  };
+
+  const exitCode = await runCli(['inbox', 'triage', captureId, '--action', 'task', '--json'], {
+    createLifeGraphClient: () => client as never,
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(graph.plannedActions.length, 1);
+  const updatedCapture = graph.captureEntries[0];
+  assert.equal(updatedCapture?.status, 'triaged');
+  assert.equal(updatedCapture?.triagedToActionId, graph.plannedActions[0]?.id);
+});
+
 test('inbox triage note supports --tag and updates capture state', async () => {
   const captureId = 'capture-note-1';
   const graph = {
@@ -2880,7 +3206,7 @@ test('inbox triage note supports --tag and updates capture state', async () => {
         status: 'pending' as const,
       },
     ],
-    notes: [] as Array<{ title: string; content: string; tags: string[] }>,
+    notes: [] as Array<{ id: string; title: string; content: string; tags: string[] }>,
     plannedActions: [] as unknown[],
   };
   const client = {
@@ -2888,11 +3214,13 @@ test('inbox triage note supports --tag and updates capture state', async () => {
       return graph.captureEntries.find((entry) => entry.id === id);
     },
     async appendNote(note: { title: string; content: string; tags: string[] }) {
-      graph.notes.push(note);
+      const savedNote = { id: 'note_1', ...note };
+      graph.notes.push(savedNote);
+      return savedNote;
     },
     async updateCaptureEntry(
       id: string,
-      patch: Partial<{ status: 'pending' | 'triaged'; tags: string[] }>,
+      patch: Partial<{ status: 'pending' | 'triaged'; tags: string[]; triagedToNoteId: string }>,
     ) {
       const entry = graph.captureEntries.find((item) => item.id === id);
       if (!entry) {
@@ -2932,13 +3260,15 @@ test('inbox triage note supports --tag and updates capture state', async () => {
 
   const triagedCapture = graph.captureEntries.find((entry) => entry.id === captureId);
   assert.equal(triagedCapture?.status, 'triaged');
+  assert.equal(triagedCapture?.triagedToNoteId, 'note_1');
   assert.equal(graph.plannedActions.length, 0);
   const note = graph.notes[0];
   assert.ok(note, 'Expected one note to be created');
+  assert.equal(note.id, 'note_1');
   assert.deepEqual(note.tags, ['idea', 'weekly']);
 });
 
-test('inbox triage defer persists deferred marker idempotently without creating planned action', async () => {
+test('inbox triage defer creates deferred planned action and writes triagedToActionId', async () => {
   const captureId = 'capture-defer-1';
   const graph = {
     captureEntries: [
@@ -2952,15 +3282,24 @@ test('inbox triage defer persists deferred marker idempotently without creating 
         status: 'pending' as const,
       },
     ],
-    plannedActions: [] as unknown[],
+    plannedActions: [] as Array<{
+      id: string;
+      title: string;
+      status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+      activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+      sourceCapture?: string;
+    }>,
   };
   const client = {
     async getCaptureEntry(id: string) {
       return graph.captureEntries.find((entry) => entry.id === id);
     },
+    async appendPlannedAction(action: (typeof graph.plannedActions)[number]) {
+      graph.plannedActions.push(action);
+    },
     async updateCaptureEntry(
       id: string,
-      patch: Partial<{ status: 'pending' | 'triaged'; tags: string[] }>,
+      patch: Partial<{ status: 'pending' | 'triaged'; triagedToActionId: string }>,
     ) {
       const entry = graph.captureEntries.find((item) => item.id === id);
       if (!entry) {
@@ -2982,31 +3321,24 @@ test('inbox triage defer persists deferred marker idempotently without creating 
   );
   assert.equal(firstDeferExitCode, 0);
   const firstPayload = JSON.parse(triageStdout.join('')) as {
-    captureEntry?: { status?: string; tags?: string[] };
+    captureEntry?: { status?: string; triagedToActionId?: string };
+    plannedAction?: {
+      id: string;
+      status: 'todo' | 'done' | 'deferred' | 'blocked' | 'cancelled';
+      activationSource?: 'capture_triage' | 'goal_projection' | 'manual' | 'automation';
+    };
   };
   assert.equal(firstPayload.captureEntry?.status, 'triaged');
-  assert.deepEqual(firstPayload.captureEntry?.tags, ['finance', 'deferred']);
-
-  triageStdout.length = 0;
-  const secondDeferExitCode = await runCli(
-    ['inbox', 'triage', captureId, '--action', 'defer', '--json'],
-    {
-      createLifeGraphClient: () => client as never,
-      stdout: (message) => {
-        triageStdout.push(message);
-      },
-    },
-  );
-  assert.equal(secondDeferExitCode, 0);
-  const secondPayload = JSON.parse(triageStdout.join('')) as {
-    captureEntry?: { tags?: string[] };
-  };
-  assert.deepEqual(secondPayload.captureEntry?.tags, ['finance', 'deferred']);
+  assert.equal(firstPayload.plannedAction?.status, 'deferred');
+  assert.equal(firstPayload.plannedAction?.activationSource, 'capture_triage');
+  assert.equal(firstPayload.captureEntry?.triagedToActionId, firstPayload.plannedAction?.id);
 
   const updatedCapture = graph.captureEntries.find((entry) => entry.id === captureId);
   assert.equal(updatedCapture?.status, 'triaged');
-  assert.deepEqual(updatedCapture?.tags, ['finance', 'deferred']);
-  assert.equal(graph.plannedActions.length, 0);
+  assert.equal(updatedCapture?.triagedToActionId, firstPayload.plannedAction?.id);
+  assert.equal(graph.plannedActions.length, 1);
+  assert.equal(graph.plannedActions[0]?.status, 'deferred');
+  assert.equal(graph.plannedActions[0]?.activationSource, 'capture_triage');
 });
 
 test('inbox triage failures include stage, reason, and fix diagnostics', async () => {

@@ -8,6 +8,7 @@ export const ReminderEventSchema = z
     actionId: z.string().min(1),
     scheduledFor: IsoDateTimeSchema,
     firedAt: IsoDateTimeSchema.optional(),
+    acknowledgedAt: IsoDateTimeSchema.optional(),
     status: z.enum(['scheduled', 'fired', 'acknowledged', 'cancelled']),
   })
   .strict();

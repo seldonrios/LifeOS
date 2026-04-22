@@ -30,6 +30,9 @@ export declare const CaptureEntrySchema: z.ZodObject<{
             note: "note";
         }>>;
     }, z.core.$strip>>;
+    triagedToActionId: z.ZodOptional<z.ZodString>;
+    triagedToPlanId: z.ZodOptional<z.ZodString>;
+    triagedToNoteId: z.ZodOptional<z.ZodString>;
 }, z.core.$strict>;
 export type CaptureEntry = z.infer<typeof CaptureEntrySchema>;
 //# sourceMappingURL=capture-entry.d.ts.map

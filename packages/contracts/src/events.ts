@@ -40,8 +40,9 @@ const RuntimeCaptureRecordedPayloadSchema = z.object({
 
 const RuntimeInboxTriagedPayloadSchema = z.object({
   captureId: z.string().min(1),
-  action: z.enum(['task', 'note', 'defer']),
+  action: z.enum(['task', 'note', 'defer', 'plan']),
   plannedActionId: z.string().min(1).optional(),
+  planId: z.string().min(1).optional(),
 });
 
 const RuntimeReminderFollowupCreatedPayloadSchema = z.object({

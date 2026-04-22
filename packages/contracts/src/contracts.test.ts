@@ -3,6 +3,7 @@ import test from 'node:test';
 
 import {
   AuditLogEntrySchema,
+  CaptureEntrySchema,
   ChoreStatusSchema,
   CaptureResultSchema,
   HouseholdAutomationFailedSchema,
@@ -28,7 +29,9 @@ import {
   HeroLoopEntitySchemas,
   HeroLoopEventSchema,
   PlanSchema,
+  PlannedActionSchema,
   RuntimeHeroLoopEventSchema,
+  ReminderEventSchema,
   ReminderSchema,
   ReviewReportSchema,
   ShoppingItemStatusSchema,
@@ -579,4 +582,117 @@ test('household object schemas parse valid payloads and reject missing required 
     delete invalid[schemaCase.missingField];
     assert.throws(() => schemaCase.schema.parse(invalid));
   }
+});
+
+test("PlannedActionSchema parses status: 'blocked'", () => {
+  const parsed = PlannedActionSchema.parse({
+    id: 'action_001',
+    title: 'Handle blocked action',
+    status: 'blocked',
+  });
+
+  assert.equal(parsed.status, 'blocked');
+});
+
+test("PlannedActionSchema parses status: 'cancelled'", () => {
+  const parsed = PlannedActionSchema.parse({
+    id: 'action_001',
+    title: 'Handle cancelled action',
+    status: 'cancelled',
+  });
+
+  assert.equal(parsed.status, 'cancelled');
+});
+
+test('PlannedActionSchema rejects unknown status', () => {
+  assert.throws(() =>
+    PlannedActionSchema.parse({
+      id: 'action_001',
+      title: 'Unknown status action',
+      status: 'skipped',
+    }),
+  );
+});
+
+test('PlannedActionSchema parses with all new optional fields', () => {
+  const parsed = PlannedActionSchema.parse({
+    id: 'action_001',
+    title: 'Projected action',
+    status: 'deferred',
+    planId: 'plan_001',
+    activationSource: 'goal_projection',
+    blockedReason: 'Waiting on external dependency',
+    deferredUntil: '2026-04-01T10:00:00.000Z',
+  });
+
+  assert.equal(parsed.planId, 'plan_001');
+  assert.equal(parsed.activationSource, 'goal_projection');
+  assert.equal(parsed.blockedReason, 'Waiting on external dependency');
+  assert.equal(parsed.deferredUntil, '2026-04-01T10:00:00.000Z');
+});
+
+test('PlannedActionSchema parses without new optional fields', () => {
+  const parsed = PlannedActionSchema.parse({
+    id: 'action_001',
+    title: 'Minimal action',
+    status: 'todo',
+  });
+
+  assert.ok(parsed);
+});
+
+test('CaptureEntrySchema parses with lineage fields', () => {
+  const parsed = CaptureEntrySchema.parse({
+    id: 'capture_001',
+    content: 'Convert this into an action',
+    type: 'text',
+    capturedAt: '2026-04-01T09:00:00.000Z',
+    source: 'cli',
+    tags: [],
+    status: 'triaged',
+    triagedToActionId: 'action_001',
+    triagedToPlanId: 'plan_001',
+    triagedToNoteId: 'note_001',
+  });
+
+  assert.equal(parsed.triagedToActionId, 'action_001');
+  assert.equal(parsed.triagedToPlanId, 'plan_001');
+  assert.equal(parsed.triagedToNoteId, 'note_001');
+});
+
+test('CaptureEntrySchema parses without lineage fields', () => {
+  const parsed = CaptureEntrySchema.parse({
+    id: 'capture_001',
+    content: 'Minimal capture',
+    type: 'text',
+    capturedAt: '2026-04-01T09:00:00.000Z',
+    source: 'cli',
+    tags: [],
+    status: 'pending',
+  });
+
+  assert.ok(parsed);
+});
+
+test('ReminderEventSchema parses with acknowledgedAt', () => {
+  const parsed = ReminderEventSchema.parse({
+    id: 'event_001',
+    actionId: 'action_001',
+    scheduledFor: '2026-04-01T09:00:00.000Z',
+    status: 'acknowledged',
+    acknowledgedAt: '2026-04-01T10:00:00.000Z',
+  });
+
+  assert.equal(parsed.acknowledgedAt, '2026-04-01T10:00:00.000Z');
+});
+
+test('ReminderEventSchema parses without acknowledgedAt', () => {
+  const parsed = ReminderEventSchema.parse({
+    id: 'event_001',
+    actionId: 'action_001',
+    scheduledFor: '2026-04-01T09:00:00.000Z',
+    status: 'scheduled',
+  });
+
+  assert.ok(parsed);
 });

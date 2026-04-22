@@ -120,6 +120,7 @@ import type {
   MeshCommandOptions,
   ModuleCommandOptions,
   ModulesCommandOptions,
+  RemindAckCommandOptions,
   RemindCommandOptions,
   ResearchCommandOptions,
   ReviewCommandOptions,
@@ -1728,6 +1729,32 @@ function createVoiceRuntime(
   return factory(voiceOptions);
 }
 
+async function projectSubtasksToPlannedActions(
+  plan: GoalPlan,
+  planId: string,
+  client: Pick<LifeGraphClient, 'appendPlannedAction'>,
+  now: Date,
+): Promise<PlannedAction[]> {
+  void now;
+  const projectedTasks = plan.tasks.slice(0, 10);
+  const projectedActions: PlannedAction[] = [];
+
+  for (const task of projectedTasks) {
+    const action: PlannedAction = {
+      id: randomUUID(),
+      title: task.title,
+      status: 'todo',
+      planId,
+      activationSource: 'goal_projection',
+      dueDate: plan.deadline ?? undefined,
+    };
+    await client.appendPlannedAction(action);
+    projectedActions.push(action);
+  }
+
+  return projectedActions;
+}
+
 export async function runGoalCommand(
   goal: string,
   options: GoalCommandOptions,
@@ -1920,8 +1947,33 @@ export async function runGoalCommand(
       verboseLog('stage=save_completed');
       verboseLog(`saved_record_id=${saved.id}`);
 
+      const projectionClient: Pick<LifeGraphClient, 'appendPlannedAction'> =
+        dependencies.appendPlannedAction
+          ? {
+              appendPlannedAction: (action) =>
+                dependencies.appendPlannedAction!(action, options.graphPath),
+            }
+          : dependencies.appendGoalPlan
+            ? (() => {
+                throw new Error(
+                  'appendPlannedAction dependency is required when appendGoalPlan is injected.',
+                );
+              })()
+            : createClient({ graphPath: options.graphPath, env });
+      const projectedActions = await projectSubtasksToPlannedActions(
+        plan,
+        saved.id,
+        projectionClient,
+        now(),
+      );
+      const projectedCount = projectedActions.length;
+      verboseLog(`stage=projection_completed projected_count=${projectedCount}`);
+
       if (options.outputJson === false) {
         writeStdout(`${chalk.green(`[saved] ${options.graphPath} (id: ${saved.id})`)}\n`);
+        writeStdout(
+          `${chalk.green(`Goal saved. Projected ${projectedCount} action(s) into your task list.`)}\n`,
+        );
       }
     }
 
@@ -2283,10 +2335,12 @@ export async function runTickCommand(
   dependencies: RunCliDependencies = {},
 ): Promise<number> {
   const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const tick = dependencies.runTick ?? runTick;
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
       return;
@@ -2295,14 +2349,41 @@ export async function runTickCommand(
   };
 
   try {
+    const tickNow = now();
     const result = await tick({
       graphPath: options.graphPath,
       env,
-      now: now(),
+      now: tickNow,
       logger: (line) => {
         verboseLog(line);
       },
     });
+
+    const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+    const graph = await client.loadGraph();
+    const tickNowIso = tickNow.toISOString();
+    const remindersToFire = (graph.reminderEvents ?? []).filter(
+      (reminder) => reminder.status === 'scheduled' && reminder.scheduledFor <= tickNowIso,
+    );
+
+    for (const reminder of remindersToFire) {
+      await client.updateReminderEvent(reminder.id, {
+        status: 'fired',
+        firedAt: tickNowIso,
+      });
+      await publishEventSafely(
+        Topics.lifeos.reminderFired,
+        {
+          id: reminder.id,
+          actionId: reminder.actionId,
+          firedAt: tickNowIso,
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
+    }
+    verboseLog(`reminders_fired=${remindersToFire.length}`);
 
     let publishTransport: EventBusTransport = 'unknown';
     if (result.overdueTasks.length > 0) {
@@ -2367,9 +2448,7 @@ export async function runTickCommand(
       )}\n`,
     );
     result.overdueTasks.slice(0, 10).forEach((task) => {
-      writeStdout(
-        `- ${task.id.slice(0, 8)} | ${task.goalTitle} | ${task.title} | due ${task.dueDate}\n`,
-      );
+      writeStdout(`- ${task.id.slice(0, 8)} | ${task.planId ?? '-'} | ${task.title} | due ${task.dueDate}\n`);
     });
     return 0;
   } catch (error: unknown) {
@@ -4821,12 +4900,19 @@ export async function runInboxCommand(
   };
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
-  type InboxTriageStage = 'lookup' | 'append_planned_action' | 'append_note' | 'update_capture';
+  type InboxTriageStage =
+    | 'lookup'
+    | 'append_planned_action'
+    | 'append_note'
+    | 'append_goal_plan'
+    | 'update_capture';
   const triageFixByStage: Record<InboxTriageStage, string> = {
     lookup: 'Run "lifeos inbox list" to confirm the capture id, then retry triage with a valid id.',
     append_planned_action:
       'Retry with "--action task" and a valid optional "--due YYYY-MM-DD" date, or use "--action note|defer".',
     append_note: 'Retry with "--action note" and valid "--tag" values.',
+    append_goal_plan:
+      'Retry with "--action plan". Ensure Ollama is running and LIFEOS_GOAL_MODEL is set.',
     update_capture:
       'Retry triage. If the error persists, verify graph-path permissions and that the graph file is writable.',
   };
@@ -4878,14 +4964,17 @@ export async function runInboxCommand(
 
       if (options.triageAction === 'note') {
         triageStage = 'append_note';
-        await client.appendNote({
+        const note = await client.appendNote({
           title: captureEntry.content,
           content: captureEntry.content,
           tags: options.tag ?? [],
           voiceTriggered: false,
         });
         triageStage = 'update_capture';
-        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        await client.updateCaptureEntry(captureEntry.id, {
+          status: 'triaged',
+          triagedToNoteId: note.id,
+        });
         await publishEventSafely(
           Topics.lifeos.inboxTriaged,
           {
@@ -4906,14 +4995,26 @@ export async function runInboxCommand(
       }
 
       if (options.triageAction === 'defer') {
-        const tags = Array.from(new Set([...(captureEntry.tags ?? []), 'deferred']));
+        triageStage = 'append_planned_action';
+        const deferredAction: PlannedAction = PlannedActionSchema.parse({
+          id: randomUUID(),
+          title: captureEntry.content,
+          status: 'deferred',
+          activationSource: 'capture_triage',
+          sourceCapture: captureEntry.id,
+        });
+        await client.appendPlannedAction(deferredAction);
         triageStage = 'update_capture';
-        await client.updateCaptureEntry(captureEntry.id, { status: 'triaged', tags });
+        await client.updateCaptureEntry(captureEntry.id, {
+          status: 'triaged',
+          triagedToActionId: deferredAction.id,
+        });
         await publishEventSafely(
           Topics.lifeos.inboxTriaged,
           {
             captureId: captureEntry.id,
             action: 'defer',
+            plannedActionId: deferredAction.id,
           },
           dependencies,
           env,
@@ -4921,9 +5022,67 @@ export async function runInboxCommand(
         );
         const updatedCapture = await client.getCaptureEntry(captureEntry.id);
         if (options.outputJson) {
-          writeStdout(`${JSON.stringify({ captureEntry: updatedCapture }, null, 2)}\n`);
+          writeStdout(
+            `${JSON.stringify({ captureEntry: updatedCapture, plannedAction: deferredAction }, null, 2)}\n`,
+          );
         } else {
-          writeStdout(`Deferred: ${captureEntry.content}\n`);
+          writeStdout(`Deferred: ${captureEntry.content} → action ${deferredAction.id.slice(0, 8)}\n`);
+        }
+        return 0;
+      }
+
+      if (options.triageAction === 'plan') {
+        triageStage = 'append_goal_plan';
+        const interpret = dependencies.interpretGoal ?? interpretGoal;
+        const model = options.model?.trim() || env.LIFEOS_GOAL_MODEL?.trim() || DEFAULT_MODEL;
+        const host = env.OLLAMA_HOST?.trim();
+        const plan = await interpret(captureEntry.content, {
+          model,
+          ...(host ? { host } : {}),
+          now: new Date(),
+        });
+        const savedPlanId = await client.createNode(
+          'plan',
+          plan as unknown as Record<string, unknown>,
+        );
+
+        triageStage = 'append_planned_action';
+        const projectedActions = await projectSubtasksToPlannedActions(
+          plan,
+          savedPlanId,
+          client,
+          new Date(),
+        );
+
+        triageStage = 'update_capture';
+        await client.updateCaptureEntry(captureEntry.id, {
+          status: 'triaged',
+          triagedToPlanId: savedPlanId,
+        });
+        await publishEventSafely(
+          Topics.lifeos.inboxTriaged,
+          {
+            captureId: captureEntry.id,
+            action: 'plan',
+            planId: savedPlanId,
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
+        const updatedCapture = await client.getCaptureEntry(captureEntry.id);
+        if (options.outputJson) {
+          writeStdout(
+            `${JSON.stringify(
+              { captureEntry: updatedCapture, plan, plannedActions: projectedActions },
+              null,
+              2,
+            )}\n`,
+          );
+        } else {
+          writeStdout(
+            `${chalk.green('Triaged as plan:')} "${captureEntry.content}" → plan ${savedPlanId.slice(0, 8)} (${projectedActions.length} actions)\n`,
+          );
         }
         return 0;
       }
@@ -4938,7 +5097,10 @@ export async function runInboxCommand(
       });
       await client.appendPlannedAction(plannedAction);
       triageStage = 'update_capture';
-      await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+      await client.updateCaptureEntry(captureEntry.id, {
+        status: 'triaged',
+        triagedToActionId: plannedAction.id,
+      });
       await publishEventSafely(
         Topics.lifeos.inboxTriaged,
         {
@@ -5086,6 +5248,76 @@ export async function runRemindCommand(
   }
 }
 
+export async function runRemindAckCommand(
+  options: RemindAckCommandOptions,
+  dependencies: RunCliDependencies = {},
+): Promise<number> {
+  const env = dependencies.env ?? process.env;
+  const baseCwd = resolveBaseCwd(env, dependencies.cwd);
+  const now = dependencies.now ?? (() => new Date());
+  const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
+  const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+
+  try {
+    const graph = await client.loadGraph();
+    const reminderEvents = graph.reminderEvents ?? [];
+    const exactMatch = reminderEvents.find((event) => event.id === options.reminderId);
+    const prefixMatches = reminderEvents.filter((event) => event.id.startsWith(options.reminderId));
+
+    if (!exactMatch && prefixMatches.length === 0) {
+      writeStderr(`ERR_REMINDER_NOT_FOUND: Reminder "${options.reminderId}" not found.\n`);
+      return 1;
+    }
+
+    if (!exactMatch && prefixMatches.length > 1) {
+      writeStderr(
+        `ERR_REMINDER_AMBIGUOUS: Prefix "${options.reminderId}" matches multiple reminders (${prefixMatches
+          .map((event) => event.id)
+          .join(', ')}).\n`,
+      );
+      return 1;
+    }
+
+    const targetReminder = exactMatch ?? prefixMatches[0];
+    if (!targetReminder) {
+      writeStderr(`ERR_REMINDER_NOT_FOUND: Reminder "${options.reminderId}" not found.\n`);
+      return 1;
+    }
+
+    if (targetReminder.status !== 'fired') {
+      writeStderr(
+        `ERR_REMINDER_INVALID_STATE: Reminder "${targetReminder.id}" must be fired before acknowledgement (current: ${targetReminder.status}).\n`,
+      );
+      return 1;
+    }
+
+    const acknowledgedAt = now().toISOString();
+    await client.updateReminderEvent(targetReminder.id, {
+      status: 'acknowledged',
+      acknowledgedAt,
+    });
+
+    const payload = {
+      ...targetReminder,
+      status: 'acknowledged' as const,
+      acknowledgedAt,
+    };
+    if (options.outputJson) {
+      writeStdout(`${JSON.stringify(payload, null, 2)}\n`);
+    } else {
+      writeStdout(
+        `${chalk.green('Reminder acknowledged:')} ${targetReminder.id} for action ${targetReminder.actionId.slice(0, 8)}\n`,
+      );
+    }
+    return 0;
+  } catch (error: unknown) {
+    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+    return 1;
+  }
+}
+
 function buildProgram(
   dependencies: RunCliDependencies,
   setExitCode: (exitCode: number) => void,
@@ -5181,7 +5413,12 @@ function buildProgram(
     .description('Manage inbox items: list | triage')
     .argument('[action]', 'list | triage', 'list')
     .argument('[id]', 'Capture entry ID for triage action')
-    .option('--action <action>', 'Triage action: task | note | defer', 'task')
+    .option('--action <action>', 'Triage action: task | note | defer | plan', 'task')
+    .option(
+      '--model <model>',
+      'Override model (default: llama3.1:8b or LIFEOS_GOAL_MODEL)',
+      defaultModel,
+    )
     .option('--tag <tag...>', 'Tags for note action')
     .option('--due <date>', 'Due date for triaged task (YYYY-MM-DD)')
     .option('--json', 'Output result JSON only')
@@ -5197,13 +5434,16 @@ function buildProgram(
       }
       const rawTriageAction = (commandOptions.action as string) ?? 'task';
       const triageAction =
-        rawTriageAction === 'task' || rawTriageAction === 'note' || rawTriageAction === 'defer'
+        rawTriageAction === 'task' ||
+        rawTriageAction === 'note' ||
+        rawTriageAction === 'defer' ||
+        rawTriageAction === 'plan'
           ? rawTriageAction
           : null;
       if (!triageAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid triage action "${rawTriageAction}". Use task, note, or defer.\n`,
+          `${chalk.red.bold('Error:')} Invalid triage action "${rawTriageAction}". Use task, note, defer, or plan.\n`,
         );
         return;
       }
@@ -5212,6 +5452,7 @@ function buildProgram(
           action: normalizedAction,
           ...(id !== undefined ? { captureId: id } : {}),
           triageAction,
+          ...(commandOptions.model ? { model: commandOptions.model as string } : {}),
           ...(Array.isArray(commandOptions.tag) ? { tag: commandOptions.tag as string[] } : {}),
           ...(commandOptions.due ? { due: commandOptions.due as string } : {}),
           outputJson: Boolean(commandOptions.json),
@@ -5224,13 +5465,33 @@ function buildProgram(
 
   program
     .command('remind')
-    .description('Schedule a reminder for a planned action')
-    .argument('<action-id>', 'The PlannedAction ID')
+    .description('Schedule or acknowledge reminder events')
+    .argument('<action-id-or-command>', 'PlannedAction ID, or "ack"')
+    .argument('[value]', 'When using ack, the reminder ID (exact or prefix)')
     .option('--at <iso-datetime>', 'ISO datetime to schedule the reminder')
     .option('--json', 'Output reminder event JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
-    .action(async (actionId: string, commandOptions) => {
+    .action(async (actionIdOrCommand: string, value: string | undefined, commandOptions) => {
+      if (actionIdOrCommand === 'ack') {
+        if (!value) {
+          setExitCode(1);
+          writeStderr(`${chalk.red.bold('Error:')} Reminder ID is required for remind ack.\n`);
+          return;
+        }
+        const commandExitCode = await runRemindAckCommand(
+          {
+            reminderId: value,
+            outputJson: Boolean(commandOptions.json),
+            graphPath: commandOptions.graphPath as string,
+            verbose: Boolean(commandOptions.verbose),
+          },
+          dependencies,
+        );
+        setExitCode(commandExitCode);
+        return;
+      }
+
       if (!commandOptions.at) {
         setExitCode(1);
         writeStderr(`${chalk.red.bold('Error:')} --at <iso-datetime> is required.\n`);
@@ -5238,7 +5499,7 @@ function buildProgram(
       }
       const commandExitCode = await runRemindCommand(
         {
-          actionId,
+          actionId: actionIdOrCommand,
           at: commandOptions.at as string,
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath as string,
