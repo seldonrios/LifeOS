@@ -7,6 +7,14 @@ on:
       - 'templates/module/**'
       - 'community-modules.json'
       - 'packages/cli/**'
+      - 'packages/reminder-module/**'
+      - 'packages/scheduler-module/**'
+      - 'packages/calendar-module/**'
+      - 'packages/orchestrator/**'
+      - 'packages/notes-module/**'
+      - 'packages/research-module/**'
+      - 'packages/weather-module/**'
+      - 'packages/news-module/**'
       - 'docs/community/works-with-lifeos-checklist.md'
 
 permissions:
@@ -27,6 +35,8 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       # This workflow is a focused contract check; full test execution stays in CI and CLI Smoke.
+      # It covers both community module manifests under `modules/*` via `--all` and first-party
+      # runtime module manifests under `packages/*` via the explicit validation step below.
       # Reference graduation modules — all three must pass `lifeos module validate` to satisfy
       # the graduation gate: planning-assistant, notification-bridge, habit-streak.
       - name: Run module contract checks
@@ -35,6 +45,19 @@ jobs:
           pnpm run build:modules 2>&1 | tee .artifacts/module-validate/build-modules.log
           pnpm lifeos module validate --all 2>&1 | tee .artifacts/module-validate/module-validate.log
           pnpm lifeos module certify --dry-run 2>&1 | tee .artifacts/module-validate/module-certify.log
+      - name: Validate first-party runtime module manifests
+        run: |
+          # `pnpm lifeos module validate --all` covers community-facing manifests under `modules/*`.
+          # The CLI also directly imports first-party runtime modules from `packages/*`, so validate
+          # those module manifests explicitly here to keep contract coverage aligned with runtime use.
+          pnpm lifeos module validate reminder 2>&1 | tee .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate scheduler 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate calendar 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate orchestrator 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate notes 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate research 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate weather 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
+          pnpm lifeos module validate news 2>&1 | tee -a .artifacts/module-validate/first-party-validate.log
       - name: Upload module validation artifacts
         if: always()
         uses: actions/upload-artifact@v7
