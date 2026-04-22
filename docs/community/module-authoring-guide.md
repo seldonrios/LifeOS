@@ -38,7 +38,7 @@ The current manifest contract is the shape validated by `validateLifeOSManifest(
 | `subFeatures` | ❌ optional | array of kebab-case strings, max 10 |
 | `requires` | ❌ optional | array of `@lifeos/<pkg>[@<range>]` entries, max 15 |
 
-> **`graphVersion` is not a manifest field.** It is not validated by `validateLifeOSManifest()` and must not appear in your `lifeos.json`. The template in `templates/module/` does not include it.
+> **`graphVersion` is not a manifest field.** It is not required and is not validated by `validateLifeOSManifest()`. Authors should omit it because it is outside the current manifest contract. The template in `templates/module/` does not include it.
 
 ## Module taxonomy
 
