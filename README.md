@@ -210,7 +210,8 @@ lifeos review [--period daily|weekly] [--json] [--graph-path <path>] [--verbose]
 lifeos task [list|complete|next|block|cancel|unblock] [id] [--reason <reason>] [--json] [--graph-path <path>] [--verbose]
 lifeos capture "<text>" [--json] [--graph-path <path>]
 lifeos inbox [list|triage] [id] [--action task|note|defer|plan] [--json] [--graph-path <path>]
-lifeos remind <action-id>|ack [value] [--at <datetime>] [--json] [--graph-path <path>] [--verbose]
+lifeos remind <action-id> --at <datetime> [--json] [--graph-path <path>] [--verbose]
+lifeos remind ack <reminder-id> [--json] [--graph-path <path>] [--verbose]
 lifeos demo:loop [--dry-run] [--json]
 lifeos next [--json] [--graph-path <path>] [--verbose]
 lifeos tick [--json] [--graph-path <path>] [--verbose]
@@ -436,7 +437,7 @@ Runtime modules:
 - use `lifeos module list`, `lifeos module enable <name>`, and `lifeos module disable <name>`
 - `google-bridge` supports feature-level toggles: `lifeos module enable google-bridge --sub calendar,tasks`
 - authorize Google access once: `lifeos module authorize google-bridge`
-- `reminder` listens to overdue tick/task events and creates follow-up plans
+- `reminder` listens to overdue tick/task events and emits suggestion events (`lifeos.reminder.suggestion.created`); it does not auto-create follow-up plans
 - `calendar` persists voice-driven events to `calendarEvents`
 - `scheduler` applies overdue reschedule suggestions
 - `research`, `notes`, `weather`, and `news` handle voice-first daily assistant flows

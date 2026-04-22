@@ -4,10 +4,10 @@
 | -------- | ---------------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
 | Capture  | `lifeos capture`       | `CaptureEntry`                                   | `lifeos.capture.recorded`                                                                          |
 | Triage   | `lifeos inbox triage`  | `PlannedAction` / note / deferred `CaptureEntry` | `lifeos.inbox.triaged`                                                                             |
-| Plan     | `lifeos goal`          | `GoalPlan`                                       | `lifeos.mesh.delegate.completed` or `lifeos.mesh.delegate.fallback_local`                          |
+| Plan     | `lifeos goal`          | `GoalPlan` + projected `PlannedAction` records   | `lifeos.mesh.delegate.completed` or `lifeos.mesh.delegate.fallback_local`                          |
 | Remind   | `lifeos remind`        | `ReminderEvent`                                  | `lifeos.reminder.scheduled`                                                                        |
-| Tick     | `lifeos tick`          | _(nothing)_                                      | `lifeos.tick.overdue` (reminder module may react by publishing `lifeos.reminder.followup.created`) |
-| Complete | `lifeos task complete` | `LifeGraphTask` or `PlannedAction`               | `lifeos.task.completed`                                                                            |
+| Tick     | `lifeos tick`          | _(nothing)_                                      | `lifeos.tick.overdue` (reminder module may react by publishing `lifeos.reminder.suggestion.created`) |
+| Complete | `lifeos task complete` | `PlannedAction`                                  | `lifeos.task.completed`                                                                            |
 | Review   | `lifeos review`        | _(nothing — derived)_                            | _(none)_                                                                                           |
 
 ## Who is the real orchestrator?
@@ -15,7 +15,7 @@
 LifeOS uses a three-layer orchestration model.
 
 - **CLI** is the primary hero-loop sequencer. It drives each stage in response to explicit user commands.
-- **Orchestrator module** (`modules/orchestrator`) is a proactive event sidecar. It subscribes to runtime events and emits suggestions or follow-up actions without blocking the CLI.
+- **Orchestrator module** (`modules/orchestrator`) is a proactive event sidecar. It subscribes to runtime events and emits suggestions without blocking the CLI.
 - **Module-loader** is the runtime policy harness. It enforces manifest permissions, capability gates, and module lifecycle (load/unload/enable/disable).
 
 ## Automation guardrails

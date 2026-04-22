@@ -75,6 +75,12 @@ Phase 3 Current System Boundary
 
 - `@lifeos/cli`
 - hero loop commands: capture, inbox triage, planning/next actions, reminders, review
+- canonical runtime objects in this loop:
+  - `CaptureEntry` for intake
+  - `PlannedAction` for execution
+  - `ReminderEvent` for reminders
+  - `GoalPlan` for planning/projection context (not the daily execution lane)
+- overdue reminder handling is suggestion-based (`lifeos.reminder.suggestion.created`) and does not auto-create follow-up plans
 
 ### 2. Core Runtime Packages
 

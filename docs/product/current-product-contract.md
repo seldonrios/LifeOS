@@ -26,6 +26,22 @@ The active product slice is the daily hero loop, defined in order as:
 4. reminders/next actions
 5. daily/weekly review
 
+## Canonical MVP runtime objects
+
+- `CaptureEntry` is intake.
+- `PlannedAction` is the canonical execution object for day-to-day loop execution.
+- `ReminderEvent` is the canonical reminder object.
+- `GoalPlan` is planning/projection context, not the daily execution lane.
+
+Reminder-overdue behavior is suggestion-based in this MVP contract: overdue processing emits `lifeos.reminder.suggestion.created` and does not auto-create follow-up plans or other durable execution work.
+
+## Supported hero-loop command surface
+
+- `task list|complete|next|block|cancel|unblock`
+- `inbox triage --action task|note|defer|plan`
+- `remind <action-id> --at <datetime>`
+- `remind ack <reminder-id>`
+
 ## Binding promises now
 
 The following table defines what is and is not binding in the current release contract. Items in the left column are active commitments; items in the right column are architectural context or future work only.
