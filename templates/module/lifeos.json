@@ -3,7 +3,6 @@
   "version": "0.1.0",
   "author": "your-github-username",
   "description": "Tracks daily steps and suggests adjustments",
-  "graphVersion": "^2.0.0",
   "permissions": {
     "graph": ["read", "append"],
     "network": ["weather"],

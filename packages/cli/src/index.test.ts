@@ -1900,11 +1900,13 @@ test('module create scaffolds a module with lifeos.json and source template', as
     name: string;
     author: string;
     resources: { cpu: string; memory: string };
+    graphVersion?: string;
   };
   assert.equal(manifest.name, 'my-awesome-module');
   assert.equal(manifest.author, 'octocat');
   assert.equal(manifest.resources.cpu, 'low');
   assert.equal(manifest.resources.memory, 'low');
+  assert.equal('graphVersion' in manifest, false);
 
   const migrationsKeep = await readFile(
     join(baseDir, 'modules', 'my-awesome-module', 'migrations', '.gitkeep'),

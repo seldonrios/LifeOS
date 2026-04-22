@@ -5,6 +5,7 @@ export {
 	validateLifeOSManifest,
 	type LifeOSManifestValidationOptions,
 	type LifeOSManifestValidationResult,
+	type LifeOSManifestPermissions,
 	type LifeOSModuleManifest,
 } from './manifest';
 

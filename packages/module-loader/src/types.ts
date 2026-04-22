@@ -5,6 +5,13 @@ import type {
 } from '@lifeos/capability-registry';
 import type { DegradedMarker } from '@lifeos/secrets';
 
+/**
+ * @future
+ * This interface is a future capability-registry-oriented manifest shape, reserved for a later
+ * platform version. It is NOT the current runtime manifest shape and is NOT intended for module
+ * authors in the current MVP. Module authors should use `LifeOSModuleManifest` from
+ * `@lifeos/module-loader` instead.
+ */
 export interface ModuleManifest {
   id: string;
   name: string;
@@ -14,30 +21,6 @@ export interface ModuleManifest {
   optional: Array<string | DependencySpec>;
   hardware?: Array<string | HardwareRequirementSpec>;
   degradedModes?: Record<string, string>;
-}
-
-export interface LifeOSManifestPermissions {
-  graph: string[];
-  network: string[];
-  voice: string[];
-  events: string[];
-}
-
-export interface LifeOSModuleManifest {
-  name: string;
-  version: string;
-  author: string;
-  description?: string;
-  permissions: LifeOSManifestPermissions;
-  requires: string[];
-  category: string;
-  tags: string[];
-}
-
-export interface LifeOSManifestValidationResult {
-  valid: boolean;
-  errors: string[];
-  manifest?: LifeOSModuleManifest;
 }
 
 export type ModuleState = 'enabled' | 'degraded' | 'disabled' | 'error';

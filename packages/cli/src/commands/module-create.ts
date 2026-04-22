@@ -60,7 +60,6 @@ export async function createModuleScaffold(
     version: '0.1.0',
     author: options.author,
     description: `LifeOS module: ${normalizedName}`,
-    graphVersion: '^2.0.0',
     permissions: {
       graph: ['read'],
       network: [],

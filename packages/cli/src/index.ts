@@ -171,15 +171,15 @@ const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
   scheduler: schedulerModule,
   notes: notesModule,
   calendar: calendarModule,
-  personality: orchestratorModule,
-  briefing: orchestratorModule,
+  personality: orchestratorModule, // alias: shares orchestratorModule impl in current MVP; will split in a future phase
+  briefing: orchestratorModule, // alias: shares orchestratorModule impl in current MVP; will split in a future phase
   research: researchModule,
   weather: weatherModule,
   news: newsModule,
   'email-summarizer': emailSummarizerModule,
   'habit-streak': habitStreakModule,
   'home-state': homeStateModule,
-  health: null,
+  health: null, // placeholder: implementation not yet available in current MVP
   'google-bridge': googleBridgeModule,
   voice: voiceModule,
 };
@@ -306,8 +306,8 @@ async function buildModularityRiskRadar(
 
   {
     const checks = [
-      moduleTemplate.includes('graphVersion'),
-      moduleCreateSource.includes('graphVersion'),
+      !moduleTemplate.includes('graphVersion'),
+      !moduleCreateSource.includes('graphVersion'),
     ];
     const passCount = checks.filter(Boolean).length;
     risks.push({
@@ -315,7 +315,7 @@ async function buildModularityRiskRadar(
       name: riskName(0),
       status: inferRiskStatus(passCount, checks.length),
       lastChecked: nowIso,
-      details: 'Tracks whether graph-aware versioning defaults are present in module templates.',
+      details: 'Ensures module templates and scaffolds do not emit non-contract graphVersion fields.',
     });
   }
 

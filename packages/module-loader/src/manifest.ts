@@ -12,6 +12,11 @@ export interface LifeOSManifestResources {
   memory: 'low' | 'medium';
 }
 
+/**
+ * Authoritative runtime manifest shape for the current MVP.
+ * This is the type that `validateLifeOSManifest()` validates against.
+ * Module authors should use this type when typing their `lifeos.json` manifests.
+ */
 export interface LifeOSModuleManifest {
   name: string;
   version: string;
