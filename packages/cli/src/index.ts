@@ -4648,6 +4648,12 @@ export async function runCaptureCommand(
   const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const verboseLog = (line: string): void => {
+    if (!('verbose' in options) || !options.verbose) {
+      return;
+    }
+    writeStderr(`[verbose] ${line}\n`);
+  };
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   if (options.type !== 'text' && options.type !== 'voice') {
     writeStderr(
@@ -4704,6 +4710,18 @@ export async function runCaptureCommand(
       status: 'pending',
     });
     await client.appendCaptureEntry(entry);
+    await publishEventSafely(
+      Topics.lifeos.captureRecorded,
+      {
+        id: entry.id,
+        content: entry.content,
+        source: entry.source,
+        capturedAt: entry.capturedAt,
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
     if (options.outputJson) {
       writeStdout(
         `${JSON.stringify(
@@ -4739,6 +4757,12 @@ export async function runInboxCommand(
   const baseCwd = resolveBaseCwd(env, dependencies.cwd);
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
+  const verboseLog = (line: string): void => {
+    if (!('verbose' in options) || !options.verbose) {
+      return;
+    }
+    writeStderr(`[verbose] ${line}\n`);
+  };
   const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
   const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
   type InboxTriageStage = 'lookup' | 'append_planned_action' | 'append_note' | 'update_capture';
@@ -4806,6 +4830,16 @@ export async function runInboxCommand(
         });
         triageStage = 'update_capture';
         await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+        await publishEventSafely(
+          Topics.lifeos.inboxTriaged,
+          {
+            captureId: captureEntry.id,
+            action: 'note',
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
         const updatedCapture = await client.getCaptureEntry(captureEntry.id);
         if (options.outputJson) {
           writeStdout(`${JSON.stringify({ captureEntry: updatedCapture }, null, 2)}\n`);
@@ -4819,6 +4853,16 @@ export async function runInboxCommand(
         const tags = Array.from(new Set([...(captureEntry.tags ?? []), 'deferred']));
         triageStage = 'update_capture';
         await client.updateCaptureEntry(captureEntry.id, { status: 'triaged', tags });
+        await publishEventSafely(
+          Topics.lifeos.inboxTriaged,
+          {
+            captureId: captureEntry.id,
+            action: 'defer',
+          },
+          dependencies,
+          env,
+          verboseLog,
+        );
         const updatedCapture = await client.getCaptureEntry(captureEntry.id);
         if (options.outputJson) {
           writeStdout(`${JSON.stringify({ captureEntry: updatedCapture }, null, 2)}\n`);
@@ -4839,6 +4883,17 @@ export async function runInboxCommand(
       await client.appendPlannedAction(plannedAction);
       triageStage = 'update_capture';
       await client.updateCaptureEntry(captureEntry.id, { status: 'triaged' });
+      await publishEventSafely(
+        Topics.lifeos.inboxTriaged,
+        {
+          captureId: captureEntry.id,
+          action: 'task',
+          plannedActionId: plannedAction.id,
+        },
+        dependencies,
+        env,
+        verboseLog,
+      );
       const updatedCapture = await client.getCaptureEntry(captureEntry.id);
       if (options.outputJson) {
         writeStdout(

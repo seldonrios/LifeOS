@@ -31,6 +31,19 @@ const RuntimeTickOverduePayloadSchema = z.object({
   tickedAt: z.string().min(1),
 });
 
+const RuntimeCaptureRecordedPayloadSchema = z.object({
+  id: z.string().min(1),
+  content: z.string().min(1),
+  source: z.string().min(1),
+  capturedAt: z.string().min(1),
+});
+
+const RuntimeInboxTriagedPayloadSchema = z.object({
+  captureId: z.string().min(1),
+  action: z.enum(['task', 'note', 'defer']),
+  plannedActionId: z.string().min(1).optional(),
+});
+
 export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(Topics.lifeos.reminderFollowupCreated),
@@ -43,6 +56,14 @@ export const RuntimeHeroLoopEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal(Topics.lifeos.tickOverdue),
     payload: RuntimeTickOverduePayloadSchema,
+  }),
+  z.object({
+    type: z.literal(Topics.lifeos.captureRecorded),
+    payload: RuntimeCaptureRecordedPayloadSchema,
+  }),
+  z.object({
+    type: z.literal(Topics.lifeos.inboxTriaged),
+    payload: RuntimeInboxTriagedPayloadSchema,
   }),
 ]);
 

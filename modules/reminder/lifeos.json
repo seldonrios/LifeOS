@@ -4,7 +4,7 @@
   "author": "lifeos-core",
   "description": "Reminder reactions for overdue and task events",
   "permissions": {
-    "graph": ["read"],
+    "graph": ["read", "append"],
     "network": [],
     "voice": ["speak"],
     "events": [

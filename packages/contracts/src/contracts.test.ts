@@ -133,6 +133,9 @@ test('RuntimeHeroLoopEventSchema parses lifeos.task.completed with runtime paylo
   });
 
   assert.equal(parsed.type, 'lifeos.task.completed');
+  if (parsed.type !== 'lifeos.task.completed') {
+    throw new Error('Expected lifeos.task.completed event');
+  }
   assert.equal(parsed.payload.taskId, 'task_001');
 });
 
@@ -166,6 +169,9 @@ test('RuntimeHeroLoopEventSchema parses lifeos.tick.overdue with runtime payload
   });
 
   assert.equal(parsed.type, 'lifeos.tick.overdue');
+  if (parsed.type !== 'lifeos.tick.overdue') {
+    throw new Error('Expected lifeos.tick.overdue event');
+  }
   assert.equal(parsed.payload.overdueTasks.length, 1);
 });
 
@@ -176,6 +182,68 @@ test('RuntimeHeroLoopEventSchema rejects lifeos.tick.overdue with invalid payloa
       payload: {
         actionId: 'task_001',
         overdueAt: '2026-04-01T10:00:00.000Z',
+      },
+    }),
+  );
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.capture.recorded with runtime payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.capture.recorded',
+    payload: {
+      id: 'cap_001',
+      content: 'Capture this thought',
+      source: 'cli',
+      capturedAt: '2026-04-01T08:00:00.000Z',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.capture.recorded');
+});
+
+test('RuntimeHeroLoopEventSchema rejects lifeos.capture.recorded with invalid payload shape', () => {
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.capture.recorded',
+      payload: {
+        id: 'cap_001',
+      },
+    }),
+  );
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.inbox.triaged with task payload', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.inbox.triaged',
+    payload: {
+      captureId: 'cap_001',
+      action: 'task',
+      plannedActionId: 'action_001',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.inbox.triaged');
+});
+
+test('RuntimeHeroLoopEventSchema parses lifeos.inbox.triaged with note payload (no plannedActionId)', () => {
+  const parsed = RuntimeHeroLoopEventSchema.parse({
+    type: 'lifeos.inbox.triaged',
+    payload: {
+      captureId: 'cap_001',
+      action: 'note',
+    },
+  });
+
+  assert.equal(parsed.type, 'lifeos.inbox.triaged');
+});
+
+test('RuntimeHeroLoopEventSchema rejects lifeos.inbox.triaged with invalid action', () => {
+  assert.throws(() =>
+    RuntimeHeroLoopEventSchema.parse({
+      type: 'lifeos.inbox.triaged',
+      payload: {
+        captureId: 'cap_001',
+        action: 'archive',
       },
     }),
   );

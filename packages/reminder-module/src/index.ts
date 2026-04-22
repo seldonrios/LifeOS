@@ -76,6 +76,11 @@ async function handleTickOverdue(
 
   const first = event.data.overdueTasks[0];
   const followUpTitle = `Overdue reminder: ${first?.title ?? 'Pending tasks'}`;
+  // Automated follow-up plan creation for each lifeos.tick.overdue event.
+  // This call requires "graph": ["append"] in modules/reminder/lifeos.json;
+  // without it, wrapGraphClientWithPolicy throws in strict mode.
+  // Bounded behavior: at most one plan per tick event and up to 3 tasks,
+  // enforced by buildFollowUpTasks(overdueTasks.slice(0, 3)).
   const followUpId = await client.createNode('plan', {
     title: followUpTitle,
     description: `Auto-generated reminder for ${event.data.overdueTasks.length} overdue task(s).`,

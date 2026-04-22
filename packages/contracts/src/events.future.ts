@@ -2,16 +2,11 @@
 
 import { z } from 'zod';
 
-import { CaptureResultSchema } from './capture';
 import { InboxItemSchema } from './inbox';
 import { PlanSchema } from './plan';
 import { ReviewReportSchema } from './review';
 
 export const FutureHeroLoopEventSchema = z.discriminatedUnion('type', [
-  z.object({
-    type: z.literal('lifeos.capture.recorded'),
-    payload: CaptureResultSchema,
-  }),
   z.object({
     type: z.literal('lifeos.inbox.item.created'),
     payload: InboxItemSchema,

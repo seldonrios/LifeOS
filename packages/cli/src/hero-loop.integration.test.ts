@@ -4,9 +4,36 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
+import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
 import type { GoalPlan } from '@lifeos/life-graph';
 
 import { runCli } from './index';
+
+function createRecordingEventBus(): {
+  bus: ManagedEventBus;
+  published: Array<{ type: string; data: Record<string, unknown> }>;
+} {
+  const published: Array<{ type: string; data: Record<string, unknown> }> = [];
+  const bus: ManagedEventBus = {
+    async publish<T extends Record<string, unknown>>(topic: string, event: BaseEvent<T>) {
+      published.push({ type: topic, data: event.data });
+    },
+    async subscribe() {
+      return;
+    },
+    async close() {
+      return;
+    },
+    getTransport() {
+      return 'in-memory';
+    },
+  };
+
+  return {
+    bus,
+    published,
+  };
+}
 
 function sampleHeroPlan(): GoalPlan {
   return {
@@ -148,4 +175,65 @@ test('hero loop integration: goal -> task list -> next -> task complete -> revie
   }>;
   const completedAfter = listedAfter.find((task) => task.id === completedTask.id);
   assert.equal(completedAfter?.status, 'done');
+});
+
+test('capture command publishes lifeos.capture.recorded after successful persist', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-hero-loop-capture-event-'));
+  const graphPath = join(workspace, 'hero-loop.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+  const recorder = createRecordingEventBus();
+
+  const exitCode = await runCli(['capture', 'Buy oat milk', '--graph-path', graphPath], {
+    env,
+    cwd: () => workspace,
+    createEventBusClient: () => recorder.bus,
+  });
+
+  assert.equal(exitCode, 0);
+  const captureEvent = recorder.published.find(
+    (event) => event.type === Topics.lifeos.captureRecorded,
+  );
+  assert.ok(captureEvent, 'Expected lifeos.capture.recorded to be published');
+  assert.equal(captureEvent?.data.content, 'Buy oat milk');
+});
+
+test('inbox triage command publishes lifeos.inbox.triaged after successful task triage', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-hero-loop-inbox-event-'));
+  const graphPath = join(workspace, 'hero-loop.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+  const recorder = createRecordingEventBus();
+  const captureStdout: string[] = [];
+
+  const captureExitCode = await runCli(['capture', 'Review pipeline status', '--json', '--graph-path', graphPath], {
+    env,
+    cwd: () => workspace,
+    createEventBusClient: () => recorder.bus,
+    stdout: (message) => {
+      captureStdout.push(message);
+    },
+  });
+  assert.equal(captureExitCode, 0);
+
+  const capturePayload = JSON.parse(captureStdout.join('')) as { id: string };
+  const triageExitCode = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'task', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      createEventBusClient: () => recorder.bus,
+    },
+  );
+
+  assert.equal(triageExitCode, 0);
+  const triageEvent = recorder.published.find(
+    (event) => event.type === Topics.lifeos.inboxTriaged,
+  );
+  assert.ok(triageEvent, 'Expected lifeos.inbox.triaged to be published');
+  assert.equal(triageEvent?.data.action, 'task');
 });

@@ -134,5 +134,7 @@ export const Topics = {
     homeNodeVoiceSessionCompleted: 'lifeos.homenode.voice.session.completed',
     homeNodeVoiceSessionFailed: 'lifeos.homenode.voice.session.failed',
     homeNodeHealthChanged: 'lifeos.homenode.health.changed',
+    captureRecorded: 'lifeos.capture.recorded',
+    inboxTriaged: 'lifeos.inbox.triaged',
   },
 } as const;

@@ -151,3 +151,30 @@ test('reminder module creates follow-up plan and emits reminder event on overdue
   assert.equal(published.length, 1);
   assert.equal(published[0]?.topic, Topics.lifeos.reminderFollowupCreated);
 });
+
+test('reminder module does not create follow-up plan for overdue tick with no overdue tasks', async () => {
+  const { context, subscriptions, published, createNodeCalls } = createContextMock();
+  const module = createReminderModule();
+  await module.init(context);
+
+  const overdueHandler = subscriptions.find(
+    (entry) => entry.topic === Topics.lifeos.tickOverdue,
+  )?.handler;
+
+  assert.ok(overdueHandler);
+  await overdueHandler?.({
+    id: 'tick_evt_2',
+    type: Topics.lifeos.tickOverdue,
+    timestamp: '2026-03-22T00:00:00.000Z',
+    source: 'lifeos-cli',
+    version: '0.1.0',
+    data: {
+      checkedTasks: 0,
+      overdueTasks: [],
+      tickedAt: '2026-03-22T00:00:00.000Z',
+    },
+  });
+
+  assert.equal(createNodeCalls.length, 0);
+  assert.equal(published.length, 0);
+});
