@@ -105,7 +105,14 @@ import { voiceModule } from '@lifeos/voice-module';
 import { normalizeErrorMessage, toFriendlyCliError } from './errors';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
-import { handleNextActions, handleTaskComplete, handleTaskList } from './task-command';
+import {
+  handleNextActions,
+  handleTaskBlock,
+  handleTaskCancel,
+  handleTaskComplete,
+  handleTaskList,
+  handleTaskUnblock,
+} from './task-command';
 import type {
   CaptureCommandOptions,
   DemoCommandOptions,
@@ -644,7 +651,14 @@ function normalizeReviewPeriod(period: string): LifeGraphReviewPeriod {
 }
 
 function normalizeTaskAction(action: string): TaskCommandOptions['action'] | null {
-  if (action === 'list' || action === 'complete' || action === 'next') {
+  if (
+    action === 'list' ||
+    action === 'complete' ||
+    action === 'next' ||
+    action === 'block' ||
+    action === 'cancel' ||
+    action === 'unblock'
+  ) {
     return action;
   }
 
@@ -2312,6 +2326,33 @@ export async function runTaskCommand(
         env,
         verboseLog,
       );
+      return 0;
+    }
+
+    if (options.action === 'block') {
+      await handleTaskBlock(options.taskId, options.reason, client, {
+        outputJson: options.outputJson,
+        stdout: writeStdout,
+        now: now(),
+      });
+      return 0;
+    }
+
+    if (options.action === 'cancel') {
+      await handleTaskCancel(options.taskId, client, {
+        outputJson: options.outputJson,
+        stdout: writeStdout,
+        now: now(),
+      });
+      return 0;
+    }
+
+    if (options.action === 'unblock') {
+      await handleTaskUnblock(options.taskId, client, {
+        outputJson: options.outputJson,
+        stdout: writeStdout,
+        now: now(),
+      });
       return 0;
     }
 
@@ -5642,8 +5683,9 @@ function buildProgram(
   program
     .command('task')
     .description('Manage tasks')
-    .argument('[action]', 'list | complete | next', 'list')
-    .argument('[id]', 'Task ID for complete action')
+    .argument('[action]', 'list | complete | next | block | cancel | unblock', 'list')
+    .argument('[id]', 'Task ID for complete/block/cancel/unblock action')
+    .option('--reason <reason>', 'Reason for block action')
     .option('--json', 'Output JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
@@ -5652,7 +5694,7 @@ function buildProgram(
       if (!normalizedAction) {
         setExitCode(1);
         writeStderr(
-          `${chalk.red.bold('Error:')} Invalid task action "${action}". Use list, complete, or next.\n`,
+          `${chalk.red.bold('Error:')} Invalid task action "${action}". Use list, complete, next, block, cancel, or unblock.\n`,
         );
         return;
       }
@@ -5668,8 +5710,76 @@ function buildProgram(
           if (id) {
             taskOptions.taskId = id;
           }
+          if (commandOptions.reason) {
+            taskOptions.reason = commandOptions.reason as string;
+          }
           return taskOptions;
         })(),
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('task block')
+    .description('Block a planned action with an optional reason')
+    .argument('<id>', 'Action ID or prefix')
+    .option('--reason <reason>', 'Reason for blocking')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (id: string, commandOptions) => {
+      const commandExitCode = await runTaskCommand(
+        {
+          action: 'block',
+          taskId: id,
+          ...(commandOptions.reason ? { reason: commandOptions.reason as string } : {}),
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('task cancel')
+    .description('Cancel a planned action')
+    .argument('<id>', 'Action ID or prefix')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (id: string, commandOptions) => {
+      const commandExitCode = await runTaskCommand(
+        {
+          action: 'cancel',
+          taskId: id,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
+        dependencies,
+      );
+      setExitCode(commandExitCode);
+    });
+
+  program
+    .command('task unblock')
+    .description('Move a blocked or deferred action back to todo')
+    .argument('<id>', 'Action ID or prefix')
+    .option('--json', 'Output JSON only')
+    .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
+    .option('--verbose', 'Show safe debug diagnostics')
+    .action(async (id: string, commandOptions) => {
+      const commandExitCode = await runTaskCommand(
+        {
+          action: 'unblock',
+          taskId: id,
+          outputJson: Boolean(commandOptions.json),
+          graphPath: commandOptions.graphPath,
+          verbose: Boolean(commandOptions.verbose),
+        },
         dependencies,
       );
       setExitCode(commandExitCode);

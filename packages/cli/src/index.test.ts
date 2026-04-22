@@ -1158,6 +1158,8 @@ test('printReviewInsights renders loop summary after wins and next actions', () 
       pendingCaptures: 2,
       actionsDueToday: 3,
       unacknowledgedReminders: 1,
+      blockedActions: 2,
+      deferredActions: 1,
       completedActions: ['Close sprint retro (action_9)'],
       suggestedNextActions: ['Triage overdue backlog'],
     },
@@ -1173,6 +1175,8 @@ test('printReviewInsights renders loop summary after wins and next actions', () 
     loopSummaryIndex > nextActionsIndex,
     'Expected Loop Summary section after Next Actions',
   );
+  assert.ok(output.includes('Blocked actions: 2'));
+  assert.ok(output.includes('Deferred actions: 1'));
 });
 
 test('task list --json emits flattened task rows', async () => {

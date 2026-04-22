@@ -1127,6 +1127,82 @@ test('generateReview weekly loopSummary aggregates across the trailing seven-day
   ]);
 });
 
+test('generateReview loopSummary counts blocked/deferred and excludes cancelled from active work', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'life-graph.json');
+  const client = createLifeGraphClient({
+    graphPath,
+    reviewClient: {
+      async chat() {
+        return {
+          message: {
+            content: 'not-json',
+          },
+        };
+      },
+    },
+  });
+
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const overdueDate = new Date(now);
+  overdueDate.setUTCDate(overdueDate.getUTCDate() - 2);
+  const overdue = overdueDate.toISOString().slice(0, 10);
+
+  await client.appendPlannedAction({
+    id: 'action_active_todo',
+    title: 'Active todo',
+    status: 'todo',
+    dueDate: today,
+  });
+  await client.appendPlannedAction({
+    id: 'action_active_blocked',
+    title: 'Active blocked',
+    status: 'blocked',
+    blockedReason: 'Waiting on dependency',
+    dueDate: today,
+  });
+  await client.appendPlannedAction({
+    id: 'action_active_deferred',
+    title: 'Active deferred',
+    status: 'deferred',
+    deferredUntil: now.toISOString(),
+    dueDate: today,
+  });
+  await client.appendPlannedAction({
+    id: 'action_cancelled_due_today',
+    title: 'Cancelled due today',
+    status: 'cancelled',
+    dueDate: today,
+  });
+  await client.appendPlannedAction({
+    id: 'action_cancelled_overdue',
+    title: 'Cancelled overdue',
+    status: 'cancelled',
+    dueDate: overdue,
+  });
+  await client.appendPlannedAction({
+    id: 'action_active_overdue_todo',
+    title: 'Active overdue todo',
+    status: 'todo',
+    dueDate: overdue,
+  });
+
+  const dailyInsights = await client.generateReview('daily');
+  assert.equal(dailyInsights.loopSummary.actionsDueToday, 3);
+  assert.equal(dailyInsights.loopSummary.blockedActions, 1);
+  assert.equal(dailyInsights.loopSummary.deferredActions, 1);
+
+  const weeklyInsights = await client.generateReview('weekly');
+  assert.ok(
+    (weeklyInsights.loopSummary.suggestedNextActions ?? []).includes('Active overdue todo'),
+  );
+  assert.equal(
+    (weeklyInsights.loopSummary.suggestedNextActions ?? []).includes('Cancelled overdue'),
+    false,
+  );
+});
+
 test('updateReminderEvent transitions scheduled reminder to fired', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');

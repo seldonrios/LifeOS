@@ -90,6 +90,18 @@ export function printReviewInsights(insights: LifeGraphReviewInsights): string {
     lines.push(
       chalk.cyan(`- Unacknowledged reminders: ${insights.loopSummary.unacknowledgedReminders}`),
     );
+    if (
+      insights.loopSummary.blockedActions !== undefined &&
+      insights.loopSummary.blockedActions > 0
+    ) {
+      lines.push(chalk.red(`- Blocked actions: ${insights.loopSummary.blockedActions}`));
+    }
+    if (
+      insights.loopSummary.deferredActions !== undefined &&
+      insights.loopSummary.deferredActions > 0
+    ) {
+      lines.push(chalk.dim(`- Deferred actions: ${insights.loopSummary.deferredActions}`));
+    }
 
     if (insights.loopSummary.completedActions.length > 0) {
       lines.push(chalk.bold('Completed Actions:'));

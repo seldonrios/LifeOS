@@ -844,12 +844,14 @@ function deriveLoopSummary(
   const captureEntries = graph.captureEntries ?? [];
   const plannedActions = graph.plannedActions ?? [];
   const reminderEvents = graph.reminderEvents ?? [];
+  const isActiveAction = (status: PlannedAction['status']): boolean =>
+    status === 'todo' || status === 'blocked' || status === 'deferred';
 
   const pendingCaptures = captureEntries.filter(
     (entry) => entry.status === 'pending' && isDateInWindow(entry.capturedAt.slice(0, 10), window),
   ).length;
   const actionsDueToday = plannedActions.filter(
-    (action) => action.status !== 'done' && isDateInWindow(action.dueDate, window),
+    (action) => isActiveAction(action.status) && isDateInWindow(action.dueDate, window),
   ).length;
   const unacknowledgedReminders = reminderEvents.filter(
     (event) => event.status === 'fired' && isDateInWindow(event.scheduledFor.slice(0, 10), window),
@@ -859,11 +861,14 @@ function deriveLoopSummary(
       (action) => action.status === 'done' && isDateInWindow(action.completedAt?.slice(0, 10), window),
     )
     .map((action) => `${action.title} (${action.id})`);
+  const blockedActions = plannedActions.filter((action) => action.status === 'blocked').length;
+  const deferredActions = plannedActions.filter((action) => action.status === 'deferred').length;
 
   if (period === 'weekly') {
     const suggestedNextActions = plannedActions
       .filter(
-        (action) => action.status !== 'done' && Boolean(action.dueDate) && action.dueDate < today,
+        (action) =>
+          isActiveAction(action.status) && Boolean(action.dueDate) && action.dueDate < today,
       )
       .map((action) => action.title)
       .slice(0, 5);
@@ -872,6 +877,8 @@ function deriveLoopSummary(
       pendingCaptures,
       actionsDueToday,
       unacknowledgedReminders,
+      blockedActions,
+      deferredActions,
       completedActions,
       ...(suggestedNextActions.length > 0 ? { suggestedNextActions } : {}),
     };
@@ -881,6 +888,8 @@ function deriveLoopSummary(
     pendingCaptures,
     actionsDueToday,
     unacknowledgedReminders,
+    blockedActions,
+    deferredActions,
     completedActions,
   };
 }

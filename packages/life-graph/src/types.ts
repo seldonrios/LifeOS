@@ -468,6 +468,8 @@ export interface LifeGraphLoopSummary {
   pendingCaptures: number;
   actionsDueToday: number;
   unacknowledgedReminders: number;
+  blockedActions?: number;
+  deferredActions?: number;
   completedActions: string[];
   suggestedNextActions?: string[];
 }

@@ -111,8 +111,9 @@ export interface ReviewCommandOptions {
 }
 
 export interface TaskCommandOptions {
-  action: 'list' | 'complete' | 'next';
+  action: 'list' | 'complete' | 'next' | 'block' | 'cancel' | 'unblock';
   taskId?: string;
+  reason?: string;
   outputJson: boolean;
   graphPath: string;
   verbose: boolean;

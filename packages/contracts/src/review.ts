@@ -15,6 +15,8 @@ export const ReviewLoopSummarySchema = z
     pendingCaptures: z.number().int().nonnegative(),
     actionsDueToday: z.number().int().nonnegative(),
     unacknowledgedReminders: z.number().int().nonnegative(),
+    blockedActions: z.number().int().nonnegative().optional(),
+    deferredActions: z.number().int().nonnegative().optional(),
     completedActions: z.array(z.string().min(1)),
     suggestedNextActions: z.array(z.string().min(1)).optional(),
   })

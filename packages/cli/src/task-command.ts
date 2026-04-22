@@ -42,6 +42,15 @@ function statusColor(status: TaskListItem['status']): string {
   if (status === 'done') {
     return chalk.green(status);
   }
+  if (status === 'blocked') {
+    return chalk.red(status);
+  }
+  if (status === 'deferred') {
+    return chalk.dim(status);
+  }
+  if (status === 'cancelled') {
+    return chalk.strikethrough(chalk.gray(status));
+  }
   if (status === 'in-progress') {
     return chalk.cyan(status);
   }
@@ -391,6 +400,132 @@ export async function handleTaskComplete(
     options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
   } else {
     options.stdout(chalk.green(`Task ${updatedTask.id.slice(0, 8)} completed: ${updatedTask.title}\n`));
+  }
+
+  return payload;
+}
+
+async function resolvePlannedActionByIdOrPrefix(
+  taskId: string | undefined,
+  client: Pick<LifeGraphClient, 'getPlannedAction' | 'loadGraph'>,
+): Promise<PlannedAction> {
+  const needle = (taskId ?? '').trim().toLowerCase();
+  if (!needle) {
+    throw new Error('Task ID is required.');
+  }
+
+  const exactPlannedAction = await client.getPlannedAction(needle);
+  if (exactPlannedAction) {
+    return exactPlannedAction;
+  }
+
+  const graph = await client.loadGraph();
+  const plannedActionMatches = (graph.plannedActions ?? []).filter((action) => {
+    const normalizedActionId = action.id.toLowerCase();
+    return normalizedActionId !== needle && normalizedActionId.startsWith(needle);
+  });
+
+  if (plannedActionMatches.length > 1) {
+    const ids = plannedActionMatches.map((match) => match.id.slice(0, 8)).join(', ');
+    throw new Error(`Task ID prefix "${taskId}" is ambiguous. Matches: ${ids}`);
+  }
+
+  const matched = plannedActionMatches[0];
+  if (!matched) {
+    throw new Error(`Task "${taskId}" not found.`);
+  }
+
+  return matched;
+}
+
+export async function handleTaskBlock(
+  taskId: string | undefined,
+  reason: string | undefined,
+  client: Pick<LifeGraphClient, 'getPlannedAction' | 'loadGraph' | 'updatePlannedAction'>,
+  options: TaskIoOptions,
+): Promise<{ id: string; title: string; status: 'blocked'; blockedReason?: string }> {
+  const plannedAction = await resolvePlannedActionByIdOrPrefix(taskId, client);
+  const blockedReason = reason?.trim();
+  const patch: Partial<PlannedAction> = {
+    status: 'blocked',
+    ...(blockedReason ? { blockedReason } : {}),
+  };
+  await client.updatePlannedAction(plannedAction.id, patch);
+
+  const payload = {
+    id: plannedAction.id,
+    title: plannedAction.title,
+    status: 'blocked' as const,
+    ...(blockedReason ? { blockedReason } : {}),
+  };
+
+  if (options.outputJson) {
+    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    options.stdout(chalk.green(`Planned action ${plannedAction.id.slice(0, 8)} blocked: ${plannedAction.title}\n`));
+  }
+
+  return payload;
+}
+
+export async function handleTaskCancel(
+  taskId: string | undefined,
+  client: Pick<
+    LifeGraphClient,
+    'getPlannedAction' | 'loadGraph' | 'updatePlannedAction' | 'cancelRemindersForAction'
+  >,
+  options: TaskIoOptions,
+): Promise<{ id: string; title: string; status: 'cancelled' }> {
+  const plannedAction = await resolvePlannedActionByIdOrPrefix(taskId, client);
+  await client.updatePlannedAction(plannedAction.id, { status: 'cancelled' });
+  await client.cancelRemindersForAction(plannedAction.id);
+
+  const payload = {
+    id: plannedAction.id,
+    title: plannedAction.title,
+    status: 'cancelled' as const,
+  };
+
+  if (options.outputJson) {
+    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    options.stdout(chalk.green(`Planned action ${plannedAction.id.slice(0, 8)} cancelled: ${plannedAction.title}\n`));
+  }
+
+  return payload;
+}
+
+export async function handleTaskUnblock(
+  taskId: string | undefined,
+  client: Pick<LifeGraphClient, 'getPlannedAction' | 'loadGraph' | 'updatePlannedAction'>,
+  options: TaskIoOptions,
+): Promise<{ id: string; title: string; status: 'todo' }> {
+  const plannedAction = await resolvePlannedActionByIdOrPrefix(taskId, client);
+
+  if (plannedAction.status === 'blocked') {
+    await client.updatePlannedAction(plannedAction.id, {
+      status: 'todo',
+      blockedReason: undefined,
+    });
+  } else if (plannedAction.status === 'deferred') {
+    await client.updatePlannedAction(plannedAction.id, {
+      status: 'todo',
+      deferredUntil: undefined,
+    });
+  } else {
+    throw new Error('Action is not blocked or deferred.');
+  }
+
+  const payload = {
+    id: plannedAction.id,
+    title: plannedAction.title,
+    status: 'todo' as const,
+  };
+
+  if (options.outputJson) {
+    options.stdout(`${JSON.stringify(payload, null, 2)}\n`);
+  } else {
+    options.stdout(chalk.green(`Planned action ${plannedAction.id.slice(0, 8)} unblocked: ${plannedAction.title}\n`));
   }
 
   return payload;

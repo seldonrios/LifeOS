@@ -4,7 +4,13 @@ import test from 'node:test';
 import type { PlannedAction } from '@lifeos/contracts';
 import type { LifeGraphDocument, LifeGraphTask } from '@lifeos/life-graph';
 
-import { flattenPlannedActions, handleTaskComplete } from './task-command';
+import {
+  flattenPlannedActions,
+  handleTaskBlock,
+  handleTaskCancel,
+  handleTaskComplete,
+  handleTaskUnblock,
+} from './task-command';
 
 function createGraph(overrides: Partial<LifeGraphDocument> = {}): LifeGraphDocument {
   return {
@@ -232,4 +238,223 @@ test('handleTaskComplete falls back to GoalPlan task compatibility shim', async 
   assert.equal(result.id, 'task_alpha1234');
   assert.equal(savedGraphs.length, 1);
   assert.equal(savedGraphs[0]?.plans[0]?.tasks[0]?.status, 'done');
+});
+
+test('handleTaskBlock transitions todo to blocked and stores blockedReason', async () => {
+  const updateCalls: Array<{ id: string; patch: Partial<PlannedAction> }> = [];
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_block_1',
+        title: 'Blocked action',
+        status: 'todo',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>) {
+      updateCalls.push({ id, patch });
+    },
+  };
+
+  await handleTaskBlock('action_block_1', 'waiting on vendor', client, {
+    outputJson: true,
+    stdout: () => undefined,
+  });
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'action_block_1');
+  assert.deepEqual(updateCalls[0]?.patch, {
+    status: 'blocked',
+    blockedReason: 'waiting on vendor',
+  });
+});
+
+test('handleTaskBlock works without a reason', async () => {
+  const updateCalls: Array<{ id: string; patch: Partial<PlannedAction> }> = [];
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_block_2',
+        title: 'Block without reason',
+        status: 'todo',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>) {
+      updateCalls.push({ id, patch });
+    },
+  };
+
+  await handleTaskBlock('action_block_2', undefined, client, {
+    outputJson: true,
+    stdout: () => undefined,
+  });
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'action_block_2');
+  assert.deepEqual(updateCalls[0]?.patch, {
+    status: 'blocked',
+  });
+});
+
+test('handleTaskCancel transitions todo to cancelled and cancels reminders', async () => {
+  const updateCalls: Array<{ id: string; patch: Partial<PlannedAction> }> = [];
+  const cancelCalls: string[] = [];
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_cancel_1',
+        title: 'Cancel action',
+        status: 'todo',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>) {
+      updateCalls.push({ id, patch });
+    },
+    async cancelRemindersForAction(actionId: string) {
+      cancelCalls.push(actionId);
+    },
+  };
+
+  await handleTaskCancel('action_cancel_1', client, {
+    outputJson: true,
+    stdout: () => undefined,
+  });
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'action_cancel_1');
+  assert.deepEqual(updateCalls[0]?.patch, { status: 'cancelled' });
+  assert.deepEqual(cancelCalls, ['action_cancel_1']);
+});
+
+test('handleTaskUnblock transitions blocked to todo and clears blockedReason', async () => {
+  const updateCalls: Array<{ id: string; patch: Partial<PlannedAction> }> = [];
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_unblock_1',
+        title: 'Unblock action',
+        status: 'blocked',
+        blockedReason: 'waiting on vendor',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>) {
+      updateCalls.push({ id, patch });
+    },
+  };
+
+  await handleTaskUnblock('action_unblock_1', client, {
+    outputJson: true,
+    stdout: () => undefined,
+  });
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'action_unblock_1');
+  assert.deepEqual(updateCalls[0]?.patch, { status: 'todo', blockedReason: undefined });
+});
+
+test('handleTaskUnblock transitions deferred to todo and clears deferredUntil', async () => {
+  const updateCalls: Array<{ id: string; patch: Partial<PlannedAction> }> = [];
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_unblock_2',
+        title: 'Deferred action',
+        status: 'deferred',
+        deferredUntil: '2026-05-01T00:00:00.000Z',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction(id: string, patch: Partial<PlannedAction>) {
+      updateCalls.push({ id, patch });
+    },
+  };
+
+  await handleTaskUnblock('action_unblock_2', client, {
+    outputJson: true,
+    stdout: () => undefined,
+  });
+
+  assert.equal(updateCalls.length, 1);
+  assert.equal(updateCalls[0]?.id, 'action_unblock_2');
+  assert.deepEqual(updateCalls[0]?.patch, { status: 'todo', deferredUntil: undefined });
+});
+
+test('handleTaskUnblock throws when action is neither blocked nor deferred', async () => {
+  const client = {
+    async getPlannedAction() {
+      return {
+        id: 'action_unblock_3',
+        title: 'Done action',
+        status: 'done',
+      } as PlannedAction;
+    },
+    async loadGraph() {
+      return createGraph();
+    },
+    async updatePlannedAction() {
+      return;
+    },
+  };
+
+  await assert.rejects(
+    () =>
+      handleTaskUnblock('action_unblock_3', client, {
+        outputJson: true,
+        stdout: () => undefined,
+      }),
+    /not blocked or deferred/i,
+  );
+});
+
+test('flattenPlannedActions includes blocked and deferred items', () => {
+  const graph = createGraph({
+    plannedActions: [
+      {
+        id: 'action_todo',
+        title: 'Todo action',
+        status: 'todo',
+      },
+      {
+        id: 'action_blocked',
+        title: 'Blocked action',
+        status: 'blocked',
+      },
+      {
+        id: 'action_deferred',
+        title: 'Deferred action',
+        status: 'deferred',
+      },
+      {
+        id: 'action_done',
+        title: 'Done action',
+        status: 'done',
+      },
+      {
+        id: 'action_cancelled',
+        title: 'Cancelled action',
+        status: 'cancelled',
+      },
+    ] as PlannedAction[],
+  });
+
+  const rows = flattenPlannedActions(graph);
+  const ids = rows.map((row) => row.id);
+  assert.ok(ids.includes('action_todo'));
+  assert.ok(ids.includes('action_blocked'));
+  assert.ok(ids.includes('action_deferred'));
+  assert.equal(ids.includes('action_done'), false);
+  assert.equal(ids.includes('action_cancelled'), false);
 });

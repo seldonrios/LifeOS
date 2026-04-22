@@ -17,6 +17,8 @@ export declare const ReviewLoopSummarySchema: z.ZodObject<{
     pendingCaptures: z.ZodNumber;
     actionsDueToday: z.ZodNumber;
     unacknowledgedReminders: z.ZodNumber;
+    blockedActions: z.ZodOptional<z.ZodNumber>;
+    deferredActions: z.ZodOptional<z.ZodNumber>;
     completedActions: z.ZodArray<z.ZodString>;
     suggestedNextActions: z.ZodOptional<z.ZodArray<z.ZodString>>;
 }, z.core.$strict>;
@@ -33,6 +35,8 @@ export declare const ReviewReportSchema: z.ZodObject<{
         pendingCaptures: z.ZodNumber;
         actionsDueToday: z.ZodNumber;
         unacknowledgedReminders: z.ZodNumber;
+        blockedActions: z.ZodOptional<z.ZodNumber>;
+        deferredActions: z.ZodOptional<z.ZodNumber>;
         completedActions: z.ZodArray<z.ZodString>;
         suggestedNextActions: z.ZodOptional<z.ZodArray<z.ZodString>>;
     }, z.core.$strict>;
@@ -56,6 +60,8 @@ export declare const ReviewPayloadSchema: z.ZodObject<{
         pendingCaptures: z.ZodNumber;
         actionsDueToday: z.ZodNumber;
         unacknowledgedReminders: z.ZodNumber;
+        blockedActions: z.ZodOptional<z.ZodNumber>;
+        deferredActions: z.ZodOptional<z.ZodNumber>;
         completedActions: z.ZodArray<z.ZodString>;
         suggestedNextActions: z.ZodOptional<z.ZodArray<z.ZodString>>;
     }, z.core.$strict>;
