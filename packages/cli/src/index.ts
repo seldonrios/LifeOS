@@ -2374,7 +2374,7 @@ export async function runTickCommand(
       await publishEventSafely(
         Topics.lifeos.reminderFired,
         {
-          id: reminder.id,
+          reminderId: reminder.id,
           actionId: reminder.actionId,
           firedAt: tickNowIso,
         },
@@ -5284,6 +5284,17 @@ export async function runRemindAckCommand(
     if (!targetReminder) {
       writeStderr(`ERR_REMINDER_NOT_FOUND: Reminder "${options.reminderId}" not found.\n`);
       return 1;
+    }
+
+    if (targetReminder.status === 'acknowledged') {
+      if (options.outputJson) {
+        writeStdout(`${JSON.stringify(targetReminder, null, 2)}\n`);
+      } else {
+        writeStdout(
+          `${chalk.green('Reminder already acknowledged:')} ${targetReminder.id} for action ${targetReminder.actionId.slice(0, 8)}\n`,
+        );
+      }
+      return 0;
     }
 
     if (targetReminder.status !== 'fired') {

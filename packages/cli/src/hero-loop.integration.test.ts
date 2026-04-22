@@ -459,7 +459,7 @@ test('tick fires scheduled reminders and publishes reminder fired event', async 
 
   const firedEvent = recorder.published.find((event) => event.type === Topics.lifeos.reminderFired);
   assert.ok(firedEvent, 'Expected lifeos.reminder.fired to be published');
-  assert.equal(firedEvent?.data.id, reminder?.id);
+  assert.equal(firedEvent?.data.reminderId, reminder?.id);
 });
 
 test('tick reminder firing is idempotent across repeated runs', async () => {
@@ -611,6 +611,109 @@ test('remind ack transitions fired reminder to acknowledged', async () => {
   const ackPayload = JSON.parse(ackStdout.join('')) as { status: string; acknowledgedAt?: string };
   assert.equal(ackPayload.status, 'acknowledged');
   assert.equal(ackPayload.acknowledgedAt, '2026-05-01T09:10:00.000Z');
+});
+
+test('remind ack on already acknowledged reminder is a no-op', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-reminder-ack-idempotent-'));
+  const graphPath = join(workspace, 'hero-loop.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+
+  const captureStdout: string[] = [];
+  const captureExit = await runCli(['capture', 'Confirm payroll run', '--json', '--graph-path', graphPath], {
+    env,
+    cwd: () => workspace,
+    stdout: (message) => {
+      captureStdout.push(message);
+    },
+  });
+  assert.equal(captureExit, 0);
+  const capturePayload = JSON.parse(captureStdout.join('')) as { id: string };
+
+  const triageStdout: string[] = [];
+  const triageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'task', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      stdout: (message) => {
+        triageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(triageExit, 0);
+  const triagePayload = JSON.parse(triageStdout.join('')) as { plannedAction: { id: string } };
+
+  const reminderStdout: string[] = [];
+  const remindExit = await runCli(
+    [
+      'remind',
+      triagePayload.plannedAction.id,
+      '--at',
+      '2026-05-01T09:00:00.000Z',
+      '--json',
+      '--graph-path',
+      graphPath,
+    ],
+    {
+      env,
+      cwd: () => workspace,
+      now: () => new Date('2026-05-01T08:00:00.000Z'),
+      stdout: (message) => {
+        reminderStdout.push(message);
+      },
+    },
+  );
+  assert.equal(remindExit, 0);
+  const reminderPayload = JSON.parse(reminderStdout.join('')) as { id: string };
+
+  const tickExit = await runCli(['tick', '--graph-path', graphPath], {
+    env,
+    cwd: () => workspace,
+    now: () => new Date('2026-05-01T09:05:00.000Z'),
+  });
+  assert.equal(tickExit, 0);
+
+  const firstAckStdout: string[] = [];
+  const firstAckExit = await runCli(
+    ['remind', 'ack', reminderPayload.id, '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      now: () => new Date('2026-05-01T09:10:00.000Z'),
+      stdout: (message) => {
+        firstAckStdout.push(message);
+      },
+    },
+  );
+  assert.equal(firstAckExit, 0);
+  const firstAckPayload = JSON.parse(firstAckStdout.join('')) as {
+    status: string;
+    acknowledgedAt?: string;
+  };
+  assert.equal(firstAckPayload.status, 'acknowledged');
+
+  const secondAckStdout: string[] = [];
+  const secondAckExit = await runCli(
+    ['remind', 'ack', reminderPayload.id, '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      now: () => new Date('2026-05-01T09:15:00.000Z'),
+      stdout: (message) => {
+        secondAckStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondAckExit, 0);
+  const secondAckPayload = JSON.parse(secondAckStdout.join('')) as {
+    status: string;
+    acknowledgedAt?: string;
+  };
+  assert.equal(secondAckPayload.status, 'acknowledged');
+  assert.equal(secondAckPayload.acknowledgedAt, firstAckPayload.acknowledgedAt);
 });
 
 test('remind ack on scheduled reminder returns an error', async () => {
