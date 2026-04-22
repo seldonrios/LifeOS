@@ -1231,6 +1231,9 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       let healthMetricEntries = [...(graph.healthMetricEntries ?? [])];
       let healthDailyStreaks = [...(graph.healthDailyStreaks ?? [])];
       let memory = [...(graph.memory ?? [])];
+      let captureEntries = [...graph.captureEntries];
+      let plannedActions = [...graph.plannedActions];
+      let reminderEvents = [...graph.reminderEvents];
 
       const incomingPlanRecords = toArrayOfRecords(payload.goals ?? payload.plans);
       const incomingPlans: GoalPlan[] = [];
@@ -1368,6 +1371,100 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
       memory = mergedMemory.items.slice(-MAX_MEMORY_ENTRIES);
       conflicts.push(...mergedMemory.conflicts);
 
+      const incomingCaptureEntryRecords = toArrayOfRecords(payload.captureEntries);
+      const incomingCaptureEntries: CaptureEntry[] = [];
+      for (const entry of incomingCaptureEntryRecords) {
+        const parsed = CaptureEntrySchema.safeParse(entry);
+        if (!parsed.success) {
+          conflicts.push({
+            collection: 'captureEntries',
+            id: getString(entry.id) ?? 'unknown',
+            reason: 'incoming_invalid',
+          });
+          continue;
+        }
+        incomingCaptureEntries.push(parsed.data);
+      }
+      const mergedCaptureEntries = mergeByIdLastWriteWins(
+        captureEntries,
+        incomingCaptureEntries,
+        'captureEntries',
+        (item) => parseIsoOrZero(item.capturedAt),
+        (item) => item.capturedAt,
+      );
+      captureEntries = mergedCaptureEntries.items;
+      conflicts.push(...mergedCaptureEntries.conflicts);
+
+      const incomingPlannedActionRecords = toArrayOfRecords(payload.plannedActions);
+      const incomingPlannedActions: PlannedAction[] = [];
+      for (const entry of incomingPlannedActionRecords) {
+        const parsed = PlannedActionSchema.safeParse(entry);
+        if (!parsed.success) {
+          conflicts.push({
+            collection: 'plannedActions',
+            id: getString(entry.id) ?? 'unknown',
+            reason: 'incoming_invalid',
+          });
+          continue;
+        }
+        incomingPlannedActions.push(parsed.data);
+      }
+      const existingPlannedActionsById = new Map(plannedActions.map((item) => [item.id.trim(), item]));
+      const tieFilteredIncomingPlannedActions: PlannedAction[] = [];
+      for (const incoming of incomingPlannedActions) {
+        const existing = existingPlannedActionsById.get(incoming.id.trim());
+        if (!existing) {
+          tieFilteredIncomingPlannedActions.push(incoming);
+          continue;
+        }
+
+        const incomingCompletedAtTs = parseIsoOrZero(incoming.completedAt);
+        const existingCompletedAtTs = parseIsoOrZero(existing.completedAt);
+        if (incomingCompletedAtTs === 0 && existingCompletedAtTs === 0) {
+          conflicts.push({
+            collection: 'plannedActions',
+            id: incoming.id,
+            reason: 'incoming_older',
+          });
+          continue;
+        }
+
+        tieFilteredIncomingPlannedActions.push(incoming);
+      }
+      const mergedPlannedActions = mergeByIdLastWriteWins(
+        plannedActions,
+        tieFilteredIncomingPlannedActions,
+        'plannedActions',
+        (item) => parseIsoOrZero(item.completedAt),
+        (item) => item.completedAt,
+      );
+      plannedActions = mergedPlannedActions.items;
+      conflicts.push(...mergedPlannedActions.conflicts);
+
+      const incomingReminderEventRecords = toArrayOfRecords(payload.reminderEvents);
+      const incomingReminderEvents: ReminderEvent[] = [];
+      for (const entry of incomingReminderEventRecords) {
+        const parsed = ReminderEventSchema.safeParse(entry);
+        if (!parsed.success) {
+          conflicts.push({
+            collection: 'reminderEvents',
+            id: getString(entry.id) ?? 'unknown',
+            reason: 'incoming_invalid',
+          });
+          continue;
+        }
+        incomingReminderEvents.push(parsed.data);
+      }
+      const mergedReminderEvents = mergeByIdLastWriteWins(
+        reminderEvents,
+        incomingReminderEvents,
+        'reminderEvents',
+        (item) => parseIsoOrZero(item.scheduledFor),
+        (item) => item.scheduledFor,
+      );
+      reminderEvents = mergedReminderEvents.items;
+      conflicts.push(...mergedReminderEvents.conflicts);
+
       const eventType = getString(payload.type);
       const eventData = isRecord(payload.data) ? payload.data : null;
       if (eventType && eventData) {
@@ -1479,6 +1576,9 @@ export function createLifeGraphClient(options: CreateLifeGraphClientOptions = {}
           healthMetricEntries,
           healthDailyStreaks,
           memory,
+          captureEntries,
+          plannedActions,
+          reminderEvents,
         },
         resolvedGraphPath,
       );

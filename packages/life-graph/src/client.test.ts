@@ -531,6 +531,247 @@ test('mergeDelta normalizes health streak events with date alias for lastLoggedD
   assert.equal(streak?.lastLoggedDate, '2026-03-25');
 });
 
+test('mergeDelta applies last-write-wins for hero loop collections', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-hero-loop-');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendCaptureEntry({
+    id: 'cap-1',
+    content: 'Original capture',
+    type: 'text',
+    capturedAt: '2026-03-24T08:00:00.000Z',
+    source: 'test',
+    tags: [],
+    status: 'pending',
+  });
+  await client.appendPlannedAction({
+    id: 'action-1',
+    title: 'Original action',
+    status: 'todo',
+    dueDate: '2026-03-25',
+    completedAt: '2026-03-24T08:00:00.000Z',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder-1',
+    actionId: 'action-1',
+    scheduledFor: '2026-03-24T08:00:00.000Z',
+    status: 'scheduled',
+  });
+
+  const mergeResult = await client.mergeDelta({
+    captureEntries: [
+      {
+        id: 'cap-1',
+        content: 'Updated capture',
+        type: 'text',
+        capturedAt: '2026-03-25T10:00:00.000Z',
+        source: 'test',
+        tags: ['updated'],
+        status: 'triaged',
+      },
+      {
+        id: 'cap-2',
+        content: 'New capture',
+        type: 'text',
+        capturedAt: '2026-03-25T11:00:00.000Z',
+        source: 'test',
+        tags: [],
+        status: 'pending',
+      },
+    ],
+    plannedActions: [
+      {
+        id: 'action-1',
+        title: 'Updated action',
+        status: 'done',
+        dueDate: '2026-03-25',
+        completedAt: '2026-03-25T10:00:00.000Z',
+      },
+    ],
+    reminderEvents: [
+      {
+        id: 'reminder-1',
+        actionId: 'action-1',
+        scheduledFor: '2026-03-25T10:00:00.000Z',
+        status: 'fired',
+      },
+    ],
+  });
+
+  assert.equal(mergeResult.merged, true);
+  assert.equal(mergeResult.conflicts.length, 0);
+
+  const graph = await loadGraph(graphPath);
+  assert.equal(graph.captureEntries.length, 2);
+  const capture = graph.captureEntries.find((entry) => entry.id === 'cap-1');
+  assert.equal(capture?.content, 'Updated capture');
+  assert.equal(capture?.status, 'triaged');
+
+  const action = graph.plannedActions.find((entry) => entry.id === 'action-1');
+  assert.equal(action?.title, 'Updated action');
+  assert.equal(action?.status, 'done');
+
+  const reminder = graph.reminderEvents.find((entry) => entry.id === 'reminder-1');
+  assert.equal(reminder?.scheduledFor, '2026-03-25T10:00:00.000Z');
+  assert.equal(reminder?.status, 'fired');
+});
+
+test('mergeDelta reports incoming_older conflicts for hero loop collections', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-hero-loop-conflicts-');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendCaptureEntry({
+    id: 'cap-conflict-1',
+    content: 'Newer local capture',
+    type: 'text',
+    capturedAt: '2026-03-25T10:00:00.000Z',
+    source: 'test',
+    tags: [],
+    status: 'pending',
+  });
+  await client.appendReminderEvent({
+    id: 'reminder-conflict-1',
+    actionId: 'action-conflict-1',
+    scheduledFor: '2026-03-25T10:00:00.000Z',
+    status: 'scheduled',
+  });
+
+  const mergeResult = await client.mergeDelta({
+    captureEntries: [
+      {
+        id: 'cap-conflict-1',
+        content: 'Older remote capture',
+        type: 'text',
+        capturedAt: '2026-03-24T08:00:00.000Z',
+        source: 'test',
+        tags: [],
+        status: 'pending',
+      },
+    ],
+    reminderEvents: [
+      {
+        id: 'reminder-conflict-1',
+        actionId: 'action-conflict-1',
+        scheduledFor: '2026-03-24T08:00:00.000Z',
+        status: 'fired',
+      },
+    ],
+  });
+
+  assert.equal(mergeResult.conflicts.length, 2);
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) =>
+        conflict.collection === 'captureEntries' &&
+        conflict.reason === 'incoming_older' &&
+        conflict.id === 'cap-conflict-1',
+    ),
+  );
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) => conflict.collection === 'reminderEvents' && conflict.reason === 'incoming_older',
+    ),
+  );
+
+  const graph = await loadGraph(graphPath);
+  const capture = graph.captureEntries.find((entry) => entry.id === 'cap-conflict-1');
+  assert.equal(capture?.content, 'Newer local capture');
+});
+
+test('mergeDelta preserves local plannedActions when completedAt is missing on both sides', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-planned-actions-tie-');
+  const client = createLifeGraphClient({ graphPath });
+
+  await client.appendPlannedAction({
+    id: 'action-tie-1',
+    title: 'Local action title',
+    status: 'todo',
+    dueDate: '2026-03-26',
+  });
+
+  const mergeResult = await client.mergeDelta({
+    plannedActions: [
+      {
+        id: 'action-tie-1',
+        title: 'Incoming stale action title',
+        status: 'deferred',
+        dueDate: '2026-03-20',
+      },
+    ],
+  });
+
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) =>
+        conflict.collection === 'plannedActions' &&
+        conflict.reason === 'incoming_older' &&
+        conflict.id === 'action-tie-1',
+    ),
+  );
+
+  const graph = await loadGraph(graphPath);
+  const action = graph.plannedActions.find((entry) => entry.id === 'action-tie-1');
+  assert.equal(action?.title, 'Local action title');
+  assert.equal(action?.status, 'todo');
+  assert.equal(action?.dueDate, '2026-03-26');
+  assert.equal(action?.completedAt, undefined);
+});
+
+test('mergeDelta reports incoming_invalid conflicts for malformed hero loop entries', async () => {
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
+  const graphPath = join(tempDir, 'lifeos-life-graph-merge-hero-loop-invalid-');
+  const client = createLifeGraphClient({ graphPath });
+
+  const mergeResult = await client.mergeDelta({
+    captureEntries: [
+      {
+        id: 'cap-invalid-1',
+        content: 'Invalid capture',
+        type: 'text',
+        capturedAt: 'not-a-date',
+        source: 'test',
+        tags: [],
+        status: 'pending',
+      },
+    ],
+    plannedActions: [
+      {
+        id: 'action-invalid-1',
+        title: '',
+        status: 'todo',
+      },
+    ],
+    reminderEvents: [
+      {
+        id: 'reminder-invalid-1',
+        actionId: 'action-invalid-1',
+        scheduledFor: 'not-a-date',
+        status: 'scheduled',
+      },
+    ],
+  });
+
+  assert.ok(mergeResult.conflicts.length >= 3);
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) => conflict.collection === 'captureEntries' && conflict.reason === 'incoming_invalid',
+    ),
+  );
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) => conflict.collection === 'plannedActions' && conflict.reason === 'incoming_invalid',
+    ),
+  );
+  assert.ok(
+    mergeResult.conflicts.some(
+      (conflict) => conflict.collection === 'reminderEvents' && conflict.reason === 'incoming_invalid',
+    ),
+  );
+});
+
 test('getNode resolves plan first, then task, otherwise null', async () => {
   const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-life-graph-client-'));
   const graphPath = join(tempDir, 'life-graph.json');
