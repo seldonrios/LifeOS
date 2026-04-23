@@ -77,6 +77,17 @@ pnpm lifeos init
 ### 60-second hero loop
 
 ```bash
+pnpm lifeos capture "Prepare for the quarterly board meeting next Thursday"
+pnpm lifeos inbox list
+pnpm lifeos inbox triage <capture-id> --action task
+pnpm lifeos task list
+pnpm lifeos task complete <task-id>
+pnpm lifeos review --period daily
+```
+
+### Planning path (after you have a capture habit)
+
+```bash
 pnpm lifeos goal "Prepare for the quarterly board meeting next Thursday"
 pnpm lifeos task list
 pnpm lifeos next

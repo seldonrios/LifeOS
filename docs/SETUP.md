@@ -4,6 +4,22 @@ This guide gets a LifeOS development environment running and validates that it i
 
 Current architecture boundary for this release: [docs/architecture/current-system-boundary.md](architecture/current-system-boundary.md).
 
+## New user: try the hero loop in 3 steps
+
+1. Install Node.js >= 20.19.0 and pnpm >= 9.15.4.
+2. In **terminal 1**, install dependencies and start Ollama:
+  ```
+  pnpm install
+  ollama serve
+  ```
+  Leave this terminal running. Then open **terminal 2** and run:
+  ```
+  pnpm lifeos init
+  ```
+3. Try the loop: `pnpm lifeos capture "your first task"` -> `pnpm lifeos inbox list` -> `pnpm lifeos inbox triage <id> --action task` -> `pnpm lifeos task list` -> `pnpm lifeos review --period daily`.
+
+_If you are setting up a development environment to contribute, continue to the Prerequisites section below._
+
 ## Prerequisites
 
 - Node.js >= 20.19.0
