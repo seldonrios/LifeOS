@@ -119,11 +119,133 @@ test('init retries Ollama detection, saves config, enables modules, and runs fir
     { moduleId: 'health-tracker', enabled: false },
     { moduleId: 'google-bridge', enabled: false },
   ]);
-  assert.match(stdout.join(''), /Welcome to LifeOS/);
+  assert.match(stdout.join(''), /Welcome to LifeOS — Personal Operations OS/);
   assert.match(stdout.join(''), /LifeOS is ready\./);
+  assert.match(stdout.join(''), /lifeos capture/);
+  assert.doesNotMatch(stdout.join(''), /lifeos voice start/);
   assert.match(stdout.join(''), /Voice requires a supported local microphone setup/);
   assert.match(stderr.join(''), /LifeOS could not reach Ollama/);
   assert.deepEqual(spinnerRecorder.calls, ['start', 'succeed', 'stop']);
+});
+
+test('init skips runGoalCommand and suggests lifeos capture when goal prompt is left empty', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'lifeos-init-skip-goal-'));
+  const graphPath = join(workspaceRoot, 'life-graph.json');
+  const stdout: string[] = [];
+  const goalCalls: Array<{ goal: string; model: string; graphPath: string }> = [];
+
+  const exitCode = await runInitCommand(
+    {
+      force: false,
+      verbose: false,
+    },
+    {
+      env: {
+        HOME: workspaceRoot,
+        LIFEOS_GRAPH_PATH: graphPath,
+      },
+      cwd: () => workspaceRoot,
+      fileExists: () => false,
+      fetchFn: async () =>
+        ({
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              models: [{ name: 'llama3.1:8b' }],
+            };
+          },
+        }) as Response,
+      confirmPrompt: async ({ message }) => {
+        if (message.includes('enable voice now')) {
+          return false;
+        }
+        return true;
+      },
+      selectPrompt: async () => 'llama3.1:8b',
+      checkboxPrompt: async () => [],
+      inputPrompt: async () => '',
+      setOptionalModuleEnabled: async () => undefined,
+      runGoalCommand: async (goal, options) => {
+        goalCalls.push({ goal, model: options.model, graphPath: options.graphPath });
+        return 0;
+      },
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      platform: 'linux',
+      checkLinuxMicrophoneTools: async () => false,
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.deepEqual(goalCalls, []);
+  assert.match(stdout.join(''), /lifeos capture/);
+});
+
+test('init goal prompt validation allows skip but rejects invalid non-empty goals', async () => {
+  const workspaceRoot = await mkdtemp(join(tmpdir(), 'lifeos-init-goal-validate-'));
+  const graphPath = join(workspaceRoot, 'life-graph.json');
+  let promptOptions:
+    | {
+        message: string;
+        validate?: (value: string) => boolean | string;
+      }
+    | undefined;
+
+  const exitCode = await runInitCommand(
+    {
+      force: false,
+      verbose: false,
+    },
+    {
+      env: {
+        HOME: workspaceRoot,
+        LIFEOS_GRAPH_PATH: graphPath,
+      },
+      cwd: () => workspaceRoot,
+      fileExists: () => false,
+      fetchFn: async () =>
+        ({
+          ok: true,
+          status: 200,
+          async json() {
+            return {
+              models: [{ name: 'llama3.1:8b' }],
+            };
+          },
+        }) as Response,
+      confirmPrompt: async ({ message }) => {
+        if (message.includes('enable voice now')) {
+          return false;
+        }
+        return true;
+      },
+      selectPrompt: async () => 'llama3.1:8b',
+      checkboxPrompt: async () => [],
+      inputPrompt: async (options) => {
+        promptOptions = options;
+        return '';
+      },
+      setOptionalModuleEnabled: async () => undefined,
+      runGoalCommand: async () => 0,
+      platform: 'linux',
+      checkLinuxMicrophoneTools: async () => false,
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  assert.ok(promptOptions);
+  assert.equal(
+    promptOptions.message,
+    'What would you like to capture first? (press Enter to skip and start with lifeos capture)',
+  );
+  assert.equal(promptOptions.validate?.(''), true);
+  assert.equal(promptOptions.validate?.('   '), true);
+  assert.equal(promptOptions.validate?.('abc'), 'Enter at least 5 characters.');
+  assert.equal(promptOptions.validate?.('a'.repeat(501)), 'Goal must be less than 500 characters.');
+  assert.equal(promptOptions.validate?.('valid\0goal'), 'Goal contains invalid characters.');
+  assert.equal(promptOptions.validate?.('Plan my week'), true);
 });
 
 test('init pulls the default model when Ollama has no tags', async () => {

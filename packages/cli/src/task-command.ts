@@ -10,7 +10,6 @@ export interface TaskListItem {
   title: string;
   planId?: string;
   status: PlannedAction['status'];
-  priority: number;
   dueDate: string | null;
   overdue: boolean;
 }
@@ -50,17 +49,6 @@ function statusColor(status: TaskListItem['status']): string {
   return chalk.yellow(status);
 }
 
-function priorityColor(priority: number): string {
-  if (priority >= 5) {
-    return chalk.red(String(priority));
-  }
-  if (priority >= 4) {
-    return chalk.yellow(String(priority));
-  }
-
-  return chalk.gray(String(priority));
-}
-
 export function flattenPlannedActions(
   graph: LifeGraphDocument,
   now: Date = new Date(),
@@ -73,7 +61,6 @@ export function flattenPlannedActions(
       title: action.title,
       planId: action.planId,
       status: action.status,
-      priority: 0,
       dueDate: action.dueDate ?? null,
       overdue: isOverdue(action.dueDate, now),
     }));
@@ -106,15 +93,14 @@ function renderTaskTable(rows: TaskListItem[]): string {
       chalk.cyan('Task'),
       chalk.cyan('Plan'),
       chalk.cyan('Status'),
-      chalk.cyan('Priority'),
       chalk.cyan('Due'),
     ],
-    colWidths: [10, 34, 28, 14, 10, 14],
+    colWidths: [10, 44, 28, 14, 14],
     wordWrap: true,
   });
 
   if (rows.length === 0) {
-    table.push(['-', 'No tasks yet', '-', '-', '-', '-']);
+    table.push(['-', 'No tasks yet', '-', '-', '-']);
     return table.toString();
   }
 
@@ -129,7 +115,6 @@ function renderTaskTable(rows: TaskListItem[]): string {
       task.title,
       task.planId ?? '-',
       statusColor(task.status),
-      priorityColor(task.priority),
       dueCell,
     ]);
   }

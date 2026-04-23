@@ -410,9 +410,9 @@ export function printCompletionBanner(writeStdout: (message: string) => void): v
         'LifeOS is ready.',
         '',
         'Try these next:',
+        '  lifeos capture "your first task or idea"',
+        '  lifeos inbox list',
         '  lifeos status',
-        '  lifeos task list',
-        '  lifeos voice start',
         '',
         'Need to re-run setup? Use: lifeos init --force',
       ],
@@ -529,7 +529,7 @@ export async function runInitCommand(
   writeStdout(
     `${formatInfoBox(
       [
-        'Welcome to LifeOS - Sovereign Personal AI Node',
+        'Welcome to LifeOS — Personal Operations OS',
         '',
         'This setup keeps your data local by default and can be safely re-run.',
         'Your data is yours, and system methods stay inspectable.',
@@ -717,11 +717,11 @@ export async function runInitCommand(
 
   const goal = await inputPrompt({
     message:
-      "What would you like LifeOS to help with first? (e.g. 'Prepare for the quarterly board meeting')",
+      'What would you like to capture first? (press Enter to skip and start with lifeos capture)',
     validate(value: string) {
       const trimmed = value.trim();
       if (trimmed.length === 0) {
-        return 'Goal cannot be empty.';
+        return true;
       }
       if (trimmed.length < 5) {
         return 'Enter at least 5 characters.';
@@ -736,40 +736,44 @@ export async function runInitCommand(
     },
   });
 
-  const goalOptions: GoalCommandOptions = {
-    outputJson: false,
-    save: true,
-    model: selectedModel,
-    graphPath,
-    verbose: false,
-  };
-
-  let goalExitCode: number;
-  try {
-    goalExitCode = await runGoalCommand(goal, goalOptions, dependencies);
-  } catch (error: unknown) {
-    const friendly = toFriendlyCliError(error, {
-      command: 'goal',
-      graphPath,
+  if (goal.trim().length > 0) {
+    const goalOptions: GoalCommandOptions = {
+      outputJson: false,
+      save: true,
       model: selectedModel,
-    });
-    writeStderr(`${chalk.red.bold('Error:')} ${friendly.message}\n`);
-    if (friendly.guidance) {
-      writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
-    }
-    return 1;
-  }
+      graphPath,
+      verbose: false,
+    };
 
-  if (goalExitCode !== 0) {
-    writeStderr(
-      `${chalk.yellow('Warning:')} First goal setup returned exit code ${goalExitCode}. You can add goals later.\n`,
-    );
+    let goalExitCode: number;
+    try {
+      goalExitCode = await runGoalCommand(goal, goalOptions, dependencies);
+    } catch (error: unknown) {
+      const friendly = toFriendlyCliError(error, {
+        command: 'goal',
+        graphPath,
+        model: selectedModel,
+      });
+      writeStderr(`${chalk.red.bold('Error:')} ${friendly.message}\n`);
+      if (friendly.guidance) {
+        writeStderr(`${chalk.yellow(friendly.guidance)}\n`);
+      }
+      return 1;
+    }
+
+    if (goalExitCode !== 0) {
+      writeStderr(
+        `${chalk.yellow('Warning:')} First goal setup returned exit code ${goalExitCode}. You can add goals later.\n`,
+      );
+    }
+  } else {
+    writeStdout('  lifeos capture "your first task or idea"\n');
   }
 
   writeStdout(`${chalk.bold('Next steps:')}\n`);
+  writeStdout('  lifeos capture "your first task or idea"\n');
+  writeStdout('  lifeos inbox list\n');
   writeStdout('  lifeos status\n');
-  writeStdout('  lifeos task list\n');
-  writeStdout('  lifeos voice start\n');
   printCompletionBanner(writeStdout);
   return 0;
 }
