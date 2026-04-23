@@ -31,6 +31,7 @@ test('module publishes unresolved once for duplicate capture id', async () => {
   await householdCaptureRouterModule.init({
     env: {
       LIFEOS_AI_ENABLED: 'false',
+      LIFEOS_HOUSEHOLD_DB_PATH: '/tmp/test-household.db',
     } as NodeJS.ProcessEnv,
     graphPath: undefined,
     eventBus: undefined,
@@ -85,6 +86,7 @@ test('module publishes shopping intent event for deterministic route', async () 
   await householdCaptureRouterModule.init({
     env: {
       LIFEOS_AI_ENABLED: 'false',
+      LIFEOS_HOUSEHOLD_DB_PATH: '/tmp/test-household.db',
     } as NodeJS.ProcessEnv,
     graphPath: undefined,
     eventBus: undefined,
@@ -127,4 +129,77 @@ test('module publishes shopping intent event for deterministic route', async () 
   assert.equal(publishes.length, 1);
   assert.equal(publishes[0]?.topic, Topics.lifeos.householdShoppingItemAddRequested);
   assert.equal(publishes[0]?.data.itemTitle, 'oat milk');
+});
+
+test('module does not subscribe when LIFEOS_HOUSEHOLD_DB_PATH is missing', async () => {
+  const subscribers = new Map<
+    string,
+    (event: { data: Record<string, unknown> }) => Promise<void>
+  >();
+  const logs: string[] = [];
+
+  await householdCaptureRouterModule.init({
+    env: {
+      LIFEOS_AI_ENABLED: 'false',
+    } as NodeJS.ProcessEnv,
+    graphPath: undefined,
+    eventBus: undefined,
+    createLifeGraphClient: (() => {
+      throw new Error('not used');
+    }) as never,
+    subscribe: async (topic, handler) => {
+      subscribers.set(
+        topic,
+        handler as (event: { data: Record<string, unknown> }) => Promise<void>,
+      );
+    },
+    publish: async (topic, data, source) => {
+      return createEventEnvelope(topic, data, source ?? 'test-runtime');
+    },
+    log: (message) => {
+      logs.push(message);
+    },
+  });
+
+  assert.equal(subscribers.size, 0);
+  assert.ok(
+    logs.some(
+      (message) =>
+        message ===
+        '[household-capture-router] skipped: missing LIFEOS_HOUSEHOLD_DB_PATH',
+    ),
+  );
+});
+
+test('module subscribes when LIFEOS_HOUSEHOLD_DB_PATH is present', async () => {
+  const subscribers = new Map<
+    string,
+    (event: { data: Record<string, unknown> }) => Promise<void>
+  >();
+
+  await householdCaptureRouterModule.init({
+    env: {
+      LIFEOS_AI_ENABLED: 'false',
+      LIFEOS_HOUSEHOLD_DB_PATH: '/tmp/test-household.db',
+    } as NodeJS.ProcessEnv,
+    graphPath: undefined,
+    eventBus: undefined,
+    createLifeGraphClient: (() => {
+      throw new Error('not used');
+    }) as never,
+    subscribe: async (topic, handler) => {
+      subscribers.set(
+        topic,
+        handler as (event: { data: Record<string, unknown> }) => Promise<void>,
+      );
+    },
+    publish: async (topic, data, source) => {
+      return createEventEnvelope(topic, data, source ?? 'test-runtime');
+    },
+    log: () => {
+      return;
+    },
+  });
+
+  assert.equal(subscribers.has(Topics.lifeos.householdVoiceCaptureCreated), true);
 });

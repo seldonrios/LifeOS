@@ -114,7 +114,7 @@ export async function runDoctorCommand(
   }
 
   type OllamaResult =
-    | { state: 'reachable-ok' }
+    | { state: 'reachable-ok'; models: string[] }
     | { state: 'reachable-degraded'; status: number }
     | { state: 'unreachable'; message: string };
 
@@ -126,7 +126,29 @@ export async function runDoctorCommand(
     try {
       const response = await fetchFn(host, { method: 'GET', signal: controller.signal });
       if (response.ok) {
-        ollamaResult = { state: 'reachable-ok' };
+        const tagsController = new AbortController();
+        const tagsTimeout = setTimeout(() => tagsController.abort(), 2500);
+        try {
+          const tagsResponse = await fetchFn(`${host}/api/tags`, {
+            method: 'GET',
+            signal: tagsController.signal,
+          });
+          if (!tagsResponse.ok) {
+            ollamaResult = { state: 'reachable-ok', models: [] };
+          } else {
+            const payload = (await tagsResponse.json()) as {
+              models?: Array<{ name?: string }>;
+            };
+            const models = (payload.models ?? [])
+              .map((model) => model.name?.trim())
+              .filter((name): name is string => Boolean(name));
+            ollamaResult = { state: 'reachable-ok', models };
+          }
+        } catch {
+          ollamaResult = { state: 'reachable-ok', models: [] };
+        } finally {
+          clearTimeout(tagsTimeout);
+        }
       } else {
         ollamaResult = { state: 'reachable-degraded', status: response.status };
       }
@@ -158,21 +180,39 @@ export async function runDoctorCommand(
     });
   }
 
-  checks.push({
+  const planningCheck: DoctorCheck = {
     id: 'ollama-planning-readiness',
-    status:
-      ollamaResult.state === 'reachable-ok'
-        ? 'PASS'
-        : ollamaResult.state === 'reachable-degraded'
-          ? 'WARN'
-          : 'FAIL',
+    status: 'FAIL',
     description: 'Ollama planning readiness (required for lifeos goal and lifeos init)',
-    ...(ollamaResult.state === 'unreachable' ? { details: ollamaResult.message } : {}),
-    suggestion:
-      ollamaResult.state === 'reachable-ok'
-        ? 'No action required'
-        : 'Ollama must be reachable with a loaded model for planning and init to succeed',
-  });
+    suggestion: 'Ollama must be reachable with a loaded model for planning and init to succeed',
+  };
+
+  const configuredGoalModel = env.LIFEOS_GOAL_MODEL?.trim();
+
+  if (ollamaResult.state === 'unreachable') {
+    planningCheck.details = ollamaResult.message;
+  } else if (ollamaResult.state === 'reachable-degraded') {
+    planningCheck.details = `${host} -> HTTP ${ollamaResult.status}`;
+  } else if (configuredGoalModel) {
+    const configuredModelAvailable = ollamaResult.models.includes(configuredGoalModel);
+    if (configuredModelAvailable) {
+      planningCheck.status = 'PASS';
+      planningCheck.details = `Configured goal model '${configuredGoalModel}' is available`;
+      planningCheck.suggestion = 'No action required';
+    } else {
+      planningCheck.details = `Configured goal model '${configuredGoalModel}' is not loaded`;
+      planningCheck.suggestion = `Run: ollama pull ${configuredGoalModel} or update LIFEOS_GOAL_MODEL to a loaded model`;
+    }
+  } else if (ollamaResult.models.length > 0) {
+    planningCheck.status = 'PASS';
+    planningCheck.details = `${ollamaResult.models.length} model(s) available`;
+    planningCheck.suggestion = 'No action required';
+  } else {
+    planningCheck.details = 'Ollama is reachable but no models are loaded';
+    planningCheck.suggestion = 'Run: ollama pull <model-name> (e.g. ollama pull llama3.1:8b)';
+  }
+
+  checks.push(planningCheck);
 
   const bus = createEventBusClient({
     env,

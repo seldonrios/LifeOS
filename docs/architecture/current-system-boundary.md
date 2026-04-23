@@ -27,7 +27,7 @@ The primary runtime and review surface is the **CLI-first, local-first daily her
 - CLI-first hero loop (capture -> triage -> plan -> reminders/next actions -> review)
 - core runtime packages and module loader
 - canonical local persistence (SQLite)
-- optional local NATS; Ollama is optional for non-planning commands (capture, triage, remind, task, review) and required for lifeos init and lifeos goal
+- optional local NATS; Ollama is optional for non-planning commands (capture, triage, remind, task, review); planning commands (lifeos init, lifeos goal) require Ollama to be reachable with at least one usable model loaded
 
 ### 2) Extended/non-MVP platform shape (optional context)
 

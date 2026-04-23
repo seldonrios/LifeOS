@@ -60,7 +60,7 @@ This command must exit 0. It runs build:modules -> typecheck -> lint -> format:c
 
 ```bash
 docker compose up ollama nats
-# Ollama is required for planning commands (lifeos init, lifeos goal); optional for capture/triage/remind/task/review
+# Ollama is required for planning commands (lifeos init, lifeos goal); optional for capture/triage/remind/task/review; a model must be pulled (e.g. `ollama pull llama3.1:8b`) before planning commands will succeed
 ```
 
 This is the supported default contributor path.
@@ -135,7 +135,7 @@ This runs build:modules -> typecheck -> lint -> format:check -> test. The first 
 
 ```bash
 docker compose up ollama nats
-# Ollama is required for planning commands (lifeos init, lifeos goal); optional for capture/triage/remind/task/review
+# Ollama is required for planning commands (lifeos init, lifeos goal); optional for capture/triage/remind/task/review; a model must be pulled (e.g. `ollama pull llama3.1:8b`) before planning commands will succeed
 ```
 
 For the full stack (all profile-gated services), run:
@@ -154,7 +154,7 @@ Use this checklist before opening a PR:
 
 - `pnpm run validate` exits 0
 - Minimal path: `docker compose up ollama nats` starts and both services stay healthy
-  (Ollama is required for lifeos init and lifeos goal; other hero-loop commands work without it)
+  (Ollama is required for lifeos init and lifeos goal; other hero-loop commands work without it; a model must be pulled, e.g. `ollama pull llama3.1:8b`, before planning commands will succeed)
 - Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
 - Startup diagnostics report is emitted (full stack path)
 

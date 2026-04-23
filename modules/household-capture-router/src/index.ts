@@ -180,6 +180,12 @@ export function createHouseholdCaptureRouterModule(
   return {
     id: 'household-capture-router',
     async init(context: ModuleRuntimeContext) {
+      const dbPath = context.env.LIFEOS_HOUSEHOLD_DB_PATH?.trim();
+      if (!dbPath) {
+        context.log('[household-capture-router] skipped: missing LIFEOS_HOUSEHOLD_DB_PATH');
+        return;
+      }
+
       const seenCaptureIds = new Set<string>();
       const classifyWithAi = createAiClassifier(context.env);
       const observabilityClient =

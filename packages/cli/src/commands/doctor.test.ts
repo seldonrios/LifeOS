@@ -66,7 +66,18 @@ test('doctor --json: Ollama healthy produces PASS reachability and PASS planning
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
-      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/tags')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ models: [{ name: 'llama3.1:8b' }] }),
+          } as Response;
+        }
+
+        return { ok: true, status: 200 } as Response;
+      },
     },
     CLI_VERSION,
   );
@@ -86,7 +97,141 @@ test('doctor --json: Ollama healthy produces PASS reachability and PASS planning
   assert.equal(exitCode, 0);
 });
 
-test('doctor --json: Ollama degraded (503) produces PASS reachability and WARN planning-readiness', async () => {
+test('doctor --json: Ollama reachable without models produces PASS reachability and FAIL planning-readiness', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  const exitCode = await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/tags')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ models: [] }),
+          } as Response;
+        }
+
+        return { ok: true, status: 200 } as Response;
+      },
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as { checks: Array<{ id: string; status: string }>; failCount: number };
+
+  const reachability = output.checks.find((c) => c.id === 'ollama-reachability');
+  const planning = output.checks.find((c) => c.id === 'ollama-planning-readiness');
+
+  assert.ok(reachability, 'ollama-reachability check should be present');
+  assert.equal(reachability!.status, 'PASS');
+
+  assert.ok(planning, 'ollama-planning-readiness check should be present');
+  assert.equal(planning!.status, 'FAIL');
+
+  assert.ok(output.failCount >= 1, 'failCount should be at least 1 when planning-readiness is FAIL');
+  assert.equal(exitCode, 1);
+});
+
+test('doctor --json: configured goal model missing produces FAIL planning-readiness', async () => {
+  const { env, cwd } = await makeTempEnv();
+  env.LIFEOS_GOAL_MODEL = 'qwen2.5:7b';
+  const stdout: string[] = [];
+
+  const exitCode = await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/tags')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({ models: [{ name: 'llama3.1:8b' }] }),
+          } as Response;
+        }
+
+        return { ok: true, status: 200 } as Response;
+      },
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{ id: string; status: string; details?: string }>;
+    failCount: number;
+  };
+
+  const reachability = output.checks.find((c) => c.id === 'ollama-reachability');
+  const planning = output.checks.find((c) => c.id === 'ollama-planning-readiness');
+
+  assert.ok(reachability, 'ollama-reachability check should be present');
+  assert.equal(reachability!.status, 'PASS');
+
+  assert.ok(planning, 'ollama-planning-readiness check should be present');
+  assert.equal(planning!.status, 'FAIL');
+  assert.ok(planning!.details?.includes('qwen2.5:7b'));
+
+  assert.ok(output.failCount >= 1, 'failCount should be at least 1 when planning-readiness is FAIL');
+  assert.equal(exitCode, 1);
+});
+
+test('doctor --json: configured goal model present produces PASS planning-readiness', async () => {
+  const { env, cwd } = await makeTempEnv();
+  env.LIFEOS_GOAL_MODEL = 'llama3.1:8b';
+  const stdout: string[] = [];
+
+  const exitCode = await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      fetchFn: async (input) => {
+        const url = String(input);
+        if (url.endsWith('/api/tags')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              models: [{ name: 'llama3.1:8b' }, { name: 'mistral:7b' }],
+            }),
+          } as Response;
+        }
+
+        return { ok: true, status: 200 } as Response;
+      },
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{ id: string; status: string; details?: string }>;
+    failCount: number;
+  };
+
+  const planning = output.checks.find((c) => c.id === 'ollama-planning-readiness');
+
+  assert.ok(planning, 'ollama-planning-readiness check should be present');
+  assert.equal(planning!.status, 'PASS');
+  assert.ok(planning!.details?.includes('llama3.1:8b'));
+
+  assert.equal(output.failCount, 0);
+  assert.equal(exitCode, 0);
+});
+
+test('doctor --json: Ollama degraded (503) produces PASS reachability and FAIL planning-readiness', async () => {
   const { env, cwd } = await makeTempEnv();
   const stdout: string[] = [];
 
@@ -112,7 +257,7 @@ test('doctor --json: Ollama degraded (503) produces PASS reachability and WARN p
   assert.ok(reachability!.details?.includes('HTTP 503'), 'reachability details should include HTTP status');
 
   assert.ok(planning, 'ollama-planning-readiness check should be present');
-  assert.equal(planning!.status, 'WARN');
+  assert.equal(planning!.status, 'FAIL');
 });
 
 test('doctor --json: output includes expected static check ids', async () => {
