@@ -444,10 +444,9 @@ Runtime modules:
 - `sync-core` mirrors life-event deltas across paired devices (local-first)
 - `orchestrator` builds contextual memory, proactive suggestions, and daily briefings
 
-Module contract layers:
+Module contract:
 
-- `lifeos.json`: distribution/security/trust contract for certification and loading policy
-- runtime manifest (`manifest.ts` and compiled runtime manifest consumed by loader): runtime capability contract
+- `lifeos.json`: the single manifest artifact for the current MVP — distribution, security, trust, and loader policy. There is no separate runtime manifest layer in the current MVP. See `docs/community/module-authoring-guide.md` for the authoritative authoring reference.
 
 ## Works with LifeOS
 

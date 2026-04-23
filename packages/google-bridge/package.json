@@ -17,7 +17,7 @@
   "dependencies": {
     "@lifeos/event-bus": "workspace:*",
     "@lifeos/life-graph": "workspace:*",
-    "@lifeos/module-loader": "workspace:*",
+    "@lifeos/module-sdk": "workspace:*",
     "@lifeos/voice-core": "workspace:*"
   }
 }

@@ -4,7 +4,7 @@ import {
   type LifeGraphCalendarEvent,
   type LifeGraphClient,
 } from '@lifeos/life-graph';
-import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 interface TickOverduePayload {
   checkedTasks: number;
