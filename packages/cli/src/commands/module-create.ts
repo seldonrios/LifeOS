@@ -1,5 +1,6 @@
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
+import { getFirstPartyModuleManifestDirectory } from '@lifeos/core';
 import { validateLifeOSManifest } from '@lifeos/module-loader';
 
 const MODULE_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
@@ -196,17 +197,18 @@ export async function validateModuleManifest(
   cliVersion?: string,
 ): Promise<ModuleValidateResult> {
   const normalizedName = moduleName.trim().toLowerCase();
+  const manifestDirectory = getFirstPartyModuleManifestDirectory(normalizedName);
   if (!MODULE_NAME_PATTERN.test(normalizedName)) {
     return {
       valid: false,
-      manifestPath: resolve(baseDir, 'modules', normalizedName, 'lifeos.json'),
+      manifestPath: resolve(baseDir, 'modules', manifestDirectory, 'lifeos.json'),
       errors: [
         'Module name must be kebab-case and use only lowercase letters, numbers, and hyphens.',
       ],
     };
   }
 
-  const manifestPath = resolve(baseDir, 'modules', normalizedName, 'lifeos.json');
+  const manifestPath = resolve(baseDir, 'modules', manifestDirectory, 'lifeos.json');
   let raw: unknown;
   try {
     raw = JSON.parse(await readFile(manifestPath, 'utf8')) as unknown;

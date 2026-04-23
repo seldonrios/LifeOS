@@ -2170,6 +2170,8 @@ test('module list displays enabled google-bridge sub-features', async () => {
   assert.equal(listExit, 0);
   assert.match(listOut.join(''), /google-bridge \[optional\].*sub: calendar, tasks/i);
   assert.match(listOut.join(''), /resource=(low|medium|high)/i);
+  assert.match(listOut.join(''), /reminder \[system\].*enabled/i);
+  assert.match(listOut.join(''), /personality \[baseline\].*shared-impl: briefing/i);
 });
 
 test('module setup email-summarizer configures credentials and enables module', async () => {
@@ -2252,34 +2254,37 @@ test('module validate rejects invalid sub-feature names', async () => {
   assert.match(stderr.join(''), /subFeatures/i);
 });
 
-test('module enable rejects optional modules without local runtime implementation', async () => {
+test('module enable accepts deprecated health alias and normalizes to health-tracker', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-missing-'));
-  const stderr: string[] = [];
+  const stdout: string[] = [];
 
   const exitCode = await runCli(['module', 'enable', 'health'], {
     env: { HOME: baseHome },
-    stderr: (message) => {
-      stderr.push(message);
+    stdout: (message) => {
+      stdout.push(message);
     },
   });
 
-  assert.equal(exitCode, 1);
-  assert.match(stderr.join(''), /no local runtime implementation/i);
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /Optional module "health-tracker" enabled/i);
+  assert.match(stdout.join(''), /Alias "health" resolved to canonical module "health-tracker"/i);
 });
 
-test('module enable resolves health-tracker alias to health optional module', async () => {
+test('module status resolves health alias to health-tracker details', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-enable-health-tracker-'));
-  const stderr: string[] = [];
+  const stdout: string[] = [];
 
-  const exitCode = await runCli(['module', 'enable', 'health-tracker'], {
+  const exitCode = await runCli(['module', 'status', 'health'], {
     env: { HOME: baseHome },
-    stderr: (message) => {
-      stderr.push(message);
+    stdout: (message) => {
+      stdout.push(message);
     },
   });
 
-  assert.equal(exitCode, 1);
-  assert.match(stderr.join(''), /optional module "health" has no local runtime implementation/i);
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /health-tracker Status/i);
+  assert.match(stdout.join(''), /Requested alias: health/i);
+  assert.match(stdout.join(''), /Aliases: health/i);
 });
 
 test('module install accepts github repo and auto-enables known optional module', async () => {
@@ -2306,7 +2311,7 @@ test('module install accepts github repo and auto-enables known optional module'
   assert.match(listOut.join(''), /research \[optional\].*enabled/i);
 });
 
-test('module install supports health-tracker repository naming without auto-enabling health', async () => {
+test('module install supports health-tracker repository naming and auto-enables the canonical module', async () => {
   const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-module-install-health-tracker-'));
   const stdout: string[] = [];
 
@@ -2327,7 +2332,8 @@ test('module install supports health-tracker repository naming without auto-enab
     },
   });
   assert.equal(listExit, 0);
-  assert.match(listOut.join(''), /health \[optional\].*disabled/i);
+  assert.match(listOut.join(''), /health-tracker \[optional\].*enabled/i);
+  assert.match(listOut.join(''), /alias: health \(compat\)/i);
 });
 
 test('module install rejects malformed repository strings', async () => {

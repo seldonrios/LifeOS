@@ -1,6 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 
+import { findFirstPartyModuleCatalogEntry, resolveFirstPartyModuleId } from './module-catalog';
 import { optionalModules, type OptionalModuleId } from './modules';
 
 export interface ModuleStateRecord {
@@ -33,7 +34,7 @@ function normalizeEnabledOptionalModules(value: unknown): OptionalModuleId[] {
     return [];
   }
   const normalized = value
-    .map((entry) => (typeof entry === 'string' ? entry.trim().toLowerCase() : ''))
+    .map((entry) => (typeof entry === 'string' ? resolveFirstPartyModuleId(entry) : ''))
     .filter((entry): entry is OptionalModuleId => OPTIONAL_SET.has(entry));
   return [...new Set(normalized)].sort((left, right) => left.localeCompare(right));
 }
@@ -79,8 +80,10 @@ export async function setOptionalModuleEnabled(
   enabled: boolean,
   options: ModuleStateOptions = {},
 ): Promise<ModuleStateRecord> {
-  const normalizedId = moduleId.trim().toLowerCase();
+  const normalizedId = resolveFirstPartyModuleId(moduleId);
   if (!OPTIONAL_SET.has(normalizedId)) {
+    const resolved = findFirstPartyModuleCatalogEntry(moduleId);
+    const label = resolved?.canonicalId ?? moduleId;
     throw new Error(`Optional module "${moduleId}" is not recognized.`);
   }
 

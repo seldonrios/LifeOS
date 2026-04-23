@@ -116,7 +116,7 @@ test('init retries Ollama detection, saves config, enables modules, and runs fir
     { moduleId: 'news', enabled: true },
     { moduleId: 'email-summarizer', enabled: false },
     { moduleId: 'habit-streak', enabled: false },
-    { moduleId: 'health', enabled: false },
+    { moduleId: 'health-tracker', enabled: false },
     { moduleId: 'google-bridge', enabled: false },
   ]);
   assert.match(stdout.join(''), /Welcome to LifeOS/);

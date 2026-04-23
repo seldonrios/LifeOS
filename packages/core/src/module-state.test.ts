@@ -19,3 +19,14 @@ test('module state enables and disables optional modules', async () => {
   const disabled = await setOptionalModuleEnabled('research', false, { statePath: path });
   assert.deepEqual(disabled.enabledOptionalModules, []);
 });
+
+test('module state normalizes deprecated health alias to health-tracker', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'lifeos-core-module-state-health-'));
+  const path = join(dir, 'modules.json');
+
+  const enabled = await setOptionalModuleEnabled('health', true, { statePath: path });
+  assert.deepEqual(enabled.enabledOptionalModules, ['health-tracker']);
+
+  const readBack = await readModuleState({ statePath: path });
+  assert.deepEqual(readBack.enabledOptionalModules, ['health-tracker']);
+});

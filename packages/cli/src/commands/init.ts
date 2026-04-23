@@ -56,7 +56,7 @@ const MODULE_DESCRIPTIONS: Record<string, string> = {
   weather: 'Offline-first weather snapshots',
   news: 'RSS-powered daily digest',
   'habit-streak': 'Daily habit tracking and streak milestones',
-  health: 'Health metric tracking',
+  'health-tracker': 'Health metric tracking and voice-driven check-ins',
   'email-summarizer': 'AI-summarized email digest (IMAP)',
   'google-bridge': 'Google Calendar & Gmail integration',
 };

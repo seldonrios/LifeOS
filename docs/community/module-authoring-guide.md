@@ -42,15 +42,17 @@ The current manifest contract is the shape validated by `validateLifeOSManifest(
 
 ## Module taxonomy
 
-The current module tiers are defined in `packages/core/src/modules.ts`.
+The current module tiers are defined from the first-party catalog in `packages/core/src/module-catalog.ts` and exposed through `packages/core/src/modules.ts`.
 
 | Tier | Description | Examples | Community-authorable? |
 |---|---|---|---|
 | **Baseline** | Always loaded; core user-facing modules | `scheduler`, `notes`, `calendar`, `personality`/`briefing` | No — maintained by the platform team |
-| **Optional** | User-enabled; community modules live here | `email-summarizer`, `habit-streak`, `health`, `research` | ✅ Yes |
+| **Optional** | User-enabled; community modules live here | `email-summarizer`, `habit-streak`, `health-tracker` (`health` alias), `research` | ✅ Yes |
 | **System** | Always-on infrastructure; not user-toggleable | `reminder`, `sync-core`, `household-capture-router`, `household-chores`, `household-shopping` | No — platform infrastructure |
 
 `personality` and `briefing` share one implementation in the current MVP and both appear in the baseline tier.
+
+The centralized CLI first-party registry is an internal MVP composition mechanism. It is not a second manifest layer and it is not part of the community authoring contract.
 
 ## `ModuleManifest` in `types.ts` — not for module authors
 

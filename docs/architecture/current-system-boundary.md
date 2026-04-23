@@ -102,10 +102,12 @@ Phase 3 Current System Boundary
 ### 4. Module Platform
 
 - Runtime modules under `modules/`
-- Module SDK/runtime contracts under `packages/module-*` and loader packages
-- Two explicit module contract layers:
-  - `lifeos.json`: distribution/security/trust contract
-  - runtime manifest (`manifest.ts` source and compiled runtime manifest consumed by loader): capability/runtime contract
+- `lifeos.json` is the single current MVP manifest artifact; the loader validates it directly
+- `@lifeos/module-sdk` is the current authoring/runtime SDK surface for module code
+- First-party module composition currently flows through the centralized CLI registry
+  - This registry is accepted Phase 3 MVP architecture debt.
+  - It centralizes first-party tiers, aliases, manifest directories, and implementation bindings.
+  - Full dynamic third-party/runtime discovery is future work, not current MVP behavior.
 
 ### 5. Companion Surfaces
 
@@ -148,4 +150,5 @@ Use these terms consistently in MVP review docs.
 
 - Compose profile name `dormant` is retained for compatibility; it means optional/non-MVP extended platform services, not abandoned code.
 - Some docs still use historical "agent mesh" wording; interpret this as local orchestration mesh unless explicitly discussing future node/federation behavior.
+- First-party CLI module composition remains centralized by design for the Phase 3 MVP; this is intentional reviewable debt rather than dynamic plugin discovery.
 - Transitional coupling may exist in selected areas where app/service code references module-adjacent concerns directly; these should be tracked and reduced over time.

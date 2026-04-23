@@ -1,34 +1,38 @@
+import { listFirstPartyModulesByTier } from './module-catalog';
+
 /**
  * Module tiers for the current MVP:
- * - `baselineModules` are always loaded, user-facing, and toggleable in a future phase.
- * - `optionalModules` are user-enabled; implementations may be `null` when not yet available.
- * - `systemModules` are always-on infrastructure modules and are not user-toggleable.
+ * - `baselineModules` are always loaded and user-facing.
+ * - `optionalModules` are user-enabled and stored in module state using canonical ids.
+ * - `systemModules` are platform-managed modules. Some remain hidden from CLI lists.
  */
-export const baselineModules = [
+export const baselineModules = listFirstPartyModulesByTier('baseline') as readonly [
   'scheduler',
   'notes',
   'calendar',
   'personality',
   'briefing',
-] as const;
+];
 
-export const optionalModules = [
+export const optionalModules = listFirstPartyModulesByTier('optional') as readonly [
   'research',
   'weather',
   'news',
   'email-summarizer',
   'habit-streak',
-  'health',
+  'health-tracker',
   'google-bridge',
-] as const;
+];
 
-export const systemModules = [
+export const systemModules = listFirstPartyModulesByTier('system') as readonly [
   'reminder',
   'sync-core',
   'household-capture-router',
   'household-chores',
   'household-shopping',
-] as const;
+  'home-state',
+  'voice',
+];
 
 export type BaselineModuleId = (typeof baselineModules)[number];
 export type OptionalModuleId = (typeof optionalModules)[number];

@@ -45,33 +45,13 @@ import {
 } from '@lifeos/contracts';
 import { createModuleLoader, type LifeOSModule, type ModuleLoader } from '@lifeos/module-loader';
 import {
-  baselineModules,
-  optionalModules,
+  getFirstPartyModuleManifestDirectory,
   readModuleState,
+  resolveFirstPartyModuleId,
   setOptionalModuleEnabled,
 } from '@lifeos/core';
 import { interpretGoal, runTick, type InterpretGoalStage } from '@lifeos/goal-engine';
-import { calendarModule } from '@lifeos/calendar-module';
-import { newsModule } from '@lifeos/news-module';
-import { notesModule } from '@lifeos/notes-module';
-import { orchestratorModule } from '@lifeos/orchestrator';
-import { researchModule } from '@lifeos/research-module';
-import { reminderModule } from '@lifeos/reminder-module';
-import { schedulerModule } from '@lifeos/scheduler-module';
-import { DeviceRegistry, SyncEngine, syncModule, type PairedDevice } from '@lifeos/sync-core';
-import { weatherModule } from '@lifeos/weather-module';
-import {
-  emailSummarizerModule,
-  getCredentialsFilePath,
-  readCredentials,
-  writeCredentials,
-  type ImapCredentials,
-} from '@lifeos/email-summarizer-module';
-import { habitStreakModule } from '@lifeos/habit-streak-module';
-import { homeStateModule } from '@lifeos/home-state-module';
-import { householdCaptureRouterModule } from '@lifeos/household-capture-router-module';
-import { householdChoresModule } from '@lifeos/household-chores-module';
-import { householdShoppingModule } from '@lifeos/household-shopping-module';
+import { DeviceRegistry, SyncEngine, type PairedDevice } from '@lifeos/sync-core';
 import {
   MeshCoordinator,
   MeshRegistry,
@@ -101,7 +81,17 @@ import {
   createVoiceCore,
   type VoiceCoreOptions,
 } from '@lifeos/voice-core';
-import { voiceModule } from '@lifeos/voice-module';
+import {
+  findCliFirstPartyModuleEntry,
+  getCredentialsFilePath,
+  listCliBootRuntimeModules,
+  listCliDefaultRuntimeModules,
+  listCliFirstPartyModuleEntries,
+  listCliLoadableModules,
+  readCredentials,
+  type ImapCredentials,
+  writeCredentials,
+} from './first-party-module-registry';
 import { normalizeErrorMessage, toFriendlyCliError } from './errors';
 import { formatGoalPlan } from './format';
 import { printGraphSummary, printReviewInsights } from './printer';
@@ -166,31 +156,6 @@ const VOICE_DEMO_SCENARIOS: Record<VoiceDemoScenario, string> = {
   briefing: 'Hey LifeOS, give me my daily briefing',
   proactive: 'Hey LifeOS, I prefer short answers',
 } as const;
-
-const MODULE_DEFINITIONS: Record<string, LifeOSModule | null> = {
-  scheduler: schedulerModule,
-  notes: notesModule,
-  calendar: calendarModule,
-  personality: orchestratorModule, // alias: shares orchestratorModule impl in current MVP; will split in a future phase
-  briefing: orchestratorModule, // alias: shares orchestratorModule impl in current MVP; will split in a future phase
-  research: researchModule,
-  weather: weatherModule,
-  news: newsModule,
-  'email-summarizer': emailSummarizerModule,
-  'habit-streak': habitStreakModule,
-  'home-state': homeStateModule,
-  health: null, // placeholder: implementation not yet available in current MVP
-  'google-bridge': googleBridgeModule,
-  voice: voiceModule,
-};
-
-const ALWAYS_ON_RUNTIME_MODULES: LifeOSModule[] = [
-  reminderModule,
-  syncModule,
-  householdCaptureRouterModule,
-  householdChoresModule,
-  householdShoppingModule,
-];
 
 const MODULARITY_RISKS: Array<{ id: number; name: string }> = [
   { id: 1, name: 'Life Graph Schema Evolution' },
@@ -892,14 +857,6 @@ function toModuleIdFromRepo(repo: string): string {
     .replace(/^-+|-+$/g, '');
 }
 
-function resolveOptionalModuleAlias(moduleId: string): string {
-  const normalized = moduleId.trim().toLowerCase();
-  if (normalized === 'health-tracker') {
-    return 'health';
-  }
-  return normalized;
-}
-
 function resolveHomeDir(env: NodeJS.ProcessEnv): string {
   const windowsHome = `${env.HOMEDRIVE?.trim() ?? ''}${env.HOMEPATH?.trim() ?? ''}`.trim();
   return env.HOME?.trim() || env.USERPROFILE?.trim() || windowsHome || process.cwd();
@@ -925,7 +882,7 @@ interface TrustSettingsSnapshot {
 
 interface TrustModuleSnapshot {
   id: string;
-  tier: 'core' | 'optional';
+  tier: 'baseline' | 'optional' | 'system';
   enabled: boolean;
   available: boolean;
   permissions: {
@@ -1001,13 +958,6 @@ function getStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-function resolveManifestDirectory(moduleId: string): string {
-  if (moduleId === 'health') {
-    return 'health-tracker';
-  }
-  return moduleId;
-}
-
 function deriveResourceHintFromResources(resources: unknown): 'low' | 'medium' | 'high' {
   if (!resources || typeof resources !== 'object' || Array.isArray(resources)) {
     return 'medium';
@@ -1028,7 +978,7 @@ async function readModuleResourceHint(
   baseCwd: string,
   moduleId: string,
 ): Promise<'low' | 'medium' | 'high'> {
-  const moduleDir = resolveManifestDirectory(moduleId);
+  const moduleDir = getFirstPartyModuleManifestDirectory(moduleId);
   const manifestPath = join(baseCwd, 'modules', moduleDir, 'lifeos.json');
   try {
     const parsed = JSON.parse(await readFile(manifestPath, 'utf8')) as Record<string, unknown>;
@@ -1086,7 +1036,7 @@ async function readManifestPermissions(
     events: [] as string[],
   };
 
-  const moduleDir = resolveManifestDirectory(moduleId);
+  const moduleDir = getFirstPartyModuleManifestDirectory(moduleId);
   const manifestPath = join(baseCwd, 'modules', moduleDir, 'lifeos.json');
   try {
     const raw = await readFile(manifestPath, 'utf8');
@@ -1114,25 +1064,19 @@ async function buildTrustReport(
 ): Promise<TrustReportPayload> {
   const settings = await readTrustSettings(env);
   const moduleState = await readModuleState({ env });
-  const coreModuleIds = baselineModules;
-  const optionalModuleIds = optionalModules;
-  const coreModuleIdSet = new Set<string>(coreModuleIds);
+  const moduleEntries = listCliFirstPartyModuleEntries({ visibleOnly: true });
   const enabledOptionalModules = new Set<string>(moduleState.enabledOptionalModules);
-  const allModuleIds = Array.from(new Set([...coreModuleIds, ...optionalModuleIds]));
 
   const moduleSnapshots: TrustModuleSnapshot[] = [];
-  for (const moduleId of allModuleIds) {
-    const alias = resolveOptionalModuleAlias(moduleId);
-    const isCore = coreModuleIdSet.has(moduleId);
-    const enabled = isCore ? true : enabledOptionalModules.has(moduleId);
-    const available = MODULE_DEFINITIONS[alias] !== null;
-    const permissions = await readManifestPermissions(baseCwd, alias);
+  for (const entry of moduleEntries) {
+    const enabled = entry.userToggleable ? enabledOptionalModules.has(entry.canonicalId) : true;
+    const permissions = await readManifestPermissions(baseCwd, entry.canonicalId);
 
     moduleSnapshots.push({
-      id: alias,
-      tier: isCore ? 'core' : 'optional',
+      id: entry.canonicalId,
+      tier: entry.tier,
       enabled,
-      available,
+      available: entry.implementationAvailable,
       permissions,
     });
   }
@@ -1337,72 +1281,33 @@ function extractGraphPathArg(args: string[]): string | undefined {
 }
 
 function resolveDefaultModules(dependencies: RunCliDependencies): LifeOSModule[] {
-  return (
-    dependencies.defaultModules ?? [
-      reminderModule,
-      calendarModule,
-      schedulerModule,
-      notesModule,
-      researchModule,
-      weatherModule,
-      newsModule,
-      googleBridgeModule,
-      householdCaptureRouterModule,
-      householdChoresModule,
-      householdShoppingModule,
-      syncModule,
-      orchestratorModule,
-    ]
-  );
-}
-
-function dedupeModules(modules: LifeOSModule[]): LifeOSModule[] {
-  const byId = new Map<string, LifeOSModule>();
-  for (const module of modules) {
-    byId.set(module.id, module);
-  }
-  return Array.from(byId.values());
+  return dependencies.defaultModules ?? listCliDefaultRuntimeModules();
 }
 
 function renderModuleStateRows(enabledOptionalModules: string[]): Array<{
   id: string;
-  tier: 'baseline' | 'optional';
+  tier: 'baseline' | 'optional' | 'system';
   enabled: boolean;
   available: boolean;
+  aliases: string[];
+  sharedImplementationWith: string[];
+  statusText?: string;
 }> {
   const enabledSet = new Set(enabledOptionalModules);
-  const baselineRows = baselineModules.map((id) => ({
-    id,
-    tier: 'baseline' as const,
-    enabled: true,
-    available: MODULE_DEFINITIONS[id] !== null,
+  return listCliFirstPartyModuleEntries({ visibleOnly: true }).map((entry) => ({
+    id: entry.canonicalId,
+    tier: entry.tier,
+    enabled: entry.userToggleable ? enabledSet.has(entry.canonicalId) : true,
+    available: entry.implementationAvailable,
+    aliases: entry.aliases,
+    sharedImplementationWith: entry.sharedImplementationWith ?? [],
+    statusText: entry.statusText,
   }));
-  const optionalRows = optionalModules.map((id) => ({
-    id,
-    tier: 'optional' as const,
-    enabled: enabledSet.has(id),
-    available: MODULE_DEFINITIONS[id] !== null,
-  }));
-  return [...baselineRows, ...optionalRows];
 }
 
 async function resolveBootModulesFromState(env: NodeJS.ProcessEnv): Promise<LifeOSModule[]> {
   const state = await readModuleState({ env });
-  const runtimeIds = [...baselineModules, ...state.enabledOptionalModules];
-  const modules: LifeOSModule[] = [];
-
-  for (const moduleId of runtimeIds) {
-    const resolved = MODULE_DEFINITIONS[moduleId];
-    if (resolved) {
-      modules.push(resolved);
-    }
-  }
-
-  for (const module of ALWAYS_ON_RUNTIME_MODULES) {
-    modules.push(module);
-  }
-
-  return dedupeModules(modules);
+  return listCliBootRuntimeModules(state.enabledOptionalModules);
 }
 
 function parseNodeRole(rawRole: string | undefined): NodeRole {
@@ -3638,15 +3543,31 @@ export async function runModuleCommand(
     writeStdout(chalk.bold('LifeOS Modules\n'));
     writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     for (const row of rows) {
-      const status = row.enabled ? chalk.green('enabled') : chalk.gray('disabled');
-      const availability = row.available ? '' : chalk.yellow(' (not installed)');
+      const status = row.available
+        ? row.enabled
+          ? chalk.green('enabled')
+          : chalk.gray('disabled')
+        : chalk.yellow('unavailable');
       const resourceHint = resourceHintByModule.get(row.id) ?? 'medium';
       const resourceSuffix = chalk.dim(` resource=${resourceHint}`);
-      const suffix =
+      const details: string[] = [];
+      if (row.aliases.length > 0) {
+        details.push(`alias: ${row.aliases.join(', ')} (compat)`);
+      }
+      if (row.sharedImplementationWith.length > 0) {
+        details.push(`shared-impl: ${row.sharedImplementationWith.join(', ')}`);
+      }
+      if (row.statusText) {
+        details.push(row.statusText);
+      }
+      if (
         row.id === 'google-bridge' && row.enabled && googleBridgeSubs.length > 0
-          ? chalk.cyan(` (sub: ${googleBridgeSubs.join(', ')})`)
-          : '';
-      writeStdout(`${row.id} [${row.tier}] ${status}${availability}${resourceSuffix}${suffix}\n`);
+      ) {
+        details.push(`sub: ${googleBridgeSubs.join(', ')}`);
+      }
+      const detailSuffix =
+        details.length > 0 ? chalk.dim(` ; ${details.join(' ; ')}`) : '';
+      writeStdout(`${row.id} [${row.tier}] ${status}${resourceSuffix}${detailSuffix}\n`);
     }
     return 0;
   }
@@ -3656,13 +3577,44 @@ export async function runModuleCommand(
       writeStderr(`${chalk.red.bold('Error:')} Module name is required for "module status".\n`);
       return 1;
     }
-    const normalizedModuleName = moduleName.toLowerCase();
-    if (normalizedModuleName !== 'google-bridge') {
-      writeStdout(`Status not implemented for ${moduleName}\n`);
+    const requestedModuleName = moduleName.trim().toLowerCase();
+    const moduleEntry = findCliFirstPartyModuleEntry(requestedModuleName);
+    if (!moduleEntry || !moduleEntry.visibleInCli) {
+      writeStderr(`${chalk.red.bold('Error:')} Unknown module "${moduleName}".\n`);
+      return 1;
+    }
+
+    const state = await readModuleState({ env });
+    const enabled = moduleEntry.userToggleable
+      ? state.enabledOptionalModules.includes(moduleEntry.canonicalId)
+      : true;
+
+    writeStdout(chalk.bold(`${moduleEntry.canonicalId} Status\n`));
+    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
+    writeStdout(`Tier: ${moduleEntry.tier}\n`);
+    writeStdout(`Enabled: ${enabled ? 'yes' : 'no'}\n`);
+    writeStdout(`Availability: ${moduleEntry.implementationAvailable ? 'available' : 'unavailable'}\n`);
+    writeStdout(`User toggleable: ${moduleEntry.userToggleable ? 'yes' : 'no'}\n`);
+    writeStdout(`Manifest: modules/${moduleEntry.manifestDirectory}/lifeos.json\n`);
+    writeStdout(`Resource hint: ${await readModuleResourceHint(baseCwd, moduleEntry.canonicalId)}\n`);
+    if (requestedModuleName !== moduleEntry.canonicalId) {
+      writeStdout(`Requested alias: ${requestedModuleName}\n`);
+    }
+    if (moduleEntry.aliases.length > 0) {
+      writeStdout(`Aliases: ${moduleEntry.aliases.join(', ')}\n`);
+    }
+    if (moduleEntry.sharedImplementationWith && moduleEntry.sharedImplementationWith.length > 0) {
+      writeStdout(`Shared implementation: ${moduleEntry.sharedImplementationWith.join(', ')}\n`);
+    }
+    if (moduleEntry.statusText) {
+      writeStdout(`Note: ${moduleEntry.statusText}\n`);
+    }
+
+    if (moduleEntry.canonicalId !== 'google-bridge') {
       return 0;
     }
 
-    const enabled = await getEnabledGoogleBridgeSubFeatures({ env });
+    const enabledGoogleBridgeSubs = await getEnabledGoogleBridgeSubFeatures({ env });
     const syncStatus = await readGoogleBridgeStatusSnapshot(env);
     const authorized = isGoogleBridgeAuthorized(env);
     const lastSyncLabel = syncStatus?.syncedAt
@@ -3670,15 +3622,12 @@ export async function runModuleCommand(
       : 'never';
     const syncRecency = syncStatus?.syncedAt ? formatSyncRecency(syncStatus.syncedAt) : 'n/a';
     const health = resolveGoogleBridgeHealth(syncStatus?.syncedAt ?? null);
-    writeStdout(chalk.bold('Google Bridge Status\n'));
-    writeStdout(`${chalk.dim('-'.repeat(40))}\n`);
     writeStdout(
-      `Enabled sub-features: ${enabled.length > 0 ? enabled.join(', ') : chalk.gray('none')}\n`,
+      `Enabled sub-features: ${enabledGoogleBridgeSubs.length > 0 ? enabledGoogleBridgeSubs.join(', ') : chalk.gray('none')}\n`,
     );
     writeStdout(`Last sync: ${lastSyncLabel}\n`);
     writeStdout(`Sync recency: ${syncRecency}\n`);
     writeStdout(`Health: ${health}\n`);
-    writeStdout(`Resource hint: ${await readModuleResourceHint(baseCwd, 'google-bridge')}\n`);
     writeStdout(`Authorization: ${authorized ? 'connected' : 'missing'}\n`);
     if (syncStatus?.source) {
       writeStdout(`Last source: ${syncStatus.source}\n`);
@@ -3687,7 +3636,9 @@ export async function runModuleCommand(
       const tts = dependencies.createTextToSpeech
         ? dependencies.createTextToSpeech()
         : new TextToSpeech();
-      await tts.speak(`Google Bridge is active with ${enabled.length} sub-features enabled.`);
+      await tts.speak(
+        `Google Bridge is active with ${enabledGoogleBridgeSubs.length} sub-features enabled.`,
+      );
     } catch {
       // status command remains useful without speech output
     }
@@ -3759,16 +3710,20 @@ export async function runModuleCommand(
       );
       return 1;
     }
-    const normalizedModuleName = resolveOptionalModuleAlias(moduleName);
-    if (!optionalModules.includes(normalizedModuleName as (typeof optionalModules)[number])) {
+    const moduleEntry = findCliFirstPartyModuleEntry(moduleName);
+    const visibleOptionalModuleIds = listCliFirstPartyModuleEntries({ visibleOnly: true })
+      .filter((entry) => entry.userToggleable)
+      .map((entry) => entry.canonicalId);
+    if (!moduleEntry || !moduleEntry.userToggleable) {
       writeStderr(
-        `${chalk.red.bold('Error:')} "${moduleName}" is not an optional module. Optional modules: ${optionalModules.join(', ')}.\n`,
+        `${chalk.red.bold('Error:')} "${moduleName}" is not an optional module. Optional modules: ${visibleOptionalModuleIds.join(', ')}.\n`,
       );
       return 1;
     }
-    if (MODULE_DEFINITIONS[normalizedModuleName] === null) {
+    const normalizedModuleName = moduleEntry.canonicalId;
+    if (!moduleEntry.implementationAvailable || moduleEntry.implementation === null) {
       writeStderr(
-        `${chalk.red.bold('Error:')} Optional module "${normalizedModuleName}" has no local runtime implementation yet.\n`,
+        `${chalk.red.bold('Error:')} Optional module "${normalizedModuleName}" is present but unavailable in the current MVP runtime.\n`,
       );
       return 1;
     }
@@ -3843,6 +3798,13 @@ export async function runModuleCommand(
           `Optional module "${normalizedModuleName}" ${options.action === 'enable' ? 'enabled' : 'disabled'}.\n`,
         ),
       );
+      if (moduleName.trim().toLowerCase() !== normalizedModuleName) {
+        writeStdout(
+          chalk.gray(
+            `Alias "${moduleName.trim().toLowerCase()}" resolved to canonical module "${normalizedModuleName}".\n`,
+          ),
+        );
+      }
       return 0;
     } catch (error: unknown) {
       writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
@@ -3904,13 +3866,11 @@ export async function runModuleCommand(
           ),
         );
       }
-      const resolvedInstalledModuleId = resolveOptionalModuleAlias(installed.moduleId);
-      if (
-        optionalModules.includes(resolvedInstalledModuleId as (typeof optionalModules)[number]) &&
-        MODULE_DEFINITIONS[resolvedInstalledModuleId] !== null
-      ) {
-        await setOptionalModuleEnabled(resolvedInstalledModuleId, true, { env });
-        if (resolvedInstalledModuleId === 'google-bridge') {
+      const resolvedInstalledModuleId = resolveFirstPartyModuleId(installed.moduleId);
+      const installedEntry = findCliFirstPartyModuleEntry(resolvedInstalledModuleId);
+      if (installedEntry?.userToggleable && installedEntry.implementationAvailable) {
+        await setOptionalModuleEnabled(installedEntry.canonicalId, true, { env });
+        if (installedEntry.canonicalId === 'google-bridge') {
           const existing = await getEnabledGoogleBridgeSubFeatures({ env });
           if (existing.length === 0) {
             await setEnabledGoogleBridgeSubFeatures(['calendar'], { env });
@@ -4759,7 +4719,22 @@ export async function runModulesCommand(
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const defaults = resolveDefaultModules(dependencies);
-  const knownModules = new Map(defaults.map((module) => [module.id, module]));
+  const knownModules = new Map<string, LifeOSModule>();
+  if (dependencies.defaultModules) {
+    for (const module of defaults) {
+      knownModules.set(module.id, module);
+    }
+  } else {
+    for (const entry of listCliLoadableModules()) {
+      if (!entry.implementation) {
+        continue;
+      }
+      knownModules.set(entry.canonicalId, entry.implementation);
+      for (const alias of entry.aliases) {
+        knownModules.set(alias, entry.implementation);
+      }
+    }
+  }
   const createLoader = dependencies.createModuleLoader ?? createModuleLoader;
 
   const ephemeralLoader =
@@ -4785,7 +4760,7 @@ export async function runModulesCommand(
         return 1;
       }
 
-      const selected = knownModules.get(options.moduleId);
+      const selected = knownModules.get(options.moduleId.trim().toLowerCase());
       if (!selected) {
         writeStderr(`${chalk.red.bold('Error:')} Unknown module "${options.moduleId}".\n`);
         return 1;

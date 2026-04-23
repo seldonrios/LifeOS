@@ -155,12 +155,14 @@ Use this checklist before opening a PR:
 - Full stack path: `docker compose --profile dormant up` runs `init-db` to completion (`service_completed_successfully`) and profile-gated services start
 - Startup diagnostics report is emitted (full stack path)
 
-## Module Contract Layers
+## Module Contract Surface
 
-LifeOS currently uses two module contract layers:
+LifeOS currently uses one manifest artifact and one SDK surface for modules:
 
-- `lifeos.json`: distribution/security/trust contract used for certification and policy checks
-- runtime manifest (`manifest.ts` source and compiled runtime manifest consumed by loader): runtime capability contract
+- `lifeos.json`: the current MVP manifest artifact used for certification, policy checks, and runtime validation
+- `@lifeos/module-sdk`: the current authoring/runtime SDK surface for module code
+
+First-party module composition in the CLI is currently centralized in a registry. That is accepted MVP architecture debt, not a second manifest layer.
 
 ## Personal Operations OS Onboarding Checklist
 
