@@ -25,7 +25,7 @@
   "scripts": {
     "dev": "tsx src/index.ts",
     "build": "tsc -b",
-    "test": "tsx --test src/index.test.ts src/task-command.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/hero-loop.integration.test.ts src/commands/init.test.ts src/commands/marketplace.test.ts"
+    "test": "tsx --test src/index.test.ts src/task-command.test.ts src/goal-interpreter.test.ts src/errors.test.ts src/hero-loop.integration.test.ts src/commands/init.test.ts src/commands/marketplace.test.ts src/commands/doctor.test.ts"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.4.1",

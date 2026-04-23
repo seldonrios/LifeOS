@@ -113,41 +113,66 @@ export async function runDoctorCommand(
     });
   }
 
-  try {
-    const host = (env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').trim();
+  type OllamaResult =
+    | { state: 'reachable-ok' }
+    | { state: 'reachable-degraded'; status: number }
+    | { state: 'unreachable'; message: string };
+
+  const host = (env.OLLAMA_HOST ?? 'http://127.0.0.1:11434').trim();
+  let ollamaResult: OllamaResult;
+  {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 2500);
     try {
       const response = await fetchFn(host, { method: 'GET', signal: controller.signal });
-      if (!response.ok) {
-        checks.push({
-          id: 'ollama',
-          status: 'WARN',
-          description: 'Ollama endpoint is reachable but returned non-OK status',
-          details: `${host} -> HTTP ${response.status}`,
-          suggestion: 'Confirm Ollama is healthy and model service is ready',
-        });
+      if (response.ok) {
+        ollamaResult = { state: 'reachable-ok' };
       } else {
-        checks.push({
-          id: 'ollama',
-          status: 'PASS',
-          description: 'Ollama endpoint is reachable',
-          details: host,
-          suggestion: 'No action required',
-        });
+        ollamaResult = { state: 'reachable-degraded', status: response.status };
       }
+    } catch (error: unknown) {
+      ollamaResult = { state: 'unreachable', message: normalizeErrorMessage(error) };
     } finally {
       clearTimeout(timeout);
     }
-  } catch (error: unknown) {
+  }
+
+  if (ollamaResult.state === 'reachable-ok' || ollamaResult.state === 'reachable-degraded') {
     checks.push({
-      id: 'ollama',
-      status: 'FAIL',
-      description: 'Ollama reachability check failed',
-      details: normalizeErrorMessage(error),
-      suggestion: 'Run `ollama serve` and verify OLLAMA_HOST',
+      id: 'ollama-reachability',
+      status: 'PASS',
+      description: 'Ollama endpoint reachability',
+      ...(ollamaResult.state === 'reachable-degraded'
+        ? { details: `${host} -> HTTP ${ollamaResult.status}` }
+        : {}),
+      suggestion: 'No action required',
+    });
+  } else {
+    checks.push({
+      id: 'ollama-reachability',
+      status: 'WARN',
+      description: 'Ollama endpoint reachability',
+      details: ollamaResult.message,
+      suggestion:
+        'Run ollama serve and verify OLLAMA_HOST; some commands work without Ollama',
     });
   }
+
+  checks.push({
+    id: 'ollama-planning-readiness',
+    status:
+      ollamaResult.state === 'reachable-ok'
+        ? 'PASS'
+        : ollamaResult.state === 'reachable-degraded'
+          ? 'WARN'
+          : 'FAIL',
+    description: 'Ollama planning readiness (required for lifeos goal and lifeos init)',
+    ...(ollamaResult.state === 'unreachable' ? { details: ollamaResult.message } : {}),
+    suggestion:
+      ollamaResult.state === 'reachable-ok'
+        ? 'No action required'
+        : 'Ollama must be reachable with a loaded model for planning and init to succeed',
+  });
 
   const bus = createEventBusClient({
     env,
