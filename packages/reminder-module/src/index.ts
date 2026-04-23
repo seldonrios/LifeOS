@@ -2,7 +2,7 @@ import type { BaseEvent } from '@lifeos/event-bus';
 
 import { Topics } from '@lifeos/contracts';
 
-import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-loader';
+import type { LifeOSModule, ModuleRuntimeContext } from '@lifeos/module-sdk';
 
 interface TaskCompletedPayload {
   taskId: string;

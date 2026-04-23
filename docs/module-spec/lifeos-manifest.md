@@ -1,12 +1,8 @@
 # LifeOS Module Manifest (`lifeos.json`)
 
-This repository currently uses two module contract layers:
+`lifeos.json` is the sole distribution/security/trust contract for the current MVP. The module loader validates it directly via `validateLifeOSManifest()`. There is no separate compiled runtime manifest artifact in the current MVP — the runtime layer described in some earlier drafts is a future/aspirational design.
 
-1. **Distribution/security manifest**: `lifeos.json` (this document)
-2. **Runtime capability manifest**: `manifest.ts` source and compiled runtime manifest consumed by the module loader
-
-`lifeos.json` is the marketplace/distribution/security/trust contract.
-The runtime manifest is the loader/runtime capability contract.
+For the authoritative module authoring reference, see `docs/community/module-authoring-guide.md`.
 
 Every marketplace-ready module must include a `lifeos.json` file at:
 
@@ -33,7 +29,6 @@ This manifest is the distribution/security/trust contract for certification, mar
     "memory": "low"
   },
   "subFeatures": ["calendar", "tasks"],
-  "graphVersion": "0.1.0",
   "requires": ["@lifeos/voice-core@>=0.3.0 <0.4.0", "@lifeos/life-graph@>=0.3.0 <0.4.0"],
   "category": "health",
   "tags": ["habit", "fitness"]
@@ -52,7 +47,6 @@ Template reference:
 - `permissions`: explicit requested capabilities.
 - `resources`: runtime hints used for scheduling and baseline safety (`cpu`, `memory`).
 - `subFeatures` (optional): bridge-specific feature toggles (`calendar`, `tasks`, etc.).
-- `graphVersion`: required Life Graph schema baseline expected by the module.
 - `requires`: required LifeOS package dependencies, each in `@lifeos/<pkg>@<semver-range>` format.
 - Before `1.0.0`, prefer bounded ranges for compatibility clarity (example: `>=0.3.0 <0.4.0`).
 - `category`: lowercase kebab-case category.
@@ -94,7 +88,4 @@ Set `LIFEOS_MODULE_RUNTIME_PERMISSIONS=strict` to reject runtime publish/subscri
 
 ## Relationship to Runtime Manifest
 
-In addition to `lifeos.json`, modules provide runtime capabilities through `manifest.ts` (and compiled runtime manifest output consumed by the loader).
-
-- `lifeos.json` answers: trust/security/distribution intent and policy declarations
-- runtime manifest answers: executable capability wiring the runtime can load and invoke
+> **Future/aspirational design:** A separate `manifest.ts` runtime manifest layer (compiled output consumed by the loader) has been discussed in earlier drafts. This is **not** part of the current MVP contract. In the current MVP, `lifeos.json` is the only manifest artifact — the module loader validates it directly and there is no compiled runtime manifest artifact.
