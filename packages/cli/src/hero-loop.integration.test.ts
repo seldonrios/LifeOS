@@ -264,6 +264,193 @@ test('inbox triage --action plan creates GoalPlan + projected PlannedActions + s
   assert.equal(triageEvent?.data.planId, captureEntry?.triagedToPlanId);
 });
 
+test('inbox triage --action task is idempotent on duplicate triage', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-inbox-task-idempotent-'));
+  const graphPath = join(workspace, 'inbox-task-idempotent.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+
+  const captureStdout: string[] = [];
+  const captureExit = await runCli(['capture', 'Call accountant', '--json', '--graph-path', graphPath], {
+    env,
+    cwd: () => workspace,
+    stdout: (message) => {
+      captureStdout.push(message);
+    },
+  });
+  assert.equal(captureExit, 0);
+  const capturePayload = JSON.parse(captureStdout.join('')) as { id: string };
+
+  const firstTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'task', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+    },
+  );
+  assert.equal(firstTriageExit, 0);
+
+  const secondTriageStdout: string[] = [];
+  const secondTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'task', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      stdout: (message) => {
+        secondTriageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondTriageExit, 0);
+  const secondPayload = JSON.parse(secondTriageStdout.join('')) as {
+    status: string;
+    triagedToActionId: string;
+    plannedAction: { id: string };
+  };
+  assert.equal(secondPayload.status, 'already_triaged');
+
+  const graphClient = createLifeGraphClient({ graphPath, env });
+  const graph = await graphClient.loadGraph();
+  assert.equal((graph.plannedActions ?? []).length, 1);
+  assert.equal(secondPayload.triagedToActionId, (graph.plannedActions ?? [])[0]?.id);
+  assert.equal(secondPayload.plannedAction.id, (graph.plannedActions ?? [])[0]?.id);
+});
+
+test('inbox triage --action plan is idempotent on duplicate triage', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-inbox-plan-idempotent-'));
+  const graphPath = join(workspace, 'inbox-plan-idempotent.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+
+  const interpretedPlan: GoalPlan = {
+    id: 'goal_plan_idempotent_1',
+    title: 'Plan idempotent goal',
+    description: 'Ensure duplicate plan triage is idempotent',
+    deadline: '2026-05-15',
+    createdAt: '2026-04-24T09:00:00.000Z',
+    tasks: [
+      {
+        id: 'task_1',
+        title: 'Define milestones',
+        status: 'todo',
+        priority: 3,
+        dueDate: '2026-05-10',
+      },
+    ],
+  };
+
+  const captureStdout: string[] = [];
+  const captureExit = await runCli(
+    ['capture', 'Plan fundraising sprint', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      stdout: (message) => {
+        captureStdout.push(message);
+      },
+    },
+  );
+  assert.equal(captureExit, 0);
+  const capturePayload = JSON.parse(captureStdout.join('')) as { id: string };
+
+  const firstTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'plan', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      interpretGoal: async () => interpretedPlan,
+    },
+  );
+  assert.equal(firstTriageExit, 0);
+
+  const secondTriageStdout: string[] = [];
+  const secondTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'plan', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      interpretGoal: async () => interpretedPlan,
+      stdout: (message) => {
+        secondTriageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondTriageExit, 0);
+  const secondPayload = JSON.parse(secondTriageStdout.join('')) as {
+    status: string;
+    triagedToPlanId: string;
+    plan: { id: string };
+  };
+  assert.equal(secondPayload.status, 'already_triaged');
+
+  const graphClient = createLifeGraphClient({ graphPath, env });
+  const graph = await graphClient.loadGraph();
+  assert.equal((graph.plans ?? []).length, 1);
+  assert.equal(secondPayload.triagedToPlanId, (graph.plans ?? [])[0]?.id);
+  assert.equal(secondPayload.plan.id, (graph.plans ?? [])[0]?.id);
+});
+
+test('inbox triage --action note is idempotent on duplicate triage', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'lifeos-inbox-note-idempotent-'));
+  const graphPath = join(workspace, 'inbox-note-idempotent.json');
+  const env = {
+    HOME: workspace,
+    USERPROFILE: workspace,
+  };
+
+  const captureStdout: string[] = [];
+  const captureExit = await runCli(
+    ['capture', 'Draft meeting retro notes', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      stdout: (message) => {
+        captureStdout.push(message);
+      },
+    },
+  );
+  assert.equal(captureExit, 0);
+  const capturePayload = JSON.parse(captureStdout.join('')) as { id: string };
+
+  const firstTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'note', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+    },
+  );
+  assert.equal(firstTriageExit, 0);
+
+  const secondTriageStdout: string[] = [];
+  const secondTriageExit = await runCli(
+    ['inbox', 'triage', capturePayload.id, '--action', 'note', '--json', '--graph-path', graphPath],
+    {
+      env,
+      cwd: () => workspace,
+      stdout: (message) => {
+        secondTriageStdout.push(message);
+      },
+    },
+  );
+  assert.equal(secondTriageExit, 0);
+  const secondPayload = JSON.parse(secondTriageStdout.join('')) as {
+    status: string;
+    triagedToNoteId: string;
+    note: { id: string };
+  };
+  assert.equal(secondPayload.status, 'already_triaged');
+
+  const graphClient = createLifeGraphClient({ graphPath, env });
+  const graph = await graphClient.loadGraph();
+  assert.equal((graph.notes ?? []).length, 1);
+  assert.equal(secondPayload.triagedToNoteId, (graph.notes ?? [])[0]?.id);
+  assert.equal(secondPayload.note.id, (graph.notes ?? [])[0]?.id);
+});
+
 test('goal --save leads to task list visibility via planned actions', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'lifeos-goal-projection-'));
   const graphPath = join(workspace, 'goal-projection.json');

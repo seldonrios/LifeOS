@@ -34,11 +34,3 @@ export interface ManagedEventBus extends EventBus {
   close(): Promise<void>;
   getTransport(): EventBusTransport;
 }
-
-export const Topics = {
-  person: {
-    created: 'person.created',
-    updated: 'person.updated',
-  },
-
-    checkRequested: 'health.check.requested',

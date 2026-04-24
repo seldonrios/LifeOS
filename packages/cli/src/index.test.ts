@@ -3415,6 +3415,351 @@ test('inbox triage defer creates deferred planned action and writes triagedToAct
   assert.equal(graph.plannedActions[0]?.activationSource, 'capture_triage');
 });
 
+test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToActionId points to missing action in json mode', async () => {
+  const captureId = 'capture-triaged-missing-action-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Follow up with vendor',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+        triagedToActionId: 'action_gone',
+      },
+    ],
+    plannedActions: [] as Array<{ id: string; title: string }>,
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'task', '--json'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(stdout.join('')) as {
+    error: {
+      code: string;
+    };
+  };
+  assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.equal(stderr.join(''), '');
+});
+
+test('inbox triage in json mode returns already_triaged payload when linked action exists', async () => {
+  const captureId = 'capture-triaged-existing-action-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Schedule dentist follow-up',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+        triagedToActionId: 'action_123',
+      },
+    ],
+    plannedActions: [
+      {
+        id: 'action_123',
+        title: 'Schedule dentist follow-up',
+        status: 'todo' as const,
+      },
+    ],
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'task', '--json'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 0);
+  const payload = JSON.parse(stdout.join('')) as {
+    status: string;
+    triagedToActionId: string;
+    plannedAction: { id: string };
+  };
+  assert.equal(payload.status, 'already_triaged');
+  assert.equal(payload.triagedToActionId, 'action_123');
+  assert.equal(payload.plannedAction.id, 'action_123');
+  assert.equal(stderr.join(''), '');
+});
+
+test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToPlanId points to missing plan in json mode', async () => {
+  const captureId = 'capture-triaged-missing-plan-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Build annual operating plan',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+        triagedToPlanId: 'plan_gone',
+      },
+    ],
+    plannedActions: [] as Array<{ id: string; title: string }>,
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'plan', '--json'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(stdout.join('')) as {
+    error: {
+      code: string;
+      missingLinkField: string;
+      missingLinkId: string;
+    };
+  };
+  assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.equal(payload.error.missingLinkField, 'triagedToPlanId');
+  assert.equal(payload.error.missingLinkId, 'plan_gone');
+  assert.equal(stderr.join(''), '');
+});
+
+test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToNoteId points to missing note in json mode', async () => {
+  const captureId = 'capture-triaged-missing-note-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Summarize key design decisions',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+        triagedToNoteId: 'note_gone',
+      },
+    ],
+    plannedActions: [] as Array<{ id: string; title: string }>,
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'note', '--json'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(stdout.join('')) as {
+    error: {
+      code: string;
+      missingLinkField: string;
+      missingLinkId: string;
+    };
+  };
+  assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.equal(payload.error.missingLinkField, 'triagedToNoteId');
+  assert.equal(payload.error.missingLinkId, 'note_gone');
+  assert.equal(stderr.join(''), '');
+});
+
+test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triaged capture has no link fields in json mode', async () => {
+  const captureId = 'capture-triaged-no-link-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Resolve stale triage linkage',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+      },
+    ],
+    plannedActions: [] as Array<{ id: string; title: string }>,
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'task', '--json'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stdout: (message) => {
+        stdout.push(message);
+      },
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(stdout.join('')) as {
+    error: {
+      code: string;
+      missingLinkField: string;
+      missingLinkId: string;
+    };
+  };
+  assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.equal(payload.error.missingLinkField, 'none');
+  assert.equal(payload.error.missingLinkId, 'none');
+  assert.equal(stderr.join(''), '');
+});
+
+test('inbox triage human mode returns ERR_TRIAGE_LINK_MISSING text when link target is missing', async () => {
+  const captureId = 'capture-triaged-human-missing-action-1';
+  const graph = {
+    captureEntries: [
+      {
+        id: captureId,
+        content: 'Review insurance policy',
+        type: 'text' as const,
+        capturedAt: '2026-04-24T12:00:00.000Z',
+        source: 'cli',
+        tags: [],
+        status: 'triaged' as const,
+        triagedToActionId: 'action_missing_human',
+      },
+    ],
+    plannedActions: [] as Array<{ id: string; title: string }>,
+    plans: [] as Array<{ id: string; title: string }>,
+    notes: [] as Array<{ id: string; title: string; content: string }>,
+  };
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(
+    ['inbox', 'triage', captureId, '--action', 'task'],
+    {
+      createLifeGraphClient: () =>
+        ({
+          async getCaptureEntry(id: string) {
+            return graph.captureEntries.find((entry) => entry.id === id);
+          },
+          async getPlannedAction(id: string) {
+            return graph.plannedActions.find((action) => action.id === id);
+          },
+          async loadGraph() {
+            return graph;
+          },
+        }) as never,
+      stderr: (message) => {
+        stderr.push(message);
+      },
+    },
+  );
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_TRIAGE_LINK_MISSING/);
+});
+
 test('inbox triage failures include stage, reason, and fix diagnostics', async () => {
   const stderr: string[] = [];
 

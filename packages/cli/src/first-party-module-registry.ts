@@ -14,7 +14,7 @@ import {
 } from '@lifeos/email-summarizer-module';
 import { googleBridgeModule } from '@lifeos/google-bridge';
 import { habitStreakModule } from '@lifeos/habit-streak-module';
-import { healthTrackerModule } from '@lifeos/health-tracker-module';
+import { healthTrackerModule } from '../../../modules/health-tracker/src/index';
 import { homeStateModule } from '@lifeos/home-state-module';
 import { householdCaptureRouterModule } from '@lifeos/household-capture-router-module';
 import { householdChoresModule } from '@lifeos/household-chores-module';

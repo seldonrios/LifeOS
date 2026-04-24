@@ -5017,6 +5017,180 @@ export async function runInboxCommand(
         return 1;
       }
 
+      if (captureEntry.status === 'triaged') {
+        const missingFix =
+          'Run lifeos graph doctor or reset the capture triage state before retrying.';
+        const writeMissingLinkHumanError = (missingLinkField: string, missingLinkId: string): void => {
+          writeStderr(
+            'ERR_TRIAGE_LINK_MISSING: Capture was already triaged, but the linked record could not be resolved.\n',
+          );
+          writeStderr(`Capture: ${captureEntry.id}\n`);
+          writeStderr(`Missing link: ${missingLinkField} -> ${missingLinkId}\n`);
+          writeStderr(`Fix: ${missingFix}\n`);
+        };
+
+        if (captureEntry.triagedToActionId) {
+          const linkedAction = await client.getPlannedAction(captureEntry.triagedToActionId);
+          if (!linkedAction) {
+            if (options.outputJson) {
+              writeStdout(
+                `${JSON.stringify(
+                  {
+                    error: {
+                      code: 'ERR_TRIAGE_LINK_MISSING',
+                      captureId: captureEntry.id,
+                      missingLinkField: 'triagedToActionId',
+                      missingLinkId: captureEntry.triagedToActionId,
+                      suggestedFix: missingFix,
+                    },
+                  },
+                  null,
+                  2,
+                )}\n`,
+              );
+            } else {
+              writeMissingLinkHumanError('triagedToActionId', captureEntry.triagedToActionId);
+            }
+            return 1;
+          }
+
+          if (options.outputJson) {
+            writeStdout(
+              `${JSON.stringify(
+                {
+                  status: 'already_triaged',
+                  captureId: captureEntry.id,
+                  triagedToActionId: captureEntry.triagedToActionId,
+                  plannedAction: linkedAction,
+                },
+                null,
+                2,
+              )}\n`,
+            );
+          } else {
+            writeStdout(`Already triaged → task: "${linkedAction.title}"\n`);
+          }
+          return 0;
+        }
+
+        if (captureEntry.triagedToPlanId) {
+          const graph = await client.loadGraph();
+          const linkedPlan = (graph.plans ?? []).find(
+            (plan) => plan.id === captureEntry.triagedToPlanId,
+          );
+
+          if (!linkedPlan) {
+            if (options.outputJson) {
+              writeStdout(
+                `${JSON.stringify(
+                  {
+                    error: {
+                      code: 'ERR_TRIAGE_LINK_MISSING',
+                      captureId: captureEntry.id,
+                      missingLinkField: 'triagedToPlanId',
+                      missingLinkId: captureEntry.triagedToPlanId,
+                      suggestedFix: missingFix,
+                    },
+                  },
+                  null,
+                  2,
+                )}\n`,
+              );
+            } else {
+              writeMissingLinkHumanError('triagedToPlanId', captureEntry.triagedToPlanId);
+            }
+            return 1;
+          }
+
+          if (options.outputJson) {
+            writeStdout(
+              `${JSON.stringify(
+                {
+                  status: 'already_triaged',
+                  captureId: captureEntry.id,
+                  triagedToPlanId: captureEntry.triagedToPlanId,
+                  plan: linkedPlan,
+                },
+                null,
+                2,
+              )}\n`,
+            );
+          } else {
+            writeStdout(`Already triaged → plan: "${linkedPlan.title}"\n`);
+          }
+          return 0;
+        }
+
+        if (captureEntry.triagedToNoteId) {
+          const graph = await client.loadGraph();
+          const linkedNote = (graph.notes ?? []).find(
+            (note) => note.id === captureEntry.triagedToNoteId,
+          );
+
+          if (!linkedNote) {
+            if (options.outputJson) {
+              writeStdout(
+                `${JSON.stringify(
+                  {
+                    error: {
+                      code: 'ERR_TRIAGE_LINK_MISSING',
+                      captureId: captureEntry.id,
+                      missingLinkField: 'triagedToNoteId',
+                      missingLinkId: captureEntry.triagedToNoteId,
+                      suggestedFix: missingFix,
+                    },
+                  },
+                  null,
+                  2,
+                )}\n`,
+              );
+            } else {
+              writeMissingLinkHumanError('triagedToNoteId', captureEntry.triagedToNoteId);
+            }
+            return 1;
+          }
+
+          if (options.outputJson) {
+            writeStdout(
+              `${JSON.stringify(
+                {
+                  status: 'already_triaged',
+                  captureId: captureEntry.id,
+                  triagedToNoteId: captureEntry.triagedToNoteId,
+                  note: linkedNote,
+                },
+                null,
+                2,
+              )}\n`,
+            );
+          } else {
+            writeStdout(`Already triaged → note: "${linkedNote.content}"\n`);
+          }
+          return 0;
+        }
+
+        if (options.outputJson) {
+          writeStdout(
+            `${JSON.stringify(
+              {
+                error: {
+                  code: 'ERR_TRIAGE_LINK_MISSING',
+                  captureId: captureEntry.id,
+                  missingLinkField: 'none',
+                  missingLinkId: 'none',
+                  suggestedFix: missingFix,
+                },
+              },
+              null,
+              2,
+            )}\n`,
+          );
+        } else {
+          writeMissingLinkHumanError('none', 'none');
+        }
+        return 1;
+      }
+
       if (options.triageAction === 'note') {
         triageStage = 'append_note';
         const note = await client.appendNote({
@@ -5694,7 +5868,7 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
-  program
+  const taskCmd = program
     .command('task')
     .description('Manage planned actions')
     .argument('[action]', 'list | complete | next | block | cancel | unblock', 'list')
@@ -5734,8 +5908,8 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
-  program
-    .command('task block')
+  taskCmd
+    .command('block')
     .description('Block a planned action with an optional reason')
     .argument('<id>', 'Action ID or prefix')
     .option('--reason <reason>', 'Reason for blocking')
@@ -5757,8 +5931,8 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
-  program
-    .command('task cancel')
+  taskCmd
+    .command('cancel')
     .description('Cancel a planned action')
     .argument('<id>', 'Action ID or prefix')
     .option('--json', 'Output JSON only')
@@ -5778,8 +5952,8 @@ function buildProgram(
       setExitCode(commandExitCode);
     });
 
-  program
-    .command('task unblock')
+  taskCmd
+    .command('unblock')
     .description('Move a blocked or deferred action back to todo')
     .argument('<id>', 'Action ID or prefix')
     .option('--json', 'Output JSON only')
