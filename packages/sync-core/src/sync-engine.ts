@@ -1,6 +1,6 @@
 import { createPrivateKey, createPublicKey, randomUUID, sign, verify } from 'node:crypto';
 
-import { Topics, type BaseEvent, type ManagedEventBus } from '@lifeos/event-bus';
+import { Topics, type BaseEvent, type EventBus } from '@lifeos/event-bus';
 import { createLifeGraphClient, type LifeGraphClient } from '@lifeos/life-graph';
 import {
   SyncTrustRegistry,
@@ -36,7 +36,7 @@ export interface SyncEngineStats {
 }
 
 export interface SyncEngineOptions {
-  eventBus: ManagedEventBus;
+  eventBus: EventBus;
   deviceId: string;
   deviceName: string;
   env?: NodeJS.ProcessEnv;
@@ -171,7 +171,7 @@ function trimSet(set: Set<string>, maxSize: number): void {
 }
 
 export class SyncEngine {
-  private readonly eventBus: ManagedEventBus;
+  private readonly eventBus: EventBus;
   private readonly client: Pick<LifeGraphClient, 'mergeDelta'>;
   private readonly now: () => Date;
   private readonly logger: (message: string) => void;
@@ -212,7 +212,7 @@ export class SyncEngine {
       });
     this.requireAuthentication =
       options.requireAuthentication ??
-      (options.env?.LIFEOS_SYNC_REQUIRE_AUTH ?? '0').trim().toLowerCase() === '1';
+      (options.env?.LIFEOS_SYNC_REQUIRE_AUTH ?? '1').trim().toLowerCase() !== '0';
     this.trustOnFirstUse =
       options.trustOnFirstUse ??
       (options.env?.LIFEOS_SYNC_TOFU ?? '1').trim().toLowerCase() !== '0';
@@ -253,7 +253,11 @@ export class SyncEngine {
     this.active = true;
     if (this.requireAuthentication) {
       this.localKeyPair = await this.trustRegistry.getLocalKeyPair();
-      this.logger('[SyncEngine] sync authentication enabled (ed25519)');
+      this.logger('[SyncEngine] Sync authentication: enabled (Ed25519 + TOFU)');
+    } else {
+      this.logger(
+        '[SyncEngine] WARNING: Sync authentication disabled via LIFEOS_SYNC_REQUIRE_AUTH=0 override',
+      );
     }
 
     await this.eventBus.subscribe<Record<string, unknown>>('lifeos.>', async (event) => {

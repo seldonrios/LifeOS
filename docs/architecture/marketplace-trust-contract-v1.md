@@ -45,6 +45,8 @@ When duplicate module ids are encountered across sources, prefer:
 - freshness (`lastUpdated`, stale state)
 - verification error message when present
 
+Install-time visibility note (P9-09): a visible warning during install for unverified sources (including `warn` or `off` trust modes) is planned follow-on work and is not yet implemented in current CLI output.
+
 ## Required Test Coverage
 
 - strict mode rejects unsigned remote source entries.

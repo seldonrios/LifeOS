@@ -285,9 +285,37 @@ test('doctor --json: output includes expected static check ids', async () => {
     'life-graph',
     'module-state',
     'module-manifests',
+    'sync-auth',
     'ollama-reachability',
     'ollama-planning-readiness',
   ]) {
     assert.ok(ids.includes(expected), `check id '${expected}' should be present in output`);
   }
+});
+
+test('doctor --json: sync-auth check is WARN when LIFEOS_SYNC_REQUIRE_AUTH=0', async () => {
+  const { env, cwd } = await makeTempEnv();
+  env.LIFEOS_SYNC_REQUIRE_AUTH = '0';
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{ id: string; status: string; details?: string }>;
+  };
+  const syncAuth = output.checks.find((check) => check.id === 'sync-auth');
+
+  assert.ok(syncAuth, 'sync-auth check should be present');
+  assert.equal(syncAuth?.status, 'WARN');
+  assert.match(syncAuth?.details ?? '', /LIFEOS_SYNC_REQUIRE_AUTH=0/i);
 });

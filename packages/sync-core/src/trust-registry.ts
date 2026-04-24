@@ -1,5 +1,5 @@
 import { generateKeyPairSync, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
 const TRUST_FILE_VERSION = '0.1.0';
@@ -238,5 +238,8 @@ export class SyncTrustRegistry implements SyncTrustRegistryLike {
   private async saveDocument(document: SyncTrustDocument): Promise<void> {
     await mkdir(dirname(this.trustPath), { recursive: true });
     await writeFile(this.trustPath, `${JSON.stringify(document, null, 2)}\n`, 'utf8');
+    if (process.platform !== 'win32') {
+      await chmod(this.trustPath, 0o600);
+    }
   }
 }

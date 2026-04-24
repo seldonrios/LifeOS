@@ -102,3 +102,7 @@ The following areas are explicitly out of scope for current release reviews:
 - Room awareness and presence flows
 - Decentralized / federated node ecosystem
 - Broad domain automation (health, social, economic)
+
+## Data Exposure Reference
+
+For the canonical reference of all current network egress paths and credential locations, see [`docs/product/data-exposure-map.md`](./data-exposure-map.md).

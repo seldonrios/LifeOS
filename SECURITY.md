@@ -41,6 +41,17 @@ You can also include:
 - Logs or screenshots
 - Environment details
 
+### Before you send - redact sensitive data
+
+Please redact sensitive personal and credential data before submitting your report:
+
+- Auth tokens and API keys
+- HTTP `Authorization` headers
+- Email addresses and contact information
+- Life graph snapshots or personal content
+- Local file paths that reveal home directory structure
+- Personal notes, captures, or goal content
+
 For non-security concerns (bugs, feature requests, docs), use GitHub issue forms and the conduct process in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 
 ---

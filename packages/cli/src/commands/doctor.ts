@@ -329,6 +329,25 @@ export async function runDoctorCommand(
     });
   }
 
+  const syncAuthOverride = env.LIFEOS_SYNC_REQUIRE_AUTH?.trim();
+  if (syncAuthOverride === '0') {
+    checks.push({
+      id: 'sync-auth',
+      status: 'WARN',
+      description: 'Sync authentication override active',
+      details: 'LIFEOS_SYNC_REQUIRE_AUTH=0 disables Ed25519 delta verification',
+      suggestion:
+        'Remove LIFEOS_SYNC_REQUIRE_AUTH=0 to restore the secure default; see docs/SETUP.md',
+    });
+  } else {
+    checks.push({
+      id: 'sync-auth',
+      status: 'PASS',
+      description: 'Sync authentication is enabled (Ed25519 + TOFU)',
+      suggestion: 'No action required',
+    });
+  }
+
   const failCount = checks.filter((check) => check.status === 'FAIL').length;
 
   if (options.outputJson) {

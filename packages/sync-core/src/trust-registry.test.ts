@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -28,4 +28,9 @@ test('trust registry creates local keypair and persists trusted peers', async ()
   assert.ok(trusted);
   assert.equal(trusted?.deviceName, 'Phone');
   assert.equal(trusted?.publicKey.trim(), local.publicKey.trim());
+
+  if (process.platform !== 'win32') {
+    const mode = (await stat(trustPath)).mode & 0o777;
+    assert.equal(mode, 0o600);
+  }
 });

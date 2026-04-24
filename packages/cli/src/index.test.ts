@@ -869,6 +869,68 @@ test('trust report --json emits structured trust report', async () => {
   assert.equal(Array.isArray(parsed.modules), true);
 });
 
+test('trust status shows sync authentication override warning when LIFEOS_SYNC_REQUIRE_AUTH=0', async () => {
+  const stdout: string[] = [];
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-trust-status-override-'));
+
+  const exitCode = await runCli(['trust', 'status'], {
+    env: {
+      HOME: baseHome,
+      USERPROFILE: baseHome,
+      LIFEOS_SYNC_REQUIRE_AUTH: '0',
+    },
+    cwd: () => '/repo',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const output = stdout.join('');
+  assert.match(output, /WARNING:/);
+  assert.match(output, /LIFEOS_SYNC_REQUIRE_AUTH=0 disables Ed25519 delta verification/i);
+});
+
+test('trust report --json includes sync authentication override warning when active', async () => {
+  const stdout: string[] = [];
+  const baseHome = await mkdtemp(join(tmpdir(), 'lifeos-cli-trust-report-override-'));
+
+  const exitCode = await runCli(['trust', 'report', '--json'], {
+    env: {
+      HOME: baseHome,
+      USERPROFILE: baseHome,
+      LIFEOS_SYNC_REQUIRE_AUTH: '0',
+    },
+    cwd: () => '/repo',
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as {
+    runtime: {
+      syncAuthentication: {
+        enabled: boolean;
+        overrideActive: boolean;
+        warning: string | null;
+      };
+    };
+    warnings: Array<{
+      id: string;
+      status: string;
+      details: string;
+    }>;
+  };
+  assert.equal(parsed.runtime.syncAuthentication.enabled, false);
+  assert.equal(parsed.runtime.syncAuthentication.overrideActive, true);
+  assert.match(parsed.runtime.syncAuthentication.warning ?? '', /LIFEOS_SYNC_REQUIRE_AUTH=0/i);
+  const syncAuthWarning = parsed.warnings.find((warning) => warning.id === 'sync-auth-override');
+  assert.ok(syncAuthWarning);
+  assert.equal(syncAuthWarning?.status, 'WARN');
+  assert.match(syncAuthWarning?.details ?? '', /LIFEOS_SYNC_REQUIRE_AUTH=0/i);
+});
+
 test('trust explain emits explanation and trust event', async () => {
   const stdout: string[] = [];
   const stderr: string[] = [];

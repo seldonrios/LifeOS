@@ -893,6 +893,14 @@ interface TrustModuleSnapshot {
   };
 }
 
+interface TrustWarningEntry {
+  id: string;
+  status: 'WARN';
+  description: string;
+  details: string;
+  suggestion: string;
+}
+
 interface TrustReportPayload {
   generatedAt: string;
   ownership: {
@@ -914,8 +922,14 @@ interface TrustReportPayload {
     graphPath: string;
     graphDatabasePath: string;
     migrationBackupPath: string | null;
+    syncAuthentication: {
+      enabled: boolean;
+      overrideActive: boolean;
+      warning: string | null;
+    };
   };
   modules: TrustModuleSnapshot[];
+  warnings: TrustWarningEntry[];
   recentDecisions: Array<{
     at: string;
     category: 'ownership' | 'policy' | 'runtime';
@@ -1090,6 +1104,23 @@ async function buildTrustReport(
   );
   const moduleRuntimePermissions =
     (env.LIFEOS_MODULE_RUNTIME_PERMISSIONS ?? 'strict').trim() || 'strict';
+  const syncAuthEnabled = (env.LIFEOS_SYNC_REQUIRE_AUTH ?? '1').trim().toLowerCase() !== '0';
+  const syncAuthWarning = syncAuthEnabled
+    ? null
+    : 'LIFEOS_SYNC_REQUIRE_AUTH=0 disables Ed25519 delta verification';
+  const warnings: TrustWarningEntry[] =
+    syncAuthWarning === null
+      ? []
+      : [
+          {
+            id: 'sync-auth-override',
+            status: 'WARN',
+            description: 'Sync authentication override active',
+            details: syncAuthWarning,
+            suggestion:
+              'Remove LIFEOS_SYNC_REQUIRE_AUTH=0 to restore the secure default; see docs/SETUP.md',
+          },
+        ];
   const defaultGraphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
   const storageInfoFetcher =
     dependencies.getGraphStorageInfo ??
@@ -1133,8 +1164,14 @@ async function buildTrustReport(
       graphPath: storageInfo.graphPath,
       graphDatabasePath: storageInfo.dbPath,
       migrationBackupPath: storageInfo.migrationBackupPath,
+      syncAuthentication: {
+        enabled: syncAuthEnabled,
+        overrideActive: !syncAuthEnabled,
+        warning: syncAuthWarning,
+      },
     },
     modules: moduleSnapshots,
+    warnings,
     recentDecisions: [
       {
         at: now,
@@ -4190,6 +4227,9 @@ export async function runTrustCommand(
     }
     writeStdout(`Enabled modules: ${enabledCount}/${report.modules.length}\n`);
     writeStdout(`Model: ${report.runtime.model}\n`);
+    for (const warning of report.warnings) {
+      writeStdout(`${chalk.yellow(`WARNING: ${warning.details} (override active)`)}\n`);
+    }
     writeStdout('\nRecent decisions:\n');
     for (const decision of report.recentDecisions) {
       writeStdout(`- [${decision.category}] ${decision.message}\n`);

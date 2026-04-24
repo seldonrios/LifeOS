@@ -3,7 +3,7 @@ import { generateKeyPairSync } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import test from 'node:test';
 
-import { Topics, createEventBusClient, type BaseEvent } from '@lifeos/event-bus';
+import { Topics, createEventBusClient, type BaseEvent, type EventBus } from '@lifeos/event-bus';
 
 import { SyncEngine } from './sync-engine';
 import type { SyncLocalKeyPair, SyncTrustRegistryLike, SyncTrustedPeer } from './trust-registry';
@@ -322,6 +322,125 @@ test('sync engine rejects unsigned deltas when authentication is required', asyn
 
   await engine.close();
   await eventBus.close();
+});
+
+test('sync engine enables authentication by default when not explicitly configured', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-auth-default',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  let localKeyPairLoads = 0;
+  const trustRegistry: SyncTrustRegistryLike = {
+    async getLocalKeyPair() {
+      localKeyPairLoads += 1;
+      return generateTestKeyPair();
+    },
+    async getTrustedPeer() {
+      return null;
+    },
+    async upsertTrustedPeer(deviceId: string, publicKey: string, deviceName?: string) {
+      return {
+        deviceId,
+        publicKey,
+        deviceName: deviceName ?? 'unknown-device',
+        trustedAt: '2026-03-23T00:00:00.000Z',
+      };
+    },
+  };
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-default-auth',
+    deviceName: 'Laptop',
+    trustRegistry,
+    client: {
+      async mergeDelta() {
+        return { merged: true, conflicts: [] };
+      },
+    },
+  });
+
+  await engine.start();
+
+  assert.equal(localKeyPairLoads, 1);
+
+  await engine.close();
+  await eventBus.close();
+});
+
+test('sync engine rejects unsigned deltas under default authentication config', async () => {
+  const eventBus = createEventBusClient({
+    env: fallbackEnv,
+    name: 'sync-test-auth-default-reject',
+    timeoutMs: 50,
+    maxReconnectAttempts: 0,
+  });
+  const engine = new SyncEngine({
+    eventBus,
+    deviceId: 'device-local-default-auth',
+    deviceName: 'Laptop',
+    trustOnFirstUse: false,
+    trustRegistry: new InMemoryTrustRegistry(generateTestKeyPair()),
+    client: {
+      async mergeDelta() {
+        return { merged: true, conflicts: [] };
+      },
+    },
+  });
+  await engine.start();
+
+  const accepted = await engine.handleIncomingDelta({
+    deltaId: 'delta-unsigned-default-auth',
+    deviceId: 'device-remote',
+    deviceName: 'Phone',
+    timestamp: '2026-03-23T12:00:00.000Z',
+    version: '0.1.0',
+    payload: createEvent(Topics.lifeos.noteAdded, { title: 'unsigned-default' }, 'device-remote'),
+  });
+
+  assert.equal(accepted, false);
+
+  await engine.close();
+  await eventBus.close();
+});
+
+test('sync engine accepts EventBus-like publish/subscribe interface', async () => {
+  const subscriptions = new Map<string, Array<(event: BaseEvent<Record<string, unknown>>) => Promise<void>>>();
+  const eventBusLike: EventBus = {
+    async publish<T>(topic: string, event: BaseEvent<T>) {
+      const handlers = subscriptions.get(topic) ?? [];
+      for (const handler of handlers) {
+        await handler(event as BaseEvent<Record<string, unknown>>);
+      }
+    },
+    async subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void>) {
+      const handlers = subscriptions.get(topic) ?? [];
+      handlers.push(handler as (event: BaseEvent<Record<string, unknown>>) => Promise<void>);
+      subscriptions.set(topic, handlers);
+    },
+  };
+
+  const engine = new SyncEngine({
+    eventBus: eventBusLike,
+    deviceId: 'device-eventbus-like',
+    deviceName: 'Desktop',
+    requireAuthentication: false,
+    client: {
+      async mergeDelta() {
+        return { merged: true, conflicts: [] };
+      },
+    },
+  });
+
+  await engine.start();
+  await engine.broadcastDelta(
+    createEvent(Topics.lifeos.noteAdded, { id: 'eventbus-like', title: 'works' }, 'device-eventbus-like'),
+  );
+
+  assert.equal(engine.getStats().deltasBroadcast, 1);
+
+  await engine.close();
 });
 
 test('sync engine rejects deltas with missing signing algorithm metadata', async () => {

@@ -69,7 +69,7 @@ git clone <repo-url> && cd lifeos
 pnpm run validate
 ```
 
-This command must exit 0. It runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` step is the precompile gate for light modules because typecheck and lint depend on compiled dist output, and the runtime loader reads `modules/<name>/dist/manifest.js` rather than source `manifest.ts` files.
+This command must exit 0. It runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` step is the precompile gate for light modules because typecheck and lint depend on compiled dist output; module discovery and validation are based on each module's `lifeos.json`, while `dist/manifest.js` is a TypeScript compilation artifact.
 
 5. Copy `.env.example` to `.env` and populate required secrets.
 6. Start the platform stack.
@@ -145,7 +145,7 @@ bash scripts/init-secrets.sh
 pnpm run validate
 ```
 
-This runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` phase must succeed before typecheck and lint can resolve light-module dist artifacts, and before the module loader can discover light modules from `modules/<name>/dist/manifest.js`.
+This runs build:modules -> typecheck -> lint -> format:check -> test. The first `build:modules` phase must succeed before typecheck and lint can resolve light-module dist artifacts; module discovery remains `lifeos.json` driven, and `dist/manifest.js` is a build artifact.
 
 7. Start services.
 
@@ -182,6 +182,21 @@ LifeOS currently uses one manifest artifact and one SDK surface for modules:
 - `@lifeos/module-sdk`: the current authoring/runtime SDK surface for module code
 
 First-party module composition in the CLI is currently centralized in a registry. That is accepted MVP architecture debt, not a second manifest layer.
+
+## Sync Authentication
+
+Sync authentication is enabled by default. `@lifeos/sync-core` enforces Ed25519 signatures with TOFU trust persistence, and unsigned or unverifiable deltas are rejected when no override is set.
+
+Explicit override:
+
+- Set `LIFEOS_SYNC_REQUIRE_AUTH=0` to run in unauthenticated sync mode.
+- This is a deliberate security downgrade and is surfaced as a warning in `lifeos doctor`.
+
+Trust material path and permissions:
+
+- Local trust data is stored at `~/.lifeos/mesh-trust.json`.
+- On Linux/macOS, this file is written with `0o600` permissions.
+- On Windows, explicit permission hardening is not applied by the runtime; restrict access manually via file properties/ACLs.
 
 ## Personal Operations OS Onboarding Checklist
 

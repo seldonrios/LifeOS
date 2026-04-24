@@ -98,6 +98,8 @@ Phase 3 Current System Boundary
 - Documented compatibility fallback: JSON-file adapter when SQLite native addon is unavailable
 - Messaging: local in-process event bus with optional local NATS
 - Extended/non-MVP data stores: Postgres, Neo4j, and other larger service-stack stores
+- Sync posture: Ed25519 + TOFU authentication is the strict default in sync-core; `LIFEOS_SYNC_REQUIRE_AUTH=0` is the explicit downgrade path and is surfaced in `lifeos doctor` output.
+- For the full inventory of network egress paths, auth methods, and credential locations, see [`docs/product/data-exposure-map.md`](../product/data-exposure-map.md).
 
 ### 4. Module Platform
 
