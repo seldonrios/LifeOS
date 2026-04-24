@@ -453,6 +453,24 @@ export interface LifeGraphStorageInfo {
   migrationBackupPath: string | null;
 }
 
+export interface LifeGraphStorageInspection {
+  backendCandidate: 'sqlite' | 'json-file' | 'missing' | 'unknown';
+  graphPath: string;
+  dbPath: string;
+  sqliteExists: boolean;
+  sqliteOpenable: boolean;
+  sqliteProbeUnavailable: boolean;
+  sqliteSchemaInitialized: boolean;
+  sqliteVersionPresent: boolean;
+  jsonExists: boolean;
+  jsonReadable: boolean;
+  jsonParseable: boolean;
+  jsonVersionPresent: boolean;
+  migrationBackupPath: string | null;
+  warnings: string[];
+  errors: string[];
+}
+
 export interface LifeGraphActiveGoalSummary {
   id: string;
   title: string;

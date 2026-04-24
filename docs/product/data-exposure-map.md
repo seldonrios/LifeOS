@@ -10,7 +10,7 @@ This document is the single reference for all network egress paths in the curren
 
 | Egress path | Trigger | Auth method | Default state | Credential location |
 |---|---|---|---|---|
-| Ollama HTTP API | `lifeos goal`, `lifeos init`, orchestrator | None (local) | Required for planning | `LIFEOS_OLLAMA_HOST` env |
+| Ollama HTTP API | `lifeos goal`, `lifeos init`, orchestrator | None (local) | Required for planning | `OLLAMA_HOST` env |
 | NATS transport | Event bus when configured | NKey credentials | Optional | `~/.nats/` |
 | Google APIs (12 scopes) | Google Bridge module | OAuth2 tokens | Optional (user-enabled) | `~/.lifeos/secrets/google.json` |
 | IMAP email servers | Email summarizer module | IMAP credentials | Optional (user-enabled) | `~/.lifeos/secrets/email-accounts.json` |
