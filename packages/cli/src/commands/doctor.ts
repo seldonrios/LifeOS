@@ -5,7 +5,11 @@ import chalk from 'chalk';
 
 import { baselineModules, getModuleStatePath, readModuleState } from '@lifeos/core';
 import { createEventBusClient, type BaseEvent } from '@lifeos/event-bus';
-import { getDefaultLifeGraphPath } from '@lifeos/life-graph';
+import {
+  getDefaultLifeGraphPath,
+  inspectLifeGraphStorage,
+  type LifeGraphStorageInspection,
+} from '@lifeos/life-graph';
 
 import { normalizeErrorMessage } from '../errors';
 import { validateModuleManifest } from './module-create';
@@ -17,7 +21,7 @@ export interface DoctorCheck {
   status: DoctorCheckStatus;
   description: string;
   suggestion: string;
-  details?: string;
+  details?: string | Record<string, unknown>;
 }
 
 export interface DoctorCommandOptions {
@@ -31,6 +35,7 @@ interface DoctorDependencies {
   stdout?: (message: string) => void;
   stderr?: (message: string) => void;
   fetchFn?: typeof fetch;
+  inspectLifeGraphStorageFn?: (graphPath?: string) => Promise<LifeGraphStorageInspection>;
 }
 
 interface ParsedSemver {
@@ -63,6 +68,41 @@ function compareSemver(left: ParsedSemver, right: ParsedSemver): number {
   return left.patch - right.patch;
 }
 
+function toDbPath(graphPath: string): string {
+  if (graphPath.toLowerCase().endsWith('.json')) {
+    return `${graphPath.slice(0, -5)}.db`;
+  }
+  return `${graphPath}.db`;
+}
+
+function formatDetailsForText(details: string | Record<string, unknown>): string {
+  if (typeof details === 'string') {
+    return details;
+  }
+
+  const message = typeof details.message === 'string' ? details.message : '';
+  const backend = typeof details.backend === 'string' ? details.backend : 'unknown';
+  const dbPath = typeof details.dbPath === 'string' ? details.dbPath : 'n/a';
+  const sqliteVersionPresent =
+    typeof details.sqliteVersionPresent === 'boolean'
+      ? String(details.sqliteVersionPresent)
+      : 'unknown';
+  const jsonFallbackActive =
+    typeof details.jsonFallbackActive === 'boolean'
+      ? String(details.jsonFallbackActive)
+      : 'unknown';
+
+  const parts = [
+    message,
+    `backend=${backend}`,
+    `dbPath=${dbPath}`,
+    `sqliteVersionPresent=${sqliteVersionPresent}`,
+    `jsonFallbackActive=${jsonFallbackActive}`,
+  ].filter((value) => value.length > 0);
+
+  return parts.join('; ');
+}
+
 function formatCheck(check: DoctorCheck): string {
   const badge =
     check.status === 'PASS'
@@ -73,7 +113,7 @@ function formatCheck(check: DoctorCheck): string {
 
   const lines = [`[${badge}] ${check.description}`];
   if (check.details) {
-    lines.push(`  details: ${check.details}`);
+    lines.push(`  details: ${formatDetailsForText(check.details)}`);
   }
   lines.push(`  fix: ${check.suggestion}`);
   return `${lines.join('\n')}\n`;
@@ -90,6 +130,7 @@ export async function runDoctorCommand(
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
   const fetchFn = dependencies.fetchFn ?? fetch;
+  const inspectLifeGraphStorageFn = dependencies.inspectLifeGraphStorageFn ?? inspectLifeGraphStorage;
 
   const checks: DoctorCheck[] = [];
 
@@ -259,22 +300,96 @@ export async function runDoctorCommand(
 
   const graphPath = getDefaultLifeGraphPath({ baseDir: baseCwd, env });
   try {
-    const graphRaw = await readFile(graphPath, 'utf8');
-    JSON.parse(graphRaw);
+    const inspection = await inspectLifeGraphStorageFn(graphPath);
+    const errorSummary = inspection.errors.join(' | ');
+    const warningSummary = inspection.warnings.join(' | ');
+    const backendDescription =
+      inspection.backendCandidate === 'sqlite'
+        ? 'SQLite backend'
+        : inspection.backendCandidate === 'json-file'
+          ? 'JSON-file fallback backend'
+          : inspection.backendCandidate === 'missing'
+            ? 'missing backend'
+            : 'unknown backend';
+
+    let status: DoctorCheckStatus;
+    let description = `Life graph storage inspection (${backendDescription})`;
+    let details = `${inspection.dbPath} (backend=${inspection.backendCandidate})`;
+    let suggestion = 'No action required';
+
+    if (
+      inspection.backendCandidate === 'sqlite' &&
+      inspection.sqliteOpenable &&
+      inspection.sqliteVersionPresent
+    ) {
+      status = 'PASS';
+      details = `${inspection.dbPath} (sqlite version metadata present)`;
+    } else if (
+      inspection.backendCandidate === 'sqlite' &&
+      inspection.sqliteProbeUnavailable
+    ) {
+      status = 'WARN';
+      suggestion =
+        'Install working better-sqlite3 bindings to fully validate SQLite health';
+      details = warningSummary || `${inspection.dbPath} (SQLite probe unavailable)`;
+    } else if (
+      inspection.backendCandidate === 'json-file' &&
+      inspection.jsonReadable &&
+      inspection.jsonParseable
+    ) {
+      status = 'WARN';
+      suggestion = 'Run `pnpm lifeos init` to migrate to SQLite-backed storage';
+      details = `${inspection.graphPath} (JSON fallback active)`;
+    } else if (
+      inspection.backendCandidate === 'sqlite' &&
+      inspection.sqliteExists &&
+      !inspection.sqliteOpenable
+    ) {
+      status = 'FAIL';
+      suggestion = 'Repair or replace the SQLite graph database';
+      details = errorSummary || `${inspection.dbPath} (SQLite exists but is not openable)`;
+    } else if (
+      inspection.backendCandidate === 'missing' ||
+      inspection.errors.length > 0
+    ) {
+      status = 'FAIL';
+      description = 'Life graph storage missing or invalid';
+      suggestion = 'Run `pnpm lifeos init` to initialize graph storage';
+      details =
+        errorSummary || `${inspection.dbPath} and JSON fallback are unavailable or unreadable`;
+    } else {
+      status = 'FAIL';
+      suggestion = 'Run `pnpm lifeos init` and verify graph storage health';
+      details = errorSummary || details;
+    }
+
     checks.push({
       id: 'life-graph',
-      status: 'PASS',
-      description: 'Life graph file exists and is parseable',
-      details: graphPath,
-      suggestion: 'No action required',
+      status,
+      description,
+      details: {
+        message: details,
+        backend: inspection.backendCandidate,
+        dbPath: inspection.dbPath,
+        sqliteVersionPresent: inspection.sqliteVersionPresent,
+        jsonFallbackActive: inspection.backendCandidate === 'json-file',
+      },
+      suggestion,
     });
   } catch (error: unknown) {
+    const dbPath = toDbPath(graphPath);
     checks.push({
       id: 'life-graph',
       status: 'FAIL',
-      description: 'Life graph file missing or invalid JSON',
-      details: `${graphPath}: ${normalizeErrorMessage(error)}`,
-      suggestion: 'Run `pnpm lifeos init` or repair the graph file',
+      description: 'Life graph storage inspection failed',
+      details: {
+        message: `${dbPath}: ${normalizeErrorMessage(error)}`,
+        backend: 'unknown',
+        dbPath,
+        sqliteVersionPresent: false,
+        jsonFallbackActive: false,
+      },
+      suggestion: 'Run `pnpm lifeos init` and re-run doctor',
     });
   }
 

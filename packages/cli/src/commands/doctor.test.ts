@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test } from 'node:test';
 
+import type { LifeGraphStorageInspection } from '@lifeos/life-graph';
+
 import { runDoctorCommand } from './doctor';
 
 const CLI_VERSION = '0.0.0-test';
@@ -22,6 +24,40 @@ async function makeTempEnv() {
   };
 }
 
+function toDbPath(graphPath: string): string {
+  if (graphPath.toLowerCase().endsWith('.json')) {
+    return `${graphPath.slice(0, -5)}.db`;
+  }
+  return `${graphPath}.db`;
+}
+
+function makeInspection(
+  graphPath: string,
+  overrides: Partial<LifeGraphStorageInspection> = {},
+): LifeGraphStorageInspection {
+  return {
+    backendCandidate: 'sqlite',
+    graphPath,
+    dbPath: toDbPath(graphPath),
+    sqliteExists: true,
+    sqliteOpenable: true,
+    sqliteProbeUnavailable: false,
+    sqliteSchemaInitialized: true,
+    sqliteVersionPresent: true,
+    jsonExists: false,
+    jsonReadable: false,
+    jsonParseable: false,
+    jsonVersionPresent: false,
+    migrationBackupPath: null,
+    warnings: [],
+    errors: [],
+    ...overrides,
+  };
+}
+
+const healthyInspectLifeGraphStorage = async (graphPath?: string): Promise<LifeGraphStorageInspection> =>
+  makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'));
+
 test('doctor --json: Ollama down produces WARN reachability and FAIL planning-readiness', async () => {
   const { env, cwd } = await makeTempEnv();
   const stdout: string[] = [];
@@ -33,6 +69,7 @@ test('doctor --json: Ollama down produces WARN reachability and FAIL planning-re
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async () => {
         throw new Error('connect ECONNREFUSED 127.0.0.1:11434');
       },
@@ -66,6 +103,7 @@ test('doctor --json: Ollama healthy produces PASS reachability and PASS planning
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async (input) => {
         const url = String(input);
         if (url.endsWith('/api/tags')) {
@@ -108,6 +146,7 @@ test('doctor --json: Ollama reachable without models produces PASS reachability 
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async (input) => {
         const url = String(input);
         if (url.endsWith('/api/tags')) {
@@ -151,6 +190,7 @@ test('doctor --json: configured goal model missing produces FAIL planning-readin
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async (input) => {
         const url = String(input);
         if (url.endsWith('/api/tags')) {
@@ -198,6 +238,7 @@ test('doctor --json: configured goal model present produces PASS planning-readin
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async (input) => {
         const url = String(input);
         if (url.endsWith('/api/tags')) {
@@ -242,6 +283,7 @@ test('doctor --json: Ollama degraded (503) produces PASS reachability and FAIL p
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async () => ({ ok: false, status: 503 }) as Response,
     },
     CLI_VERSION,
@@ -271,6 +313,7 @@ test('doctor --json: output includes expected static check ids', async () => {
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async () => ({ ok: true, status: 200 }) as Response,
     },
     CLI_VERSION,
@@ -293,6 +336,231 @@ test('doctor --json: output includes expected static check ids', async () => {
   }
 });
 
+test('doctor --json: life-graph SQLite healthy is PASS with structured fields', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'sqlite',
+          sqliteExists: true,
+          sqliteOpenable: true,
+          sqliteVersionPresent: true,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: {
+        backend?: string;
+        dbPath?: string;
+        sqliteVersionPresent?: boolean;
+      };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'PASS');
+  assert.equal(lifeGraph?.details?.backend, 'sqlite');
+  assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
+  assert.equal(lifeGraph?.details?.sqliteVersionPresent, true);
+});
+
+test('doctor --json: life-graph SQLite probe unavailable is WARN with structured fields', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'sqlite',
+          sqliteExists: true,
+          sqliteProbeUnavailable: true,
+          sqliteOpenable: false,
+          sqliteVersionPresent: false,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: {
+        backend?: string;
+        dbPath?: string;
+        sqliteVersionPresent?: boolean;
+      };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'WARN');
+  assert.equal(lifeGraph?.details?.backend, 'sqlite');
+  assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
+  assert.equal(lifeGraph?.details?.sqliteVersionPresent, false);
+});
+
+test('doctor --json: life-graph JSON fallback healthy is WARN with structured fields', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'json-file',
+          sqliteExists: false,
+          sqliteOpenable: false,
+          sqliteVersionPresent: false,
+          jsonExists: true,
+          jsonReadable: true,
+          jsonParseable: true,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: {
+        backend?: string;
+        dbPath?: string;
+        sqliteVersionPresent?: boolean;
+      };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'WARN');
+  assert.equal(lifeGraph?.details?.backend, 'json-file');
+  assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
+  assert.equal(lifeGraph?.details?.sqliteVersionPresent, false);
+});
+
+test('doctor --json: life-graph SQLite corrupt is FAIL with structured fields', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'sqlite',
+          sqliteExists: true,
+          sqliteOpenable: false,
+          sqliteVersionPresent: false,
+          errors: ['database disk image is malformed'],
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: {
+        backend?: string;
+        dbPath?: string;
+        sqliteVersionPresent?: boolean;
+      };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'FAIL');
+  assert.equal(lifeGraph?.details?.backend, 'sqlite');
+  assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
+  assert.equal(lifeGraph?.details?.sqliteVersionPresent, false);
+});
+
+test('doctor --json: life-graph missing storage is FAIL with init suggestion and structured fields', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'missing',
+          sqliteExists: false,
+          sqliteOpenable: false,
+          sqliteVersionPresent: false,
+          jsonExists: false,
+          jsonReadable: false,
+          jsonParseable: false,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      suggestion?: string;
+      details?: {
+        backend?: string;
+        dbPath?: string;
+        sqliteVersionPresent?: boolean;
+      };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'FAIL');
+  assert.match(lifeGraph?.suggestion ?? '', /lifeos init/i);
+  assert.equal(lifeGraph?.details?.backend, 'missing');
+  assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
+  assert.equal(lifeGraph?.details?.sqliteVersionPresent, false);
+});
+
 test('doctor --json: sync-auth check is WARN when LIFEOS_SYNC_REQUIRE_AUTH=0', async () => {
   const { env, cwd } = await makeTempEnv();
   env.LIFEOS_SYNC_REQUIRE_AUTH = '0';
@@ -305,6 +573,7 @@ test('doctor --json: sync-auth check is WARN when LIFEOS_SYNC_REQUIRE_AUTH=0', a
       cwd,
       stdout: (msg) => stdout.push(msg),
       stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
       fetchFn: async () => ({ ok: true, status: 200 }) as Response,
     },
     CLI_VERSION,
