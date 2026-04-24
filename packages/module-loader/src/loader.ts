@@ -61,10 +61,18 @@ interface HeapPressureSnapshot {
   heapLimit: number;
 }
 
+export interface RestrictedEventBus {
+  subscribe<T>(
+    topic: string,
+    handler: (event: BaseEvent<T>) => Promise<void> | void,
+  ): Promise<void>;
+  publish<T>(topic: string, event: BaseEvent<T>): Promise<void>;
+}
+
 export interface ModuleRuntimeContext {
   env: NodeJS.ProcessEnv;
   graphPath?: string;
-  eventBus: ManagedEventBus;
+  eventBus: RestrictedEventBus;
   createLifeGraphClient: (options?: CreateLifeGraphClientOptions) => LifeGraphClient;
   subscribe<T>(
     topic: string,
@@ -603,9 +611,44 @@ export class ModuleLoader {
   }
 
   private createContext(policy?: RuntimePermissionPolicy): ModuleRuntimeContext {
+    const restrictedEventBus: RestrictedEventBus = {
+      subscribe: async <T>(
+        topic: string,
+        handler: (event: BaseEvent<T>) => Promise<void> | void,
+      ): Promise<void> => {
+        await context.subscribe(topic, handler);
+      },
+      publish: async <T>(topic: string, event: BaseEvent<T>): Promise<void> => {
+        try {
+          if (policy) {
+            const allowed = policy.eventPermissions.publish.some((pattern) => pattern === topic);
+            this.authorizeRuntimeAction(
+              policy.moduleId,
+              'event.publish',
+              `topic "${topic}" is not declared in lifeos.json`,
+              allowed,
+            );
+          }
+          await this.eventBus.publish(topic, event);
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logStructured('warn', {
+            component: 'module-loader',
+            moduleId: policy?.moduleId,
+            eventType: 'module.publish.degraded',
+            errorCode: 'event-publish-degraded',
+            message: `publish degraded for topic "${topic}": ${message}`,
+          });
+          if (this.runtimePermissionMode === 'strict') {
+            throw error;
+          }
+        }
+      },
+    };
+
     const context: ModuleRuntimeContext = {
       env: this.env,
-      eventBus: this.eventBus,
+      eventBus: restrictedEventBus,
       createLifeGraphClient: (options?: CreateLifeGraphClientOptions): LifeGraphClient => {
         const resolved = this.createGraphClient(options);
         if (!policy) {

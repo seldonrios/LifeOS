@@ -4,10 +4,14 @@ interface HeapPressureSnapshot {
     heapUsed: number;
     heapLimit: number;
 }
+export interface RestrictedEventBus {
+    subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void> | void): Promise<void>;
+    publish<T>(topic: string, event: BaseEvent<T>): Promise<void>;
+}
 export interface ModuleRuntimeContext {
     env: NodeJS.ProcessEnv;
     graphPath?: string;
-    eventBus: ManagedEventBus;
+    eventBus: RestrictedEventBus;
     createLifeGraphClient: (options?: CreateLifeGraphClientOptions) => LifeGraphClient;
     subscribe<T>(topic: string, handler: (event: BaseEvent<T>) => Promise<void> | void): Promise<void>;
     publish<T extends Record<string, unknown>>(topic: string, data: T, source?: string): Promise<BaseEvent<T>>;

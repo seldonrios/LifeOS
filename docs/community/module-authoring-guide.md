@@ -13,11 +13,17 @@ A LifeOS module implements the `LifeOSModule` interface from `@lifeos/module-sdk
 `ModuleRuntimeContext` provides the runtime services a module can use:
 
 - `env`
-- `eventBus`
+- `eventBus` (`RestrictedEventBus` with only `subscribe` and `publish`)
 - `createLifeGraphClient`
 - `subscribe`
 - `publish`
 - `log`
+
+### Event publishing guidance
+
+- Default to `context.publish(topic, data, source)` for normal module event emission. It creates a valid event envelope automatically.
+- Use `context.eventBus.publish(topic, eventEnvelope)` only when you need direct control over envelope fields like `metadata.correlation_id` or `metadata.trace_id`.
+- `context.eventBus` intentionally does not expose lifecycle methods like `close()`, transport accessors, or health APIs.
 
 Import both `LifeOSModule` and `ModuleRuntimeContext` from `@lifeos/module-sdk`, never directly from `@lifeos/module-loader`.
 

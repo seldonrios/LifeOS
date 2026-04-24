@@ -229,3 +229,82 @@ test('household-chores allows retry when first persistence attempt fails', async
 
   assert.equal(invocationCount, 2);
 });
+
+test('household-chores publishes full automation-failure envelope via context.eventBus.publish', async () => {
+  const subscribers = new Map<
+    string,
+    (event: { data: Record<string, unknown> }) => Promise<void>
+  >();
+  const eventBusPublishes: Array<{ topic: string; event: BaseEvent<Record<string, unknown>> }> = [];
+  const module = createHouseholdChoresModule({
+    createIntentStore: async () => ({
+      createRequestedChore() {
+        throw new Error('assignee not found');
+      },
+    }),
+  });
+
+  await module.init({
+    env: {
+      LIFEOS_HOUSEHOLD_DB_PATH: 'memory',
+    } as NodeJS.ProcessEnv,
+    eventBus: {
+      subscribe: async () => {
+        return;
+      },
+      publish: async (topic, event) => {
+        eventBusPublishes.push({
+          topic,
+          event: event as BaseEvent<Record<string, unknown>>,
+        });
+      },
+    },
+    createLifeGraphClient: (() => {
+      throw new Error('not used');
+    }) as never,
+    subscribe: async (topic, handler) => {
+      subscribers.set(
+        topic,
+        handler as (event: { data: Record<string, unknown> }) => Promise<void>,
+      );
+    },
+    publish: async (topic, data, source) => {
+      return createEventEnvelope(topic, data, source ?? 'test-runtime');
+    },
+    log: () => {
+      return;
+    },
+  });
+
+  const handler = subscribers.get(Topics.lifeos.householdChoreCreateRequested);
+  assert.ok(handler);
+  if (!handler) {
+    return;
+  }
+
+  await assert.rejects(async () =>
+    handler({
+      data: {
+        householdId: 'house_1',
+        actorUserId: 'user_1',
+        originalCaptureId: 'cap_9',
+        text: 'vacuum the living room',
+        choreTitle: 'vacuum the living room',
+      },
+    }),
+  );
+
+  assert.equal(eventBusPublishes.length, 1);
+  assert.equal(eventBusPublishes[0]?.topic, Topics.lifeos.householdAutomationFailed);
+  const envelope = eventBusPublishes[0]?.event;
+  assert.ok(envelope);
+  assert.equal(envelope?.type, Topics.lifeos.householdAutomationFailed);
+  assert.equal((envelope?.data as { error_code?: string }).error_code, 'CHORE_NO_ASSIGNEE');
+  assert.equal((envelope?.data as { household_id?: string }).household_id, 'house_1');
+  assert.equal((envelope?.data as { actor_id?: string }).actor_id, 'user_1');
+  assert.equal(
+    (envelope?.metadata as { trace_id?: string } | undefined)?.trace_id,
+    (envelope?.data as { trace_id?: string }).trace_id,
+  );
+  assert.equal('type' in ((envelope?.data as Record<string, unknown>) ?? {}), false);
+});

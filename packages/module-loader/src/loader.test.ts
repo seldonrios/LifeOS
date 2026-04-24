@@ -98,6 +98,69 @@ test('ModuleLoader context subscribe + publish routes events through bus', async
   assert.equal(eventBus.published.length, 1);
 });
 
+test('ModuleLoader context.eventBus exposes only publish and subscribe methods', async () => {
+  const eventBus = new MockEventBus();
+  let capturedEventBus: LifeOSModule['init'] extends (context: infer T) => unknown
+    ? T['eventBus']
+    : never;
+  const loader = new ModuleLoader({
+    eventBus,
+    requireManifest: false,
+    logger: () => {
+      return;
+    },
+  });
+
+  await loader.load({
+    id: 'event-bus-shape',
+    async init(context) {
+      capturedEventBus = context.eventBus;
+    },
+  });
+
+  assert.equal('subscribe' in capturedEventBus, true);
+  assert.equal('publish' in capturedEventBus, true);
+  assert.equal('close' in capturedEventBus, false);
+  assert.equal('getTransport' in capturedEventBus, false);
+});
+
+test('ModuleLoader context.eventBus.publish preserves provided event envelope metadata', async () => {
+  const eventBus = new MockEventBus();
+  const loader = new ModuleLoader({
+    eventBus,
+    requireManifest: false,
+    logger: () => {
+      return;
+    },
+  });
+
+  const metadata = {
+    correlation_id: 'corr-123',
+    trace_id: 'trace-abc',
+    custom: 'keep-me',
+  };
+
+  await loader.load({
+    id: 'event-envelope-module',
+    async init(context) {
+      await context.eventBus.publish('lifeos.test.envelope', {
+        id: 'evt-1',
+        type: 'lifeos.test.envelope',
+        timestamp: new Date().toISOString(),
+        source: 'event-envelope-module',
+        version: '0.1.0',
+        data: {
+          status: 'ok',
+        },
+        metadata,
+      });
+    },
+  });
+
+  assert.equal(eventBus.published.length, 1);
+  assert.strictEqual(eventBus.published[0]?.event.metadata, metadata);
+});
+
 test('ModuleLoader close calls module dispose and closes event bus', async () => {
   const eventBus = new MockEventBus();
   const disposed: string[] = [];
@@ -534,6 +597,63 @@ test('ModuleLoader enforces event publish permissions in strict runtime mode', a
       id: 'event-locked',
       async init(context) {
         await context.publish('lifeos.unauthorized.publish', { ok: true }, 'event-locked');
+      },
+    });
+  });
+});
+
+test('ModuleLoader enforces context.eventBus publish permissions in strict runtime mode', async () => {
+  const eventBus = new MockEventBus();
+  const tempDir = await mkdtemp(join(tmpdir(), 'lifeos-loader-'));
+  const manifestDir = join(tempDir, 'modules', 'event-locked-envelope');
+  await mkdir(manifestDir, { recursive: true });
+  await writeFile(
+    join(manifestDir, 'lifeos.json'),
+    JSON.stringify(
+      {
+        name: 'event-locked-envelope',
+        version: '0.1.0',
+        author: 'tester',
+        permissions: {
+          graph: ['read'],
+          network: [],
+          voice: [],
+          events: ['subscribe:lifeos.tick'],
+        },
+        resources: {
+          cpu: 'low',
+          memory: 'low',
+        },
+        requires: ['@lifeos/event-bus'],
+        category: 'custom',
+        tags: ['test'],
+      },
+      null,
+      2,
+    ),
+  );
+
+  const loader = new ModuleLoader({
+    baseDir: tempDir,
+    env: { LIFEOS_MODULE_RUNTIME_PERMISSIONS: 'strict' },
+    eventBus,
+    logger: () => {
+      return;
+    },
+  });
+
+  await assert.rejects(async () => {
+    await loader.load({
+      id: 'event-locked-envelope',
+      async init(context) {
+        await context.eventBus.publish('lifeos.unauthorized.publish', {
+          id: 'evt-unauthorized',
+          type: 'lifeos.unauthorized.publish',
+          timestamp: new Date().toISOString(),
+          source: 'event-locked-envelope',
+          version: '0.1.0',
+          data: { ok: true },
+        });
       },
     });
   });

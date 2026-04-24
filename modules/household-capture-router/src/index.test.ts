@@ -203,3 +203,82 @@ test('module subscribes when LIFEOS_HOUSEHOLD_DB_PATH is present', async () => {
 
   assert.equal(subscribers.has(Topics.lifeos.householdVoiceCaptureCreated), true);
 });
+
+test('module publishes full automation-failure envelope via context.eventBus.publish', async () => {
+  const publishes: Array<{ topic: string; data: Record<string, unknown> }> = [];
+  const subscribers = new Map<
+    string,
+    (event: { data: Record<string, unknown> }) => Promise<void>
+  >();
+  const eventBusPublishes: Array<{ topic: string; event: BaseEvent<Record<string, unknown>> }> = [];
+
+  await householdCaptureRouterModule.init({
+    env: {
+      LIFEOS_AI_ENABLED: 'false',
+      LIFEOS_HOUSEHOLD_DB_PATH: '/tmp/test-household.db',
+    } as NodeJS.ProcessEnv,
+    eventBus: {
+      subscribe: async () => {
+        return;
+      },
+      publish: async (topic, event) => {
+        eventBusPublishes.push({
+          topic,
+          event: event as BaseEvent<Record<string, unknown>>,
+        });
+      },
+    },
+    createLifeGraphClient: (() => {
+      throw new Error('not used');
+    }) as never,
+    subscribe: async (topic, handler) => {
+      subscribers.set(
+        topic,
+        handler as (event: { data: Record<string, unknown> }) => Promise<void>,
+      );
+    },
+    publish: async (topic, data, source) => {
+      publishes.push({ topic, data });
+      return createEventEnvelope(topic, data, source ?? 'test-runtime');
+    },
+    log: () => {
+      return;
+    },
+  });
+
+  const handler = subscribers.get(Topics.lifeos.householdVoiceCaptureCreated);
+  assert.ok(handler);
+  if (!handler) {
+    return;
+  }
+
+  await handler({
+    data: {
+      captureId: 'cap_10',
+      householdId: 'house_1',
+      actorUserId: 'user_1',
+      text: 'thing for Saturday',
+      audioRef: null,
+      source: 'mobile',
+      createdAt: '2026-03-30T21:00:00.000Z',
+    },
+  });
+
+  assert.equal(publishes[0]?.topic, Topics.lifeos.householdCaptureUnresolved);
+  const failure = eventBusPublishes.find(
+    (entry) => entry.topic === Topics.lifeos.householdAutomationFailed,
+  );
+  assert.ok(failure);
+  assert.equal(failure?.event.type, Topics.lifeos.householdAutomationFailed);
+  assert.equal(
+    (failure?.event.data as { error_code?: string }).error_code,
+    'CAPTURE_NO_RULE_MATCH',
+  );
+  assert.equal((failure?.event.data as { household_id?: string }).household_id, 'house_1');
+  assert.equal((failure?.event.data as { actor_id?: string }).actor_id, 'user_1');
+  assert.equal(
+    (failure?.event.metadata as { trace_id?: string } | undefined)?.trace_id,
+    (failure?.event.data as { trace_id?: string }).trace_id,
+  );
+  assert.equal('type' in ((failure?.event.data as Record<string, unknown>) ?? {}), false);
+});
