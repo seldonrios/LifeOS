@@ -24,6 +24,8 @@ This is the canonical contributor guide for LifeOS.
 | Add a new Docker service                 | `services/` + `docker-compose.yml`                               |
 | Understand startup health/degraded state | `packages/module-loader/src/diagnostics.ts` + module-loader logs |
 | Understand a design decision             | `docs/adr/`                                                      |
+| I want to understand where work belongs  | `docs/architecture/repo-lanes.md`                                |
+| I want to change capture/triage/plan/reminders/review | `docs/development/hero-loop-change-map.md`             |
 
 ## Naming Standards
 
