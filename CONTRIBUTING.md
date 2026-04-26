@@ -242,7 +242,7 @@ To use the `Works with LifeOS` badge (`docs/badges/works-with-lifeos.svg`), a mo
 
 Track roadmap and high-priority module opportunities in:
 
-- [LifeOS v0.2.0 Ecosystem North Star Issue Draft](docs/community/v0.2.0-ecosystem-north-star-issue.md)
+- [LifeOS Ecosystem North Star Issue Draft](docs/community/ecosystem-north-star-issue.md)
 
 Priority community modules:
 

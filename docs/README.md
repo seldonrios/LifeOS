@@ -79,7 +79,7 @@ Current executable MVP targets are:
 - [Glossary](community/glossary.md) **[current]**
 - [Phase 1 MVP North Star Issue Draft](community/phase-1-mvp-north-star-issue.md) **[foundation]**
 - [v0.1.0 Launch Thread Draft](community/v0.1.0-launch-thread.md) **[foundation]**
-- [v0.2.0 Ecosystem North Star Issue Draft](community/v0.2.0-ecosystem-north-star-issue.md) **[future]**
+- [Ecosystem North Star Issue Draft](community/ecosystem-north-star-issue.md) **[future]**
 - [v0.2.0 Launch Thread Draft](community/v0.2.0-launch-thread.md) **[future]**
 - [v0.2.0 Release Notes Draft](community/v0.2.0-release-notes.md) **[future]**
 

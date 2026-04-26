@@ -12,7 +12,7 @@ body:
     attributes:
       label: LifeOS version
       description: Output of `pnpm lifeos --version` or the commit hash.
-      placeholder: v0.2.0 or b07a210
+      placeholder: v0.3.0 or <commit-hash>
     validations:
       required: true
   - type: dropdown

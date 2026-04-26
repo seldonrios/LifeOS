@@ -550,7 +550,7 @@ Community launch docs:
 
 - [Phase 1 MVP North Star Issue Draft](docs/community/phase-1-mvp-north-star-issue.md)
 - [v0.1.0 Launch Thread Draft](docs/community/v0.1.0-launch-thread.md)
-- [v0.2.0 Ecosystem North Star Issue Draft](docs/community/v0.2.0-ecosystem-north-star-issue.md)
+- [Ecosystem North Star Issue Draft](docs/community/ecosystem-north-star-issue.md)
 - [v0.2.0 Launch Thread Draft](docs/community/v0.2.0-launch-thread.md)
 
 ## License
