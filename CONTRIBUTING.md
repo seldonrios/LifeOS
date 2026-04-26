@@ -45,7 +45,6 @@ Phase 3 accepts work that improves one of these stages:
 | **Plan / Schedule**                | Next actions become clearer and easier to schedule            | action creation, due dates, `PlannedAction`, scheduler behavior         |
 | **Reminders**                      | Users can trust reminders to fire and recover cleanly         | `lifeos remind`, idempotency, reminder events, overdue handling         |
 | **Review**                         | Daily/weekly summaries are more useful and accurate           | `lifeos review`, `loopSummary`, history aggregation, insights           |
-| **Household Coordination**         | Shared household actions become reliable and accountable      | `modules/household-*`, `modules/home-state`, `apps/mobile` household UI |
 | **Cross-cutting / Infrastructure** | One or more stages become more dependable without new breadth | contracts, tests, docs, shared runtime, CI, observability               |
 
 Changes that add breadth without improving loop reliability will be deferred to Phase 4.
@@ -139,7 +138,7 @@ Resource enforcement requirements:
 
 ## Modularity Risk Checklist
 
-Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --risks`. Required items:
+Every new module or core PR must pass the following validation checks. Required items:
 
 - [ ] `requires` uses bounded semver ranges in `lifeos.json` (example: `"@lifeos/life-graph@>=0.3.0 <0.4.0"`)
 - [ ] Includes empty `migrations/` folder (for future schema changes)
@@ -147,6 +146,8 @@ Every new module or core PR must pass the Risk Radar with `pnpm lifeos status --
 - [ ] Passes `pnpm lifeos module validate`
 - [ ] Tested against latest compatibility matrix
 - [ ] Resources (`cpu`, `memory`) declared in manifest
+
+Run before submitting: `pnpm run validate`, `pnpm lifeos module validate <module-name>`, and `pnpm test:core-loop` (when hero-loop behavior changes).
 
 Full spec: [docs/module-spec/lifeos-manifest.md](docs/module-spec/lifeos-manifest.md)
 Marketplace catalog: `community-modules.json` (root).
@@ -214,27 +215,6 @@ export const myModule: LifeOSModule = {
 - Includes tests for success path and degraded/failure path.
 - Keeps data local-first and privacy-preserving.
 
-## Household Coordination
-
-Use this addendum when proposing or shipping shared household workflows.
-
-Design principles:
-
-- Household-first: design shared tasks, ownership, and accountability before adding personal-mode shortcuts.
-- Privacy explicitness: classify data as personal, household, or home-state and document boundary decisions.
-- Deterministic by default: prefer explicit routing and stable defaults over probabilistic behavior.
-- Traceable actions: household state mutations must produce auditable events and actor context.
-
-Definition of Done (household features):
-
-- [ ] Includes both unit coverage and at least one multi-user integration test for the changed household flow.
-- [ ] Updates setup guidance, data model/contract docs, and user-facing documentation when behavior changes.
-- [ ] Emits auditable events for household state mutations with actor and outcome context.
-- [ ] Defines notification routing defaults and override behavior for impacted household roles.
-- [ ] Provides reviewer-ready happy-path demo steps (commands/screens) that reproduce the intended end-user flow.
-
-Household contributor onboarding checklist: [docs/onboarding/household-phase.md](docs/onboarding/household-phase.md).
-
 ## Works with LifeOS Badge Eligibility
 
 To use the `Works with LifeOS` badge (`docs/badges/works-with-lifeos.svg`), a module PR must:
@@ -269,3 +249,28 @@ Priority community modules:
 - Smart Home bridge
 - Email assistant
 - Fitness tracker integration
+
+## Extended Platform Work (Phase 5+)
+
+> **Note:** The following sections describe extended platform work that is not part of the current Phase 3 MVP contribution lane. Contributors working on household features should read this section, but Phase 3 PRs are not expected to include household work.
+
+### Household Coordination
+
+Use this addendum when proposing or shipping shared household workflows.
+
+Design principles:
+
+- Household-first: design shared tasks, ownership, and accountability before adding personal-mode shortcuts.
+- Privacy explicitness: classify data as personal, household, or home-state and document boundary decisions.
+- Deterministic by default: prefer explicit routing and stable defaults over probabilistic behavior.
+- Traceable actions: household state mutations must produce auditable events and actor context.
+
+Definition of Done (household features):
+
+- [ ] Includes both unit coverage and at least one multi-user integration test for the changed household flow.
+- [ ] Updates setup guidance, data model/contract docs, and user-facing documentation when behavior changes.
+- [ ] Emits auditable events for household state mutations with actor and outcome context.
+- [ ] Defines notification routing defaults and override behavior for impacted household roles.
+- [ ] Provides reviewer-ready happy-path demo steps (commands/screens) that reproduce the intended end-user flow.
+
+Household contributor onboarding checklist: [docs/onboarding/household-phase.md](docs/onboarding/household-phase.md).
