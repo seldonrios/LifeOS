@@ -471,6 +471,7 @@ test('doctor --json: life-graph JSON fallback healthy is WARN with structured fi
           jsonExists: true,
           jsonReadable: true,
           jsonParseable: true,
+          jsonVersionPresent: true,
         }),
       fetchFn: async () => ({ ok: true, status: 200 }) as Response,
     },
@@ -495,6 +496,81 @@ test('doctor --json: life-graph JSON fallback healthy is WARN with structured fi
   assert.equal(lifeGraph?.details?.backend, 'json-file');
   assert.ok(typeof lifeGraph?.details?.dbPath === 'string' && lifeGraph.details.dbPath.length > 0);
   assert.equal(lifeGraph?.details?.sqliteVersionPresent, false);
+});
+
+test('doctor --json: life-graph JSON fallback with version present is WARN', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'json-file',
+          jsonReadable: true,
+          jsonParseable: true,
+          jsonVersionPresent: true,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: { backend?: string; jsonFallbackActive?: boolean };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'WARN');
+  assert.equal(lifeGraph?.details?.backend, 'json-file');
+  assert.equal(lifeGraph?.details?.jsonFallbackActive, true);
+});
+
+test('doctor --json: life-graph JSON parseable but version missing is FAIL', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: async (graphPath) =>
+        makeInspection(graphPath ?? join(tmpdir(), 'life-graph.json'), {
+          backendCandidate: 'json-file',
+          jsonReadable: true,
+          jsonParseable: true,
+          jsonVersionPresent: false,
+        }),
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{
+      id: string;
+      status: string;
+      details?: { backend?: string };
+    }>;
+  };
+  const lifeGraph = output.checks.find((check) => check.id === 'life-graph');
+
+  assert.ok(lifeGraph, 'life-graph check should be present');
+  assert.equal(lifeGraph?.status, 'FAIL');
+  assert.equal(lifeGraph?.details?.backend, 'json-file');
 });
 
 test('doctor --json: life-graph SQLite corrupt is FAIL with structured fields', async () => {

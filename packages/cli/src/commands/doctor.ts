@@ -336,7 +336,18 @@ export async function runDoctorCommand(
     } else if (
       inspection.backendCandidate === 'json-file' &&
       inspection.jsonReadable &&
-      inspection.jsonParseable
+      inspection.jsonParseable &&
+      !inspection.jsonVersionPresent
+    ) {
+      status = 'FAIL';
+      description = 'Life graph storage missing or invalid';
+      suggestion = 'Run `pnpm lifeos init` to initialize graph storage';
+      details = `${inspection.graphPath} (JSON fallback active)`;
+    } else if (
+      inspection.backendCandidate === 'json-file' &&
+      inspection.jsonReadable &&
+      inspection.jsonParseable &&
+      inspection.jsonVersionPresent
     ) {
       status = 'WARN';
       suggestion = 'Run `pnpm lifeos init` to migrate to SQLite-backed storage';

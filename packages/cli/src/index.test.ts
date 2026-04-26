@@ -798,6 +798,57 @@ test('status --json normalizes unknown transport to in-memory', async () => {
   assert.equal(parsed.eventDurability, 'process-local');
 });
 
+test('status --json resolves transport to nats after probe publish', async () => {
+  const stdout: string[] = [];
+  const { bus } = createMockEventBus();
+
+  let published = false;
+  let capturedProbeEvent: unknown = undefined;
+  bus.publish = async (_topic: string, event: unknown) => {
+    capturedProbeEvent = event;
+    // Only toggle transport after a valid BaseEvent is published
+    const e = event as Record<string, unknown>;
+    if (
+      typeof e.id === 'string' &&
+      typeof e.type === 'string' &&
+      typeof e.timestamp === 'string' &&
+      typeof e.source === 'string' &&
+      typeof e.version === 'string' &&
+      'data' in e
+    ) {
+      published = true;
+    }
+  };
+  bus.getTransport = () => (published ? 'nats' : 'unknown');
+
+  const exitCode = await runCli(['status', '--json'], {
+    getGraphSummary: async () => sampleSummary(),
+    createEventBusClient: () => bus,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphSummary & {
+    eventTransport: 'nats' | 'in-memory';
+    eventDurability: 'external' | 'process-local';
+  };
+  assert.equal(parsed.eventTransport, 'nats');
+  assert.equal(parsed.eventDurability, 'external');
+
+  // Assert the probe conforms to the BaseEvent contract
+  assert.ok(capturedProbeEvent, 'probe event should have been published');
+  const probe = capturedProbeEvent as Record<string, unknown>;
+  assert.ok(typeof probe.id === 'string' && probe.id.length > 0, 'probe.id must be a non-empty string');
+  assert.ok(typeof probe.type === 'string' && probe.type.length > 0, 'probe.type must be a non-empty string');
+  assert.ok(typeof probe.timestamp === 'string' && probe.timestamp.length > 0, 'probe.timestamp must be a non-empty string');
+  assert.ok(typeof probe.source === 'string' && probe.source.length > 0, 'probe.source must be a non-empty string');
+  assert.ok(typeof probe.version === 'string' && probe.version.length > 0, 'probe.version must be a non-empty string');
+  assert.ok('data' in probe, 'probe must include a data field');
+});
+
+
 test('status --risks --json emits modularity risk radar payload', async () => {
   const stdout: string[] = [];
   const graph = sampleGraph();
@@ -3503,9 +3554,11 @@ test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToActionId points
   const payload = JSON.parse(stdout.join('')) as {
     error: {
       code: string;
+      message: string;
     };
   };
   assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.ok(payload.error.message.length > 0);
   assert.equal(stderr.join(''), '');
 });
 
@@ -3623,11 +3676,13 @@ test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToPlanId points t
   const payload = JSON.parse(stdout.join('')) as {
     error: {
       code: string;
+      message: string;
       missingLinkField: string;
       missingLinkId: string;
     };
   };
   assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.ok(payload.error.message.length > 0);
   assert.equal(payload.error.missingLinkField, 'triagedToPlanId');
   assert.equal(payload.error.missingLinkId, 'plan_gone');
   assert.equal(stderr.join(''), '');
@@ -3683,11 +3738,13 @@ test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triagedToNoteId points t
   const payload = JSON.parse(stdout.join('')) as {
     error: {
       code: string;
+      message: string;
       missingLinkField: string;
       missingLinkId: string;
     };
   };
   assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.ok(payload.error.message.length > 0);
   assert.equal(payload.error.missingLinkField, 'triagedToNoteId');
   assert.equal(payload.error.missingLinkId, 'note_gone');
   assert.equal(stderr.join(''), '');
@@ -3742,11 +3799,13 @@ test('inbox triage returns ERR_TRIAGE_LINK_MISSING when triaged capture has no l
   const payload = JSON.parse(stdout.join('')) as {
     error: {
       code: string;
+      message: string;
       missingLinkField: string;
       missingLinkId: string;
     };
   };
   assert.equal(payload.error.code, 'ERR_TRIAGE_LINK_MISSING');
+  assert.ok(payload.error.message.length > 0);
   assert.equal(payload.error.missingLinkField, 'none');
   assert.equal(payload.error.missingLinkId, 'none');
   assert.equal(stderr.join(''), '');
@@ -4795,6 +4854,28 @@ test('tick --watch --every 5d (unsupported unit) exits 1 with ERR_INVALID_TICK_I
 
   assert.equal(exitCode, 1);
   assert.match(stderr.join(''), /ERR_INVALID_TICK_INTERVAL/);
+});
+
+test('tick --watch --every 10s --json emits ERR_INVALID_TICK_INTERVAL with message field', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '10s', '--json'], {
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 1);
+  const payload = JSON.parse(stdout.join('')) as {
+    error: {
+      code: string;
+      message: string;
+      minimumMs: number;
+      acceptedUnits: string[];
+    };
+  };
+  assert.equal(payload.error.code, 'ERR_INVALID_TICK_INTERVAL');
+  assert.ok(payload.error.message.length > 0);
 });
 
 test('tick --watch: second tick starts only after first completes and sleep elapses', async () => {

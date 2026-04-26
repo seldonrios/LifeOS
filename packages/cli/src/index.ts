@@ -180,6 +180,7 @@ export function parseTickInterval(raw: string): number {
     const err = {
       error: {
         code: 'ERR_INVALID_TICK_INTERVAL',
+        message: `"${raw}" is not a valid tick interval. Accepted formats: 30s, 5m, 1h (minimum 30s).`,
         minimumMs: TICK_INTERVAL_MINIMUM_MS,
         acceptedUnits: ['s', 'm', 'h'],
       },
@@ -194,6 +195,7 @@ export function parseTickInterval(raw: string): number {
     const err = {
       error: {
         code: 'ERR_INVALID_TICK_INTERVAL',
+        message: `"${raw}" is below the minimum interval of ${TICK_INTERVAL_MINIMUM_MS}ms. Use 30s or longer.`,
         minimumMs: TICK_INTERVAL_MINIMUM_MS,
         acceptedUnits: ['s', 'm', 'h'],
       },
@@ -2080,6 +2082,7 @@ export async function runStatusCommand(
     });
     let detectedTransport: EventBusTransport = 'unknown';
     try {
+      await bus.publish('lifeos.status.probe', createCliEvent('lifeos.status.probe', {}));
       detectedTransport = bus.getTransport();
     } catch (error: unknown) {
       verboseLog(`status_event_probe_failed reason=${normalizeErrorMessage(error)}`);
@@ -5191,6 +5194,7 @@ export async function runInboxCommand(
                   {
                     error: {
                       code: 'ERR_TRIAGE_LINK_MISSING',
+                      message: 'Capture was already triaged, but the linked record could not be resolved.',
                       captureId: captureEntry.id,
                       missingLinkField: 'triagedToActionId',
                       missingLinkId: captureEntry.triagedToActionId,
@@ -5239,6 +5243,7 @@ export async function runInboxCommand(
                   {
                     error: {
                       code: 'ERR_TRIAGE_LINK_MISSING',
+                      message: 'Capture was already triaged, but the linked record could not be resolved.',
                       captureId: captureEntry.id,
                       missingLinkField: 'triagedToPlanId',
                       missingLinkId: captureEntry.triagedToPlanId,
@@ -5287,6 +5292,7 @@ export async function runInboxCommand(
                   {
                     error: {
                       code: 'ERR_TRIAGE_LINK_MISSING',
+                      message: 'Capture was already triaged, but the linked record could not be resolved.',
                       captureId: captureEntry.id,
                       missingLinkField: 'triagedToNoteId',
                       missingLinkId: captureEntry.triagedToNoteId,
@@ -5328,6 +5334,7 @@ export async function runInboxCommand(
               {
                 error: {
                   code: 'ERR_TRIAGE_LINK_MISSING',
+                  message: 'Capture was already triaged, but the linked record could not be resolved.',
                   captureId: captureEntry.id,
                   missingLinkField: 'none',
                   missingLinkId: 'none',
