@@ -4968,6 +4968,51 @@ test('tick --watch: SIGTERM causes clean exit with code 0', async () => {
   assert.match(stdout.join(''), /stopped/i);
 });
 
+test('tick --watch: emits duration-exceeded warning when tick takes longer than interval', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+  let sleepCount = 0;
+
+  // Simulate a tick that reports it took longer than the interval by
+  // manipulating Date.now via the 'now' dependency to advance time.
+  let fakeNow = 0;
+  const nowFn = () => new Date(fakeNow);
+
+  const fakeTick = async () => {
+    // Advance simulated clock beyond the interval (30s = 30000ms) so that
+    // elapsed = Date.now() - start > intervalMs inside the watch loop.
+    fakeNow += 35_000;
+    return { now: new Date(fakeNow).toISOString(), checkedTasks: 0, overdueTasks: [] };
+  };
+
+  const fakeSleep = (_ms: number): Promise<void> => {
+    sleepCount += 1;
+    if (sleepCount >= 1) {
+      process.emit('SIGTERM');
+      return new Promise(() => {});
+    }
+    return Promise.resolve();
+  };
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '30s'], {
+    now: nowFn,
+    runTick: fakeTick,
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() { return { reminderEvents: [] }; },
+        async updateReminderEvent() { return; },
+        async appendReminderEvent() { return; },
+      }) as never,
+    sleep: fakeSleep,
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stderr.join(''), /tick warn/i);
+  assert.match(stderr.join(''), /longer than interval/i);
+});
+
 test('lifeos remind <id> --at <iso> output contains tick dependency note', async () => {
   const actionId = 'action_remind_note';
   const scheduledAt = '2026-05-01T09:00:00Z';

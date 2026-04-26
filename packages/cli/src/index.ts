@@ -2558,7 +2558,7 @@ export async function runTickCommand(
 
   try {
     while (!stopped) {
-      const start = Date.now();
+      const start = now().getTime();
       let remindersProcessed = 0;
       try {
         const cycleResult = await runSingleTickCycle(
@@ -2575,7 +2575,7 @@ export async function runTickCommand(
       } catch (error: unknown) {
         writeStderr(`${chalk.red.bold('[tick error]')} ${normalizeErrorMessage(error)}\n`);
       }
-      const elapsed = Date.now() - start;
+      const elapsed = now().getTime() - start;
       if (elapsed > intervalMs) {
         writeStderr(
           `${chalk.yellow('[tick warn]')} Tick took ${elapsed}ms, longer than interval ${intervalMs}ms.\n`,
