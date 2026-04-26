@@ -123,6 +123,8 @@ export interface TickCommandOptions {
   outputJson: boolean;
   graphPath: string;
   verbose: boolean;
+  watch?: boolean;
+  every?: string;
 }
 
 export interface DemoCommandOptions {
@@ -366,4 +368,5 @@ export interface RunCliDependencies {
   createSpinner?: (text: string) => SpinnerLike;
   voicePublishTimeoutMs?: number;
   voiceCloseTimeoutMs?: number;
+  sleep?: (ms: number) => Promise<void>;
 }

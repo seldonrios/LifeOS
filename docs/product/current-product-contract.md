@@ -91,7 +91,7 @@ Reviews of the current release target should evaluate against the following in-s
 - Hero loop clarity (capture → triage → plan → reminders → review)
 - CLI reliability and error quality
 - Module loader and manifest contract correctness
-- Life graph persistence behavior
+- Life graph persistence behavior. The event bus uses a non-durable in-memory fallback when NATS is unavailable; events do not survive process restart in this mode.
 - Local-first and trust surface behavior
 
 ## What later reviews should not judge yet

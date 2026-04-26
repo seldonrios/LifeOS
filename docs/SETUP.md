@@ -192,6 +192,41 @@ Explicit override:
 - Set `LIFEOS_SYNC_REQUIRE_AUTH=0` to run in unauthenticated sync mode.
 - This is a deliberate security downgrade and is surfaced as a warning in `lifeos doctor`.
 
+## Reminder Delivery and tick
+
+Reminders in LifeOS only fire when `lifeos tick` runs — there is no background daemon.
+
+**Manual tick** (fire due reminders once):
+
+```bash
+pnpm lifeos tick
+```
+
+**Watch mode** (repeat in the foreground):
+
+```bash
+# Default: check every 15 minutes
+pnpm lifeos tick --watch
+
+# Custom interval (minimum 30 s)
+pnpm lifeos tick --watch --every 5m
+pnpm lifeos tick --watch --every 1h
+```
+
+The watch process runs in the foreground and exits cleanly on SIGINT (Ctrl-C) or SIGTERM.
+
+**Sample cron** (Linux/macOS — fires reminders every 15 minutes without a foreground process):
+
+```
+*/15 * * * * cd /path/to/lifeos && pnpm lifeos tick
+```
+
+> **Note:** If you stop the `tick --watch` process or never run `lifeos tick`, scheduled reminders will not fire until the next manual or cron-triggered tick.
+
+## Event Transport and Durability
+
+**Event transport:** When NATS is unavailable, LifeOS uses a non-durable in-memory event fallback. Events published through the in-memory bus do not survive process restart and are not replayed. Module reactions still work locally. Cross-device sync and durable event delivery require NATS (`docker compose up -d nats`). Run `lifeos doctor` to see the active transport and `lifeos status` to see `eventTransport` and `eventDurability` fields.
+
 Trust material path and permissions:
 
 - Local trust data is stored at `~/.lifeos/mesh-trust.json`.

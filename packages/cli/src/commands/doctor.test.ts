@@ -336,6 +336,34 @@ test('doctor --json: output includes expected static check ids', async () => {
   }
 });
 
+test('doctor --json: nats warning describes non-durable fallback semantics', async () => {
+  const { env, cwd } = await makeTempEnv();
+  const stdout: string[] = [];
+
+  await runDoctorCommand(
+    { outputJson: true, verbose: false },
+    {
+      env,
+      cwd,
+      stdout: (msg) => stdout.push(msg),
+      stderr: () => {},
+      inspectLifeGraphStorageFn: healthyInspectLifeGraphStorage,
+      fetchFn: async () => ({ ok: true, status: 200 }) as Response,
+    },
+    CLI_VERSION,
+  );
+
+  const output = JSON.parse(stdout.join('')) as {
+    checks: Array<{ id: string; status: string; description?: string }>;
+  };
+  const nats = output.checks.find((check) => check.id === 'nats');
+
+  assert.ok(nats, 'nats check should be present');
+  assert.equal(nats?.status, 'WARN');
+  assert.ok(nats?.description?.includes('non-durable'));
+  assert.ok(nats?.description?.includes('will not survive process restart'));
+});
+
 test('doctor --json: life-graph SQLite healthy is PASS with structured fields', async () => {
   const { env, cwd } = await makeTempEnv();
   const stdout: string[] = [];

@@ -282,7 +282,8 @@ export async function runDoctorCommand(
       checks.push({
         id: 'nats',
         status: 'WARN',
-        description: 'NATS unavailable; in-memory fallback active',
+          description:
+            'NATS unavailable; using non-durable in-memory event fallback. Events will not survive process restart and will not replay. Module reactions still work locally; cross-device sync requires NATS.',
         suggestion: 'Run `docker compose up -d nats` for durable event transport',
       });
     }

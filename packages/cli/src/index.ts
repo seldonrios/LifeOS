@@ -172,6 +172,37 @@ function riskName(index: number): string {
   return MODULARITY_RISKS[index]?.name ?? `Risk ${index + 1}`;
 }
 
+const TICK_INTERVAL_REGEX = /^[1-9][0-9]*(s|m|h)$/;
+const TICK_INTERVAL_MINIMUM_MS = 30_000;
+
+export function parseTickInterval(raw: string): number {
+  if (!TICK_INTERVAL_REGEX.test(raw)) {
+    const err = {
+      error: {
+        code: 'ERR_INVALID_TICK_INTERVAL',
+        minimumMs: TICK_INTERVAL_MINIMUM_MS,
+        acceptedUnits: ['s', 'm', 'h'],
+      },
+    };
+    throw Object.assign(new Error('ERR_INVALID_TICK_INTERVAL'), { code: 'ERR_INVALID_TICK_INTERVAL', payload: err });
+  }
+  const unit = raw.slice(-1) as 's' | 'm' | 'h';
+  const value = parseInt(raw.slice(0, -1), 10);
+  const multiplier = unit === 's' ? 1000 : unit === 'm' ? 60_000 : 3_600_000;
+  const ms = value * multiplier;
+  if (ms < TICK_INTERVAL_MINIMUM_MS) {
+    const err = {
+      error: {
+        code: 'ERR_INVALID_TICK_INTERVAL',
+        minimumMs: TICK_INTERVAL_MINIMUM_MS,
+        acceptedUnits: ['s', 'm', 'h'],
+      },
+    };
+    throw Object.assign(new Error('ERR_INVALID_TICK_INTERVAL'), { code: 'ERR_INVALID_TICK_INTERVAL', payload: err });
+  }
+  return ms;
+}
+
 async function readTextIfPresent(path: string): Promise<string> {
   try {
     return await readFile(path, 'utf8');
@@ -2040,6 +2071,27 @@ export async function runStatusCommand(
       };
       verboseLog(`storage_info_fallback reason=${normalizeErrorMessage(error)}`);
     }
+    const createBus = createDefaultEventBusClient(dependencies);
+    const bus = createBus({
+      env,
+      name: 'lifeos-cli-status',
+      timeoutMs: 1500,
+      maxReconnectAttempts: 0,
+    });
+    let detectedTransport: EventBusTransport = 'unknown';
+    try {
+      detectedTransport = bus.getTransport();
+    } catch (error: unknown) {
+      verboseLog(`status_event_probe_failed reason=${normalizeErrorMessage(error)}`);
+    } finally {
+      await bus.close();
+    }
+    const eventTransport: 'nats' | 'in-memory' = detectedTransport === 'nats' ? 'nats' : 'in-memory';
+    const eventDurability: 'external' | 'process-local' =
+      eventTransport === 'nats' ? 'external' : 'process-local';
+    if (detectedTransport === 'unknown') {
+      verboseLog('status_event_transport_defaulted=in-memory');
+    }
     verboseLog('stage=summary_load_completed');
 
     if (options.outputJson) {
@@ -2048,6 +2100,8 @@ export async function runStatusCommand(
           {
             ...summary,
             storage: storageInfo,
+            eventTransport,
+            eventDurability,
           },
           null,
           2,
@@ -2060,6 +2114,11 @@ export async function runStatusCommand(
     writeStdout(
       chalk.dim(
         `Storage: ${storageInfo.backend} | graph=${storageInfo.graphPath} | db=${storageInfo.dbPath}\n`,
+      ),
+    );
+    writeStdout(
+      chalk.dim(
+        `Event transport: ${eventTransport}\nEvent durability: ${eventDurability === 'external' ? 'durable-ish external transport' : 'non-durable process-local fallback'}\n`,
       ),
     );
     if (storageInfo.migrationBackupPath) {
@@ -2312,6 +2371,128 @@ export async function runTaskCommand(
   }
 }
 
+interface SingleTickCycleResult {
+  remindersProcessed: number;
+  checkedTasks: number;
+}
+
+async function runSingleTickCycle(
+  options: TickCommandOptions,
+  dependencies: RunCliDependencies,
+  env: NodeJS.ProcessEnv,
+  baseCwd: string,
+  now: () => Date,
+  writeStdout: (message: string) => void,
+  writeStderr: (message: string) => void,
+  verboseLog: (line: string) => void,
+): Promise<SingleTickCycleResult> {
+  const tick = dependencies.runTick ?? runTick;
+  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+
+  const tickNow = now();
+  const result = await tick({
+    graphPath: options.graphPath,
+    env,
+    now: tickNow,
+    logger: (line) => {
+      verboseLog(line);
+    },
+  });
+
+  const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
+  const graph = await client.loadGraph();
+  const tickNowIso = tickNow.toISOString();
+  const remindersToFire = (graph.reminderEvents ?? []).filter(
+    (reminder) => reminder.status === 'scheduled' && reminder.scheduledFor <= tickNowIso,
+  );
+
+  for (const reminder of remindersToFire) {
+    await client.updateReminderEvent(reminder.id, {
+      status: 'fired',
+      firedAt: tickNowIso,
+    });
+    await publishEventSafely(
+      Topics.lifeos.reminderFired,
+      {
+        reminderId: reminder.id,
+        actionId: reminder.actionId,
+        firedAt: tickNowIso,
+      },
+      dependencies,
+      env,
+      verboseLog,
+    );
+  }
+  verboseLog(`reminders_fired=${remindersToFire.length}`);
+
+  let publishTransport: EventBusTransport = 'unknown';
+  if (result.overdueTasks.length > 0) {
+    const eventPayload = {
+      checkedTasks: result.checkedTasks,
+      overdueTasks: result.overdueTasks,
+      tickedAt: result.now,
+    };
+    if (dependencies.moduleLoader) {
+      await dependencies.moduleLoader.publish(
+        Topics.lifeos.tickOverdue,
+        eventPayload,
+        'lifeos-cli',
+      );
+    }
+    publishTransport = await publishEventSafely(
+      Topics.lifeos.tickOverdue,
+      eventPayload,
+      dependencies,
+      env,
+      verboseLog,
+    );
+  }
+
+  if (!options.outputJson && publishTransport === 'in-memory') {
+    writeStdout(
+      chalk.yellow(
+        'NATS unavailable, using in-memory fallback mode. Module reactions remain active.\n',
+      ),
+    );
+  }
+
+  if (options.outputJson) {
+    writeStdout(`${JSON.stringify(result, null, 2)}\n`);
+    return { remindersProcessed: remindersToFire.length, checkedTasks: result.checkedTasks };
+  }
+
+  if (result.overdueTasks.length === 0) {
+    writeStdout(
+      `${boxen(
+        chalk.green(`Tick complete. Checked ${result.checkedTasks} task(s), no overdue tasks.`),
+        {
+          padding: 1,
+          borderStyle: 'round',
+          borderColor: 'green',
+        },
+      )}\n`,
+    );
+    return { remindersProcessed: remindersToFire.length, checkedTasks: result.checkedTasks };
+  }
+
+  writeStdout(
+    `${boxen(
+      chalk.red(
+        `Tick complete. Checked ${result.checkedTasks} task(s), found ${result.overdueTasks.length} overdue.`,
+      ),
+      {
+        padding: 1,
+        borderStyle: 'round',
+        borderColor: 'red',
+      },
+    )}\n`,
+  );
+  result.overdueTasks.slice(0, 10).forEach((task) => {
+    writeStdout(`- ${task.id.slice(0, 8)} | ${task.planId ?? '-'} | ${task.title} | due ${task.dueDate}\n`);
+  });
+  return { remindersProcessed: remindersToFire.length, checkedTasks: result.checkedTasks };
+}
+
 export async function runTickCommand(
   options: TickCommandOptions,
   dependencies: RunCliDependencies = {},
@@ -2321,8 +2502,7 @@ export async function runTickCommand(
   const now = dependencies.now ?? (() => new Date());
   const writeStdout = dependencies.stdout ?? ((message: string) => process.stdout.write(message));
   const writeStderr = dependencies.stderr ?? ((message: string) => process.stderr.write(message));
-  const tick = dependencies.runTick ?? runTick;
-  const createClient = dependencies.createLifeGraphClient ?? createLifeGraphClient;
+  const sleep = dependencies.sleep ?? ((ms: number) => delay(ms));
   const verboseLog = (line: string): void => {
     if (!options.verbose) {
       return;
@@ -2330,113 +2510,86 @@ export async function runTickCommand(
     writeStderr(`${chalk.gray(`[verbose] ${line}`)}\n`);
   };
 
+  if (!options.watch) {
+    try {
+      await runSingleTickCycle(options, dependencies, env, baseCwd, now, writeStdout, writeStderr, verboseLog);
+      return 0;
+    } catch (error: unknown) {
+      writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
+      return 1;
+    }
+  }
+
+  // Watch mode
+  const intervalRaw = options.every ?? '15m';
+  let intervalMs: number;
   try {
-    const tickNow = now();
-    const result = await tick({
-      graphPath: options.graphPath,
-      env,
-      now: tickNow,
-      logger: (line) => {
-        verboseLog(line);
-      },
-    });
-
-    const client = createClient(buildClientOptions(baseCwd, env, options.graphPath));
-    const graph = await client.loadGraph();
-    const tickNowIso = tickNow.toISOString();
-    const remindersToFire = (graph.reminderEvents ?? []).filter(
-      (reminder) => reminder.status === 'scheduled' && reminder.scheduledFor <= tickNowIso,
-    );
-
-    for (const reminder of remindersToFire) {
-      await client.updateReminderEvent(reminder.id, {
-        status: 'fired',
-        firedAt: tickNowIso,
-      });
-      await publishEventSafely(
-        Topics.lifeos.reminderFired,
-        {
-          reminderId: reminder.id,
-          actionId: reminder.actionId,
-          firedAt: tickNowIso,
-        },
-        dependencies,
-        env,
-        verboseLog,
+    intervalMs = parseTickInterval(intervalRaw);
+  } catch (err: unknown) {
+    const tickErr = err as { payload?: unknown };
+    if (options.outputJson && tickErr.payload) {
+      writeStdout(`${JSON.stringify(tickErr.payload, null, 2)}\n`);
+    } else {
+      writeStderr(
+        `${chalk.red.bold('Error:')} ERR_INVALID_TICK_INTERVAL: "${intervalRaw}" is not a valid interval. Use formats like 30s, 5m, 1h (minimum 30s).\n`,
       );
     }
-    verboseLog(`reminders_fired=${remindersToFire.length}`);
-
-    let publishTransport: EventBusTransport = 'unknown';
-    if (result.overdueTasks.length > 0) {
-      const eventPayload = {
-        checkedTasks: result.checkedTasks,
-        overdueTasks: result.overdueTasks,
-        tickedAt: result.now,
-      };
-      if (dependencies.moduleLoader) {
-        await dependencies.moduleLoader.publish(
-          Topics.lifeos.tickOverdue,
-          eventPayload,
-          'lifeos-cli',
-        );
-      }
-      publishTransport = await publishEventSafely(
-        Topics.lifeos.tickOverdue,
-        eventPayload,
-        dependencies,
-        env,
-        verboseLog,
-      );
-    }
-
-    if (!options.outputJson && publishTransport === 'in-memory') {
-      writeStdout(
-        chalk.yellow(
-          'NATS unavailable, using in-memory fallback mode. Module reactions remain active.\n',
-        ),
-      );
-    }
-
-    if (options.outputJson) {
-      writeStdout(`${JSON.stringify(result, null, 2)}\n`);
-      return 0;
-    }
-
-    if (result.overdueTasks.length === 0) {
-      writeStdout(
-        `${boxen(
-          chalk.green(`Tick complete. Checked ${result.checkedTasks} task(s), no overdue tasks.`),
-          {
-            padding: 1,
-            borderStyle: 'round',
-            borderColor: 'green',
-          },
-        )}\n`,
-      );
-      return 0;
-    }
-
-    writeStdout(
-      `${boxen(
-        chalk.red(
-          `Tick complete. Checked ${result.checkedTasks} task(s), found ${result.overdueTasks.length} overdue.`,
-        ),
-        {
-          padding: 1,
-          borderStyle: 'round',
-          borderColor: 'red',
-        },
-      )}\n`,
-    );
-    result.overdueTasks.slice(0, 10).forEach((task) => {
-      writeStdout(`- ${task.id.slice(0, 8)} | ${task.planId ?? '-'} | ${task.title} | due ${task.dueDate}\n`);
-    });
-    return 0;
-  } catch (error: unknown) {
-    writeStderr(`${chalk.red.bold('Error:')} ${normalizeErrorMessage(error)}\n`);
     return 1;
   }
+
+  writeStdout(
+    `Watching reminders every ${intervalRaw}. Reminders fire only while this process is running or when lifeos tick is run manually.\n`,
+  );
+
+  let stopped = false;
+  let resolveStop!: () => void;
+  const stopPromise = new Promise<void>((resolve) => {
+    resolveStop = resolve;
+  });
+  const stopHandler = (): void => {
+    stopped = true;
+    resolveStop();
+  };
+  process.once('SIGINT', stopHandler);
+  process.once('SIGTERM', stopHandler);
+
+  try {
+    while (!stopped) {
+      const start = Date.now();
+      let remindersProcessed = 0;
+      try {
+        const cycleResult = await runSingleTickCycle(
+          { ...options, outputJson: false },
+          dependencies,
+          env,
+          baseCwd,
+          now,
+          writeStdout,
+          writeStderr,
+          verboseLog,
+        );
+        remindersProcessed = cycleResult.remindersProcessed;
+      } catch (error: unknown) {
+        writeStderr(`${chalk.red.bold('[tick error]')} ${normalizeErrorMessage(error)}\n`);
+      }
+      const elapsed = Date.now() - start;
+      if (elapsed > intervalMs) {
+        writeStderr(
+          `${chalk.yellow('[tick warn]')} Tick took ${elapsed}ms, longer than interval ${intervalMs}ms.\n`,
+        );
+      }
+      writeStdout(`[tick] ${new Date().toISOString()} — processed ${remindersProcessed} reminder(s)\n`);
+      if (!stopped) {
+        await Promise.race([sleep(intervalMs), stopPromise]);
+      }
+    }
+  } finally {
+    process.off('SIGINT', stopHandler);
+    process.off('SIGTERM', stopHandler);
+  }
+
+  writeStdout('Tick watcher stopped. Goodbye.\n');
+  return 0;
 }
 
 export async function runDemoCommand(
@@ -5432,6 +5585,8 @@ export async function runRemindCommand(
         writeStdout(
           `${chalk.green('Reminder already scheduled:')} action ${matchingReminder.actionId.slice(0, 8)} at ${matchingReminder.scheduledFor}\n`,
         );
+        writeStdout('Reminder scheduled. It will fire when lifeos tick runs.\n');
+        writeStdout('Use lifeos tick --watch for automatic local checking.\n');
       }
       return 0;
     }
@@ -5469,6 +5624,8 @@ export async function runRemindCommand(
       writeStdout(
         `${chalk.green('Reminder scheduled:')} action ${plannedAction.id.slice(0, 8)} at ${options.at}\n`,
       );
+      writeStdout('Reminder scheduled. It will fire when lifeos tick runs.\n');
+      writeStdout('Use lifeos tick --watch for automatic local checking.\n');
     }
     return 0;
   } catch (error: unknown) {
@@ -5998,12 +6155,16 @@ function buildProgram(
     .option('--json', 'Output tick result JSON only')
     .option('--graph-path <path>', 'Override graph path', defaultGraphPath)
     .option('--verbose', 'Show safe debug diagnostics')
+    .option('--watch', 'Run tick on a repeating interval (foreground, no daemon)')
+    .option('--every <interval>', 'Tick interval: 30s, 5m, 1h (minimum 30s, default 15m)', '15m')
     .action(async (commandOptions) => {
       const commandExitCode = await runTickCommand(
         {
           outputJson: Boolean(commandOptions.json),
           graphPath: commandOptions.graphPath,
           verbose: Boolean(commandOptions.verbose),
+          watch: Boolean(commandOptions.watch),
+          every: commandOptions.every as string,
         },
         dependencies,
       );

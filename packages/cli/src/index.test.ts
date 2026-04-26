@@ -728,9 +728,13 @@ test('--graph-path overrides LIFEOS_GRAPH_PATH', async () => {
 
 test('status command prints concise summary in human mode', async () => {
   const stdout: string[] = [];
+  const { bus } = createMockEventBus();
+
+  bus.getTransport = () => 'in-memory';
 
   const exitCode = await runCli(['status'], {
     getGraphSummary: async () => sampleSummary(),
+    createEventBusClient: () => bus,
     stdout: (message) => {
       stdout.push(message);
     },
@@ -741,23 +745,57 @@ test('status command prints concise summary in human mode', async () => {
   assert.match(output, /LifeOS Status/);
   assert.match(output, /Board Meeting Prep/);
   assert.match(output, /2 total goals/);
+  assert.match(output, /Event transport: in-memory/);
+  assert.match(output, /Event durability: non-durable process-local fallback/);
 });
 
 test('status --json emits summary JSON', async () => {
   const stdout: string[] = [];
+  const { bus } = createMockEventBus();
+
+  bus.getTransport = () => 'nats';
 
   const exitCode = await runCli(['status', '--json'], {
     getGraphSummary: async () => sampleSummary(),
+    createEventBusClient: () => bus,
     stdout: (message) => {
       stdout.push(message);
     },
   });
 
   assert.equal(exitCode, 0);
-  const parsed = JSON.parse(stdout.join('')) as LifeGraphSummary;
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphSummary & {
+    eventTransport: 'nats' | 'in-memory';
+    eventDurability: 'external' | 'process-local';
+  };
   assert.equal(parsed.version, '0.1.0');
   assert.equal(parsed.totalGoals, 2);
   assert.equal(parsed.activeGoals[0]?.title, 'Board Meeting Prep');
+  assert.equal(parsed.eventTransport, 'nats');
+  assert.equal(parsed.eventDurability, 'external');
+});
+
+test('status --json normalizes unknown transport to in-memory', async () => {
+  const stdout: string[] = [];
+  const { bus } = createMockEventBus();
+
+  bus.getTransport = () => 'unknown';
+
+  const exitCode = await runCli(['status', '--json'], {
+    getGraphSummary: async () => sampleSummary(),
+    createEventBusClient: () => bus,
+    stdout: (message) => {
+      stdout.push(message);
+    },
+  });
+
+  assert.equal(exitCode, 0);
+  const parsed = JSON.parse(stdout.join('')) as LifeGraphSummary & {
+    eventTransport: 'nats' | 'in-memory';
+    eventDurability: 'external' | 'process-local';
+  };
+  assert.equal(parsed.eventTransport, 'in-memory');
+  assert.equal(parsed.eventDurability, 'process-local');
 });
 
 test('status --risks --json emits modularity risk radar payload', async () => {
@@ -4703,4 +4741,171 @@ test('capture human-mode output prints Captured message with content', async () 
       return;
     }
   });
+});
+
+// ─── tick --watch tests ────────────────────────────────────────────────────
+
+test('tick --watch --every 10s exits 1 with ERR_INVALID_TICK_INTERVAL (below minimum)', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '10s'], {
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_INVALID_TICK_INTERVAL/);
+});
+
+test('tick --watch --every 1.5m exits 1 with ERR_INVALID_TICK_INTERVAL (decimal)', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '1.5m'], {
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_INVALID_TICK_INTERVAL/);
+});
+
+test('tick --watch --every 15 (no unit) exits 1 with ERR_INVALID_TICK_INTERVAL', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '15'], {
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_INVALID_TICK_INTERVAL/);
+});
+
+test('tick --watch --every 5d (unsupported unit) exits 1 with ERR_INVALID_TICK_INTERVAL', async () => {
+  const stdout: string[] = [];
+  const stderr: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '5d'], {
+    stdout: (message) => { stdout.push(message); },
+    stderr: (message) => { stderr.push(message); },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderr.join(''), /ERR_INVALID_TICK_INTERVAL/);
+});
+
+test('tick --watch: second tick starts only after first completes and sleep elapses', async () => {
+  // Record event ordering to prove tick1 → sleep1 → tick2 before stopping on sleep2
+  const events: string[] = [];
+  let tickCount = 0;
+  let sleepCount = 0;
+
+  const fakeTick = async (): Promise<{ now: string; checkedTasks: number; overdueTasks: [] }> => {
+    tickCount += 1;
+    events.push(`tick:${tickCount}:start`);
+    await Promise.resolve(); // yield to verify async ordering holds
+    events.push(`tick:${tickCount}:end`);
+    return { now: new Date().toISOString(), checkedTasks: 0, overdueTasks: [] };
+  };
+
+  const fakeSleep = (_ms: number): Promise<void> => {
+    sleepCount += 1;
+    events.push(`sleep:${sleepCount}:start`);
+    if (sleepCount >= 2) {
+      // Emit SIGTERM during the second sleep to stop the watcher
+      process.emit('SIGTERM');
+      // Return a never-resolving promise; the stop-promise race will win
+      return new Promise(() => {});
+    }
+    events.push(`sleep:${sleepCount}:end`);
+    return Promise.resolve();
+  };
+
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '1m'], {
+    runTick: fakeTick,
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() { return { reminderEvents: [] }; },
+        async updateReminderEvent() { return; },
+        async appendReminderEvent() { return; },
+      }) as never,
+    sleep: fakeSleep,
+    stdout: (message) => { stdout.push(message); },
+    stderr: () => {},
+  });
+
+  assert.equal(exitCode, 0);
+  // Two full ticks completed
+  assert.equal(tickCount, 2);
+  // Verify strict ordering: tick1 ends before sleep1 starts, sleep1 ends before tick2 starts
+  const tick1End = events.indexOf('tick:1:end');
+  const sleep1Start = events.indexOf('sleep:1:start');
+  const sleep1End = events.indexOf('sleep:1:end');
+  const tick2Start = events.indexOf('tick:2:start');
+  assert.ok(tick1End < sleep1Start, 'tick 1 must complete before sleep 1 starts');
+  assert.ok(sleep1Start < sleep1End, 'sleep 1 start must precede sleep 1 end');
+  assert.ok(sleep1End < tick2Start, 'sleep 1 must elapse before tick 2 starts');
+  assert.match(stdout.join(''), /stopped/i);
+});
+
+test('tick --watch: SIGTERM causes clean exit with code 0', async () => {
+  // fakeSleep emits SIGTERM while the interval wait is pending.
+  // The interruptible race (Promise.race([sleep, stopPromise])) must resolve immediately.
+  const stdout: string[] = [];
+  let tickCount = 0;
+
+  const fakeSleep = (_ms: number): Promise<void> => {
+    // Emit SIGTERM synchronously — the registered SIGTERM handler runs immediately,
+    // resolving stopPromise, which wins the race against this never-resolving promise.
+    process.emit('SIGTERM');
+    return new Promise(() => {}); // never resolves on its own
+  };
+
+  const exitCode = await runCli(['tick', '--watch', '--every', '1m'], {
+    runTick: async () => {
+      tickCount += 1;
+      return { now: new Date().toISOString(), checkedTasks: 0, overdueTasks: [] };
+    },
+    createLifeGraphClient: () =>
+      ({
+        async loadGraph() { return { reminderEvents: [] }; },
+        async updateReminderEvent() { return; },
+        async appendReminderEvent() { return; },
+      }) as never,
+    sleep: fakeSleep,
+    stdout: (message) => { stdout.push(message); },
+    stderr: () => {},
+  });
+
+  assert.equal(exitCode, 0);
+  assert.equal(tickCount, 1); // only one tick before signal
+  assert.match(stdout.join(''), /stopped/i);
+});
+
+test('lifeos remind <id> --at <iso> output contains tick dependency note', async () => {
+  const actionId = 'action_remind_note';
+  const scheduledAt = '2026-05-01T09:00:00Z';
+  const stdout: string[] = [];
+
+  const exitCode = await runCli(['remind', actionId, '--at', scheduledAt], {
+    createLifeGraphClient: () =>
+      ({
+        async getPlannedAction(id: string) {
+          if (id !== actionId) return undefined;
+          return { id: actionId, title: 'Test action', status: 'todo' };
+        },
+        async loadGraph() { return { reminderEvents: [] }; },
+        async appendReminderEvent() { return; },
+      }) as never,
+    stdout: (message) => { stdout.push(message); },
+    stderr: () => {},
+  });
+
+  assert.equal(exitCode, 0);
+  assert.match(stdout.join(''), /It will fire when lifeos tick runs/);
 });
