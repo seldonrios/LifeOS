@@ -163,52 +163,23 @@ PRs that change platform contracts must include the following:
 
 Catalog contributions should include a current `lastUpdated` value so CLI freshness reporting remains accurate.
 
-## Build a New Module
+## First-party/internal module package work
 
-Use `packages/calendar-module` as the reference template.
+This is not the community module authoring path.
 
-For contributor-friendly community modules, `modules/habit-streak` is the recommended reference implementation: zero external dependencies, no LLM calls, and pure graph-based local logic.
+Community modules should use:
 
-1. Create `packages/<your-module>/` with `package.json`, `tsconfig.json`, and `src/index.ts`.
-2. Implement `LifeOSModule` from `@lifeos/module-loader`.
-3. Subscribe to one or more `eventBus` topics.
-4. Perform module work and persist outputs through `createLifeGraphClient()`.
-5. Publish completion/failure events so other modules can react.
-6. Add tests in `src/index.test.ts`.
-7. Wire your module into CLI/module boot where appropriate.
-
-Minimal template:
-
-```ts
-import { Topics } from '@lifeos/event-bus';
-import type { LifeOSModule } from '@lifeos/module-loader';
-
-export const myModule: LifeOSModule = {
-  id: 'my-module',
-  async init(context) {
-    const client = context.createLifeGraphClient({
-      env: context.env,
-      graphPath: context.graphPath,
-    });
-
-    await context.subscribe<Record<string, unknown>>(
-      Topics.lifeos.voiceCommandProcessed,
-      async (event) => {
-        await client.appendMemoryEntry({
-          type: 'insight',
-          content: `my-module handled ${event.type}`,
-          relatedTo: [event.type],
-        });
-        await context.publish('lifeos.my-module.completed', { ok: true }, 'my-module');
-      },
-    );
-  },
-};
+```bash
+pnpm lifeos module create <name>
+pnpm lifeos module validate <name>
 ```
+
+If you are intentionally working on first-party/internal package modules, use existing
+`packages/*-module` implementations as references and follow the package lane conventions.
 
 ## Module Checklist
 
-- Implements `LifeOSModule` with a unique `id`.
+- Defines module metadata in `lifeos.json` with a unique `id`.
 - Handles malformed payloads without crashing the process.
 - Subscribes/publishes using canonical event topics.
 - Writes durable state to Life Graph when behavior is stateful.

@@ -181,7 +181,7 @@ function getNextSteps(type: ScaffoldType, name: string): string {
 async function selectScaffoldType(): Promise<ScaffoldType> {
   while (true) {
     const choice = await prompt(
-      'Select scaffold type: (1) TypeScript package  (2) Python package  (3) Light AI module\n> ',
+      'Select scaffold type: (1) TypeScript package  (2) Python package  (3) LifeOS module - redirect to canonical creator\n> ',
     );
 
     if (choice === '1') {
