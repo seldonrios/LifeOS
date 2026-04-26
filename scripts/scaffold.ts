@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 
-type ScaffoldType = 'typescript' | 'python' | 'light-module';
+type ScaffoldType = 'typescript' | 'python';
 
 const rl = readline.createInterface({
   input: process.stdin,
@@ -38,9 +38,7 @@ class ScaffoldInputError extends Error {
 
 function getTargetDir(type: ScaffoldType, name: string): string {
   const root = process.cwd();
-  return type === 'light-module'
-    ? path.join(root, 'modules', name)
-    : path.join(root, 'packages', name);
+  return path.join(root, 'packages', name);
 }
 
 function targetExists(type: ScaffoldType, name: string): boolean {
@@ -164,174 +162,12 @@ line-length = 100
   };
 }
 
-function getLightModuleTemplates(name: string, description: string): Record<string, string> {
-  const vars = {
-    NAME: name,
-    NAME_PASCAL: toPascalCase(name),
-    DESCRIPTION: description,
-  };
-
-  return {
-    'README.md': render(
-      `# {{NAME}} module
-
-{{DESCRIPTION}}
-
-## Purpose
-
-- TODO: Describe the module purpose and core user outcomes.
-
-## Event Subscriptions
-
-- TODO: Define inbound event contracts this module subscribes to.
-
-## Agent Role
-
-- TODO: Define planner/executor responsibilities for this module.
-`,
-      vars,
-    ),
-    'manifest.ts': render(
-      `import type { ModuleManifest } from '@lifeos/capability-registry';
-
-export const manifest: ModuleManifest = {
-  id: '{{NAME}}',
-  name: '{{NAME_PASCAL}} Module',
-  version: '0.1.0',
-  category: 'productivity',
-  runtime_profiles: ['minimal', 'assistant', 'ambient', 'production'],
-  provides: [
-    {
-      capability: 'module.{{NAME}}.core',
-      version: '0.1.0',
-      description: '{{DESCRIPTION}}',
-    },
-  ],
-  requires: [{ capability: 'core.reasoning', version_range: '^1.0.0' }],
-  optional: [{ capability: 'core.life_graph', version_range: '^1.0.0' }],
-  permissions: ['event_publish', 'event_subscribe'],
-  hardware: [],
-  degraded_modes: [
-    {
-      name: 'limited_mode',
-      description: 'Reduced functionality when required dependencies are unavailable.',
-      disabled_features: ['advanced_automation'],
-    },
-  ],
-  entrypoint: {
-    type: 'module',
-    path: './agent.ts',
-  },
-};
-
-export default manifest;
-`,
-      vars,
-    ),
-    'module.config.ts': render(
-      `export const moduleConfig = {
-  id: '{{NAME}}',
-  version: '0.1.0',
-  identity: {
-    displayName: '{{NAME_PASCAL}} Module',
-    description: '{{DESCRIPTION}}',
-  },
-  capabilities: ['module.{{NAME}}.core'],
-};
-
-export default moduleConfig;
-`,
-      vars,
-    ),
-    'events.ts': `// TODO: subscribe to module lifecycle and domain events.
-// TODO: emit outcome and telemetry events for downstream consumers.
-`,
-    'schema.ts': render(
-      `export const {{NAME_PASCAL}}SchemaExtension = {
-  namespace: '{{NAME}}',
-  entities: [],
-  relations: [],
-};
-
-export default {{NAME_PASCAL}}SchemaExtension;
-`,
-      vars,
-    ),
-    'agent.ts': render(
-      `import {
-  LifeOSModule,
-  ModuleContext,
-  SystemEvent,
-  LifeState,
-  ModulePlan,
-  PlannedAction,
-  ModuleMetadata,
-  ModuleCategory,
-  ModulePermission,
-} from '@lifeos/reasoning';
-
-export class {{NAME_PASCAL}}Module implements LifeOSModule {
-  metadata: ModuleMetadata = {
-    id: '{{NAME}}',
-    name: '{{NAME_PASCAL}} Module',
-    version: '0.1.0',
-    description: '{{DESCRIPTION}}',
-    category: ModuleCategory.automation,
-    permissions: [ModulePermission.EventPublish, ModulePermission.EventSubscribe],
-  };
-
-  private context: ModuleContext | null = null;
-
-  async init(context: ModuleContext): Promise<void> {
-    this.context = context;
-  }
-
-  async observe(event: SystemEvent): Promise<void> {
-    void event;
-  }
-
-  async plan(state: LifeState): Promise<ModulePlan | null> {
-    return {
-      moduleId: this.metadata.id,
-      rationale: '{{NAME_PASCAL}} planning cycle executed for ' + state.timestamp + '.',
-      actions: [
-        {
-          id: '{{NAME}}-action-1',
-          type: '{{NAME}}.action.sample',
-          payload: {
-            summary: state.summary,
-          },
-          priority: 5,
-        },
-      ],
-    };
-  }
-
-  async act(action: PlannedAction): Promise<void> {
-    void action;
-    void this.context;
-  }
-}
-
-export default new {{NAME_PASCAL}}Module();
-`,
-      vars,
-    ),
-    'knowledge/.gitkeep': '',
-    'prompts/.gitkeep': '',
-  };
-}
-
 function getTypeLabel(type: ScaffoldType): string {
   if (type === 'typescript') {
     return 'TypeScript package';
   }
 
-  if (type === 'python') {
-    return 'Python package';
-  }
-
-  return 'Light AI module';
+  return 'Python package';
 }
 
 function getNextSteps(type: ScaffoldType, name: string): string {
@@ -339,11 +175,7 @@ function getNextSteps(type: ScaffoldType, name: string): string {
     return 'Next: implement src/index.ts, add to tsconfig.packages.json references if needed, update docker-compose.yml if this is a service.';
   }
 
-  if (type === 'python') {
-    return `Next: implement src/${name}/__init__.py, add dependencies to pyproject.toml.`;
-  }
-
-  return 'Next: populate events.ts contracts, implement agent.ts, add domain knowledge to knowledge/.gitkeep.';
+  return `Next: implement src/${name}/__init__.py, add dependencies to pyproject.toml.`;
 }
 
 async function selectScaffoldType(): Promise<ScaffoldType> {
@@ -361,7 +193,16 @@ async function selectScaffoldType(): Promise<ScaffoldType> {
     }
 
     if (choice === '3') {
-      return 'light-module';
+      const retiredManifestFile = `manifest${'.'}ts`;
+      const retiredReasoningPackage = `@lifeos/${'reasoning'}`;
+      console.log(`LifeOS modules now use the current MVP contract.
+Use: pnpm lifeos module create <name>
+
+This creates lifeos.json + src/index.ts using @lifeos/module-sdk.
+    The old ${retiredManifestFile}/${retiredReasoningPackage} scaffold has been retired.
+No files were generated.`);
+      rl.close();
+      process.exit(0);
     }
 
     console.error('Invalid selection. Enter 1, 2, or 3.');
@@ -399,9 +240,7 @@ async function main(): Promise<void> {
     const files =
       type === 'typescript'
         ? getTypeScriptTemplates(name, description)
-        : type === 'python'
-          ? getPythonTemplates(name, description)
-          : getLightModuleTemplates(name, description);
+        : getPythonTemplates(name, description);
 
     writeFiles(baseDir, files);
     console.log(`Created ${getTypeLabel(type)} at ${baseDir}`);

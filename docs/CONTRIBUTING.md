@@ -17,7 +17,7 @@ This is the canonical contributor guide for LifeOS.
 | I want to...                             | Go to...                                                         |
 | ---------------------------------------- | ---------------------------------------------------------------- |
 | Understand the system                    | `docs/architecture/overview.md`                                  |
-| Add a new AI domain capability           | `modules/` + `pnpm run scaffold` (select Light AI module)        |
+| Add a new AI domain capability           | `modules/` + `pnpm lifeos module create <name>` → see [Module Authoring Guide](community/module-authoring-guide.md) |
 | Add a new core subsystem                 | `packages/` + `pnpm run scaffold` (select TS or Python package)  |
 | Change how events work                   | `packages/event-bus/`                                            |
 | Change the life graph data model         | `packages/life-graph/`                                           |
@@ -41,14 +41,11 @@ This is the canonical contributor guide for LifeOS.
 
 ## How to Add a New Light Module
 
-1. Run `pnpm run scaffold`, then select `(3) Light AI module`.
-2. Fill `manifest.ts` with provides/requires/optional/hardware/degraded mode details.
-   Use bounded dependency ranges for LifeOS packages while the repo is pre-1.0 (for example `@lifeos/life-graph@>=0.3.0 <0.4.0`).
-   `pnpm lifeos module validate` enforces this format for `requires` entries.
-3. Fill `events.ts` with at least one subscription or emission stub.
-4. Fill `agent.ts` with the module agent role definition.
-5. Run `pnpm run build:modules` before testing the loader path. The runtime loader reads `modules/<name>/dist/manifest.js` and never imports source `manifest.ts` files directly.
-6. Run `pnpm run validate`. This enforces the same precompile gate automatically; the full pipeline order is `build:modules -> typecheck -> lint -> format:check -> test`.
+1. Run `pnpm lifeos module create <name>` — this generates `modules/<name>/lifeos.json` and `modules/<name>/src/index.ts` using `@lifeos/module-sdk`.
+2. Edit `lifeos.json` — fill in the current manifest fields used by the scaffold and validator: `name`, `version`, `author`, `description`, `permissions`, `resources`, `requires`, `category`, `tags`, and optional `subFeatures`. Use bounded semver ranges for package requirements in `requires` entries (for example `@lifeos/module-sdk@>=0.1.0 <0.2.0`).
+3. Implement `src/index.ts` — export a default object conforming to the `LifeOSModule` interface from `@lifeos/module-sdk`.
+4. Run `pnpm lifeos module validate <name>` — validates `lifeos.json` schema and semver ranges.
+5. Run `pnpm run validate` — runs the full pipeline (`build:modules -> typecheck -> lint -> format:check -> test`).
 
 ## How to Add a New Docker Service
 
