@@ -71,6 +71,7 @@ If you are new here, start with the CLI MVP and run the full loop in minutes.
 ```bash
 pnpm install
 ollama serve
+ollama pull llama3.1:8b
 pnpm lifeos init
 ```
 
@@ -157,10 +158,11 @@ Operator migration notes:
 pnpm install
 ```
 
-### 2) Start Ollama
+### 2) Start Ollama and pull the planning model
 
 ```bash
 ollama serve
+ollama pull llama3.1:8b
 ```
 
 ### 3) Verify CLI
@@ -539,6 +541,8 @@ Start here:
 - [Mesh Protocol v1 Contract](docs/architecture/mesh-protocol-v1.md)
 - [Marketplace Trust Contract v1](docs/architecture/marketplace-trust-contract-v1.md)
 - [Contributing Guide](CONTRIBUTING.md)
+- [Repo Lanes (where work belongs)](docs/architecture/repo-lanes.md)
+- [Hero Loop Change Map (stage-level edits/tests/docs)](docs/development/hero-loop-change-map.md)
 - [Release Policy](docs/community/release-policy.md)
 - [Changelog](CHANGELOG.md)
 - [Test Taxonomy](docs/testing/test-taxonomy.md)
@@ -551,7 +555,7 @@ Community launch docs:
 - [Phase 1 MVP North Star Issue Draft](docs/community/phase-1-mvp-north-star-issue.md)
 - [v0.1.0 Launch Thread Draft](docs/community/v0.1.0-launch-thread.md)
 - [Ecosystem North Star Issue Draft](docs/community/ecosystem-north-star-issue.md)
-- [v0.2.0 Launch Thread Draft](docs/community/v0.2.0-launch-thread.md)
+- [Historical v0.2.0 Launch Thread Draft](docs/community/v0.2.0-launch-thread.md)
 
 ## License
 

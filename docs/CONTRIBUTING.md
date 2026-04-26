@@ -66,8 +66,8 @@ This is the canonical contributor guide for LifeOS.
 
 ## Test Contract
 
-- Every package that contains `.test.ts` files must define a `"test"` script in its `package.json`. The specific test command (e.g., `tsx --test`, `vitest run`) is package-owned.
-- Tests are executed as part of `pnpm run validate` through the root `test` script, which invokes `tsx scripts/test-runner.ts`. The runner first enforces that every package with `.test.ts` files declares a `"test"` script in its `package.json` — any violation causes an immediate non-zero exit before tests run. If enforcement passes, the runner executes `pnpm -r --filter ./packages/* run --if-present test` to invoke each package's test script in turn.
+- Every package/module/service that contains test files (`.test.ts`, `.spec.ts`, `.test.tsx`, `.spec.tsx`) must define a `"test"` script in its `package.json`. The specific test command (e.g., `tsx --test`, `vitest run`) is package-owned.
+- Tests are executed as part of `pnpm run validate` through the root `test` script, which invokes `tsx scripts/test-runner.ts`. The runner first enforces that every package/module/service with test files declares a `"test"` script in its `package.json` — any violation causes an immediate non-zero exit before tests run. If enforcement passes, the runner executes `pnpm -r --filter ./packages/* --filter ./modules/* --filter ./services/* run --if-present test`.
 - `pnpm run validate` fails if any test fails; there is no warn-only mode.
 - New TypeScript packages generated with `pnpm run scaffold` include the test script automatically; no manual step is required.
 - Run tests for a single package in isolation with `pnpm --filter @lifeos/<name> run test`.
