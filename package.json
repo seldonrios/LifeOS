@@ -26,7 +26,8 @@
     "changeset": "changeset",
     "release:status": "changeset status --verbose",
     "release:version": "changeset version",
-    "test:core-loop": "tsx scripts/test-core-loop.ts"
+    "test:core-loop": "tsx scripts/test-core-loop.ts",
+    "generate:release-evidence": "tsx scripts/generate-release-evidence.ts"
   },
   "lint-staged": {
     "packages/**/*.{ts,tsx}": [

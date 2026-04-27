@@ -54,6 +54,22 @@ jobs:
             services/*/coverage/
       - name: Hero loop integration test
         run: pnpm --filter @lifeos/cli exec tsx --test src/hero-loop.integration.test.ts
+      - name: Generate release evidence
+        if: always()
+        run: pnpm exec tsx scripts/generate-release-evidence.ts
+        env:
+          LIFEOS_CI_OS: ${{ matrix.os }}
+          LIFEOS_CI_NODE: ${{ matrix.node }}
+          LIFEOS_CI_WORKFLOW: ${{ github.workflow }}
+          LIFEOS_CI_RUN_ID: ${{ github.run_id }}
+          LIFEOS_CI_SHA: ${{ github.sha }}
+          LIFEOS_CI_REF: ${{ github.ref }}
+      - name: Upload release evidence
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-evidence-${{ matrix.os }}-node${{ matrix.node }}
+          path: .artifacts/release-evidence/
 
   core-loop-integration:
     runs-on: ubuntu-latest
