@@ -28,5 +28,5 @@ jobs:
         run: pnpm lifeos --version
       - name: CLI status smoke
         run: pnpm lifeos status --json --graph-path ./.tmp/lifeos-smoke/life-graph.json
-      - name: CLI demo dry-run smoke
-        run: pnpm lifeos demo --dry-run --goal "Smoke test goal" --graph-path ./.tmp/lifeos-smoke/life-graph.json
+      - name: CLI real hero loop smoke
+        run: pnpm exec tsx scripts/cli-smoke-hero-loop.ts
