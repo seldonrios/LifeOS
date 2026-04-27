@@ -26,6 +26,7 @@ import {
   createLifeGraphClient,
   getDefaultLifeGraphPath,
   runGraphMigrations,
+  GoalPlanSchema,
   type GoalPlan,
   type GoalPlanRecord,
   type LifeGraphClient,
@@ -1531,6 +1532,11 @@ function isGoalPlanCandidate(value: unknown): value is GoalPlan {
   return true;
 }
 
+function isConnectionError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /ECONNREFUSED|ETIMEDOUT|fetch failed/i.test(message);
+}
+
 function buildClientOptions(
   baseCwd: string,
   env: NodeJS.ProcessEnv,
@@ -1886,7 +1892,45 @@ export async function runGoalCommand(
         env,
         verboseLog,
       );
-      plan = await interpret(normalizedGoal, interpretOptions);
+      try {
+        plan = await interpret(normalizedGoal, interpretOptions);
+      } catch (error: unknown) {
+        if (isConnectionError(error)) {
+          spinner?.fail(chalk.yellow('Model runtime unavailable, using local fallback.'));
+
+          const fallbackPlan = GoalPlanSchema.parse({
+            id: randomUUID(),
+            title: normalizedGoal,
+            description: normalizedGoal,
+            deadline: null,
+            tasks: [
+              {
+                id: randomUUID(),
+                title: `Work on: ${normalizedGoal}`,
+                status: 'todo',
+                priority: 3,
+              },
+            ],
+            createdAt: now().toISOString(),
+          }) as GoalPlan;
+
+          writeStderr(
+            `${chalk.yellow("[local-fallback] Ollama unavailable - created a minimal plan locally. Run 'lifeos doctor' to check your model runtime.")}\n`,
+          );
+
+          if (options.outputJson) {
+            writeStdout(`${JSON.stringify(fallbackPlan, null, 2)}\n`);
+          } else {
+            writeStdout(`${chalk.bold('Plan for:')} ${chalk.cyan(normalizedGoal)}\n`);
+            writeStdout(`${chalk.dim('-'.repeat(60))}\n`);
+            writeStdout(`${formatGoalPlan(fallbackPlan)}\n`);
+          }
+
+          return 0;
+        }
+
+        throw error;
+      }
     }
 
     spinner?.succeed(chalk.green('Goal decomposed successfully.'));

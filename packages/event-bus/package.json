@@ -12,7 +12,7 @@
     }
   },
   "scripts": {
-    "test": "tsx --test src/index.test.ts"
+    "test": "tsx --test src/index.test.ts src/degraded-paths.test.ts"
   },
   "dependencies": {
     "@lifeos/contracts": "workspace:*",
