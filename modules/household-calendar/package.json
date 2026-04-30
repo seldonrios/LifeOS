@@ -21,6 +21,6 @@
     "@lifeos/module-sdk": "workspace:*"
   },
   "devDependencies": {
-    "node-ical": "^0.25.6"
+    "node-ical": "^0.26.0"
   }
 }
