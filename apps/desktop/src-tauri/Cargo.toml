@@ -8,7 +8,7 @@ name = "lifeos_desktop"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.0", features = [] }
+tauri-build = { version = "2.6", features = [] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
