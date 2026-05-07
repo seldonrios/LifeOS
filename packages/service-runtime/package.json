@@ -21,7 +21,7 @@
     "@lifeos/policy-engine": "workspace:*",
     "@lifeos/secrets": "workspace:*",
     "@lifeos/security": "workspace:*",
-    "fastify": "^5.8.4"
+    "fastify": "^5.8.5"
   },
   "devDependencies": {
     "vitest": "^4.1.2"
