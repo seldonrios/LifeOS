@@ -55,24 +55,24 @@
     ]
   },
   "devDependencies": {
-    "@changesets/cli": "^2.30.0",
-    "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
+    "@changesets/cli": "^2.31.0",
+    "@commitlint/cli": "^21.0.1",
+    "@commitlint/config-conventional": "^21.0.1",
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "^25.5.0",
-    "@typescript-eslint/eslint-plugin": "^8.57.2",
-    "@typescript-eslint/parser": "^8.57.2",
-    "@vitest/coverage-v8": "^4.1.2",
+    "@types/node": "^25.7.0",
+    "@typescript-eslint/eslint-plugin": "^8.59.3",
+    "@typescript-eslint/parser": "^8.59.3",
+    "@vitest/coverage-v8": "^4.1.6",
     "cross-env": "^10.1.0",
-    "eslint": "^10.1.0",
+    "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "husky": "^9.1.7",
-    "lint-staged": "^16.4.0",
-    "prettier": "^3.8.1",
+    "lint-staged": "^17.0.4",
+    "prettier": "^3.8.3",
     "tsx": "^4.21.0",
-    "typescript": "^6.0.2",
-    "vitest": "^4.1.2",
-    "wait-on": "^8.0.0"
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.6",
+    "wait-on": "^9.0.10"
   },
   "optionalDependencies": {
     "@rolldown/binding-win32-x64-msvc": "1.0.0-rc.15"
