@@ -15,6 +15,6 @@
     "@lifeos/voice-core": "workspace:*"
   },
   "devDependencies": {
-    "fastify": "^5.6.1"
+    "fastify": "^5.8.5"
   }
 }
